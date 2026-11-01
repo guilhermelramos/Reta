@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Mic, X } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Drawer } from "vaul";
+import { useBackOverlay } from "@/lib/android/use-back-overlay";
 import { QuestionCard } from "@/components/study-view";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
@@ -179,6 +180,10 @@ export function TeacherChat({
   const scroller = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const speech = typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+
+  // A gaveta do professor é um overlay: o voltar do Android fecha só ela,
+  // sem sair da sessão nem perder o cronômetro.
+  useBackOverlay(open, onClose);
 
   const blockDoubts = useMemo(() => doubtsForBlock(doubts, blockId, questionId), [doubts, blockId, questionId]);
   const active = blockDoubts.find((item) => item.id === activeId) ?? null;

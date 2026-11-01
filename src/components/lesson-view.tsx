@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useBackOverlay } from "@/lib/android/use-back-overlay";
 import { Button } from "@/components/ui/button";
 import { validateDiagram } from "@/lib/study/diagrams";
 import { sanitizeSvg } from "@/lib/study/svg";
@@ -49,6 +50,9 @@ function Figure({ image, onOpen }: { image: ImageCredit; onOpen: (src: string) =
 export function LessonView({ sub, onTrain }: { sub: Subtopic; onTrain: (item: QuizItem) => void }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const zoomImage = sub.images.find((image) => image.src === zoom);
+
+  // Visualizador de imagem em tela cheia: voltar fecha a imagem ampliada.
+  useBackOverlay(zoom != null, () => setZoom(null));
 
   return (
     <div className="flex flex-col gap-3">
