@@ -1,0 +1,10 @@
+alvos<48px /: 4 ex: Ir para o conteúdo 1x1 | Trocar planilha 125x44 | Exportar resumo 133x44 | Preparar semana 136x44
+alvos<48px /sessao: 2 ex: Ir para o conteúdo 1x1 | Voltar para hoje 129x44
+alvos<48px /ajustes: 23 ex: Ir para o conteúdo 1x1 | INPUT 96x44 | INPUT 96x44 | INPUT 20x20 | INPUT 20x20 | INPUT 20x20 | INPUT 20x20 | INPUT 20x20
+alvos<48px /plano: 40 ex: Ir para o conteúdo 1x1 | Recalcular Atrasados 183x44 | Novo dia 112x44 | DOM18 de out.
+0/2 357x44 | SEG19 de out.
+0/4 357x44 | TER20 de out.
+0/4 357x44 | QUA21 de out.
+0/4 357x44 | QUI22 de out.
+0/4 357x44
+botoes ajustes: Permitir notificações / Tornar armazenamento persistente / Atualizar status / Exportar Backup Completo (.json) / Restaurar Backup (.json) / Salvar / Testar conexão
