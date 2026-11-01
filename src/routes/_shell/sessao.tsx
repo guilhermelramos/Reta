@@ -16,6 +16,7 @@ import {
 } from "@/lib/study/db";
 import { bumpLevel, emptyFlow, pickPractice, questionFor } from "@/lib/study/flow";
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
+import { cancelTimerNotifications, syncTimerNotifications } from "@/lib/native/notifications";
 import { notifyBlockDone } from "@/lib/study/notify";
 import { blockHeading } from "@/lib/study/outline";
 import { newMistakeSrs } from "@/lib/study/srs";
@@ -32,6 +33,8 @@ import {
   timerStart,
   timerToSession,
 } from "@/lib/study/time";
+import { pauseTimerPlan, restoreTimerPlan, resumeTimerPlan } from "@/lib/study/timer-plan";
+import { KIND_LABEL } from "@/lib/study/types";
 import type { BlockKind, ErrorReason, QuizItem, SessionMode, StudyPackage, StudySession, Subtopic } from "@/lib/study/types";
 
 export const Route = createFileRoute("/_shell/sessao")({
@@ -191,12 +194,23 @@ function SessionPage() {
   const restoredRef = useRef(false);
   const alertedRef = useRef("");
   const sessionRef = useRef<StudySession | null>(null);
+  const studyRef = useRef(study);
+  studyRef.current = study;
 
   const session = study.sessions.find((item) => item.id === sid) ?? null;
   const flow = session?.flow ?? emptyFlow();
   const subs = pkg?.subtopics ?? [];
   const sub = subs[flow.sub] ?? subs[0];
   const heading = blockHeading(block?.content ?? pkg?.topic ?? "");
+  const sessionLabel = pkg?.displayTitle || heading.title;
+  // Só há notificação de timer depois que o bloco começou (correndo ou pausado
+  // com tempo acumulado); abrir a sessão sem iniciar não cria alarme.
+  const sessionTimerActive = Boolean(
+    session && session.status === "active" && (session.running || session.elapsedSec > 0),
+  );
+  const timerSyncKey = session
+    ? `${session.id}|${session.status}|${session.running}|${session.endsAt ?? ""}|${session.budgetMin}`
+    : "";
   sessionRef.current = session;
 
   useEffect(() => {
@@ -267,6 +281,47 @@ function SessionPage() {
     };
   }, [study, study.ready, study.sessions, study.upsertSession, search.dia, search.bloco, search.modo]);
 
+  // Mantém alarme de término e notificação persistente alinhados à sessão.
+  // Também cobre a reabertura do app: se `endsAt` ainda está no futuro, o
+  // alarme é reagendado; se o bloco já terminou, nada é reagendado.
+  useEffect(() => {
+    const current = sessionRef.current;
+    if (!current) return;
+    const nowMs = Date.now();
+    const plan = restoreTimerPlan({
+      budgetMin: current.budgetMin,
+      timer: timerFromSession(current),
+      storedEndsAt: current.endsAt,
+      now: nowMs,
+    });
+
+    // Registro anterior a este campo (ou primeira reabertura): grava o fim
+    // derivado de startedAt + acumulado para as próximas reaberturas.
+    if (
+      current.status === "active" &&
+      current.running &&
+      plan.endsAt != null &&
+      current.endsAt !== plan.endsAt
+    ) {
+      const next = withFlow({ ...current, endsAt: plan.endsAt });
+      void studyRef.current
+        .upsertSession(next)
+        .then(() => persistActive(next))
+        .catch(() => undefined);
+    }
+
+    void syncTimerNotifications({
+      sessionId: current.id,
+      label: sessionLabel ? `${KIND_LABEL[current.kind]} · ${sessionLabel}` : KIND_LABEL[current.kind],
+      active: sessionTimerActive,
+      running: current.running,
+      endsAt: plan.endsAt,
+      remainingMs: plan.remainingMs,
+      expired: plan.expired,
+      now: nowMs,
+    });
+  }, [timerSyncKey, sessionLabel, sessionTimerActive]);
+
   // Fim do tempo do bloco / Revisão Relâmpago: vibra uma vez e notifica.
   useEffect(() => {
     if (!session || session.status !== "active" || !session.running) return;
@@ -333,6 +388,7 @@ function SessionPage() {
       missed: [],
       startedAt: Date.now(),
       endedAt: null,
+      endsAt: null,
       flow: emptyFlow(),
     });
     pendingSessions.set(key, created.id);
@@ -397,21 +453,52 @@ function SessionPage() {
     if (!session) return;
     const nowMs = Date.now();
     if (session.running) {
-      const paused = freeze(session, nowMs);
+      const timer = timerPause(timerFromSession(session), nowMs);
+      const plan = pauseTimerPlan({
+        budgetMin: session.budgetMin,
+        elapsedMs: timerElapsedMs(timer, nowMs),
+      });
       setNow(nowMs);
-      void save(paused);
+      // Pausado não tem fim previsto: o alarme é cancelado pelo efeito de
+      // sincronização ao ver `running: false` / `endsAt: null`.
+      void save({ ...session, ...timerToSession(timer, nowMs), endsAt: plan.endsAt });
       return;
     }
-    const resumed = { ...session, ...timerToSession(timerStart(timerFromSession(session), nowMs), nowMs) };
+    const timer = timerStart(timerFromSession(session), nowMs);
+    const plan = resumeTimerPlan({
+      budgetMin: session.budgetMin,
+      elapsedMs: timerElapsedMs(timer, nowMs),
+      now: nowMs,
+    });
     setNow(nowMs);
-    void save(resumed);
+    void save({ ...session, ...timerToSession(timer, nowMs), endsAt: plan.endsAt });
+  }
+
+  /** Estica a meta em N minutos e move o fim previsto junto (se correndo). */
+  function extendBudget(minutes: number) {
+    if (!session) return;
+    const nowMs = Date.now();
+    const budgetMin = session.budgetMin + minutes;
+    const plan = resumeTimerPlan({
+      budgetMin,
+      elapsedMs: timerElapsedMs(timerFromSession(session), nowMs),
+      now: nowMs,
+    });
+    setNow(nowMs);
+    void save({
+      ...session,
+      bonusMin: session.bonusMin + minutes,
+      budgetMin,
+      endsAt: session.running ? plan.endsAt : null,
+    });
   }
 
   async function finish() {
     if (!session) return;
     pendingSessions.delete(`${session.date}:${session.kind}:${session.mode}`);
     const frozen = freeze(session, Date.now());
-    await save({ ...frozen, status: "done", step: "dominio", endedAt: Date.now(), flow: { ...(frozen.flow ?? emptyFlow()), phase: "bloco" } });
+    await save({ ...frozen, status: "done", step: "dominio", endedAt: Date.now(), endsAt: null, flow: { ...(frozen.flow ?? emptyFlow()), phase: "bloco" } });
+    void cancelTimerNotifications();
     setConfirmEnd(false);
   }
 
@@ -568,7 +655,7 @@ function SessionPage() {
           {barOpen ? (
             <div className="flex flex-col gap-2 pb-3">
               <div className="flex flex-wrap items-center gap-2">
-                <Button variant="surface" onClick={() => void save({ ...session, bonusMin: session.bonusMin + 5, budgetMin: session.budgetMin + 5 })}>+5 min</Button>
+                <Button variant="surface" onClick={() => extendBudget(5)}>+5 min</Button>
                 <Button variant="ghost" onClick={() => setConfirmEnd(true)}>Encerrar</Button>
                 <p className="text-xs text-muted">Meta deste modo: {formatMin(session.budgetMin)}</p>
               </div>
@@ -598,11 +685,7 @@ function SessionPage() {
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               variant="surface"
-              onClick={() => {
-                const nowMs = Date.now();
-                setNow(nowMs);
-                void save({ ...session, bonusMin: session.bonusMin + 5, budgetMin: session.budgetMin + 5 });
-              }}
+              onClick={() => extendBudget(5)}
             >
               +5 min
             </Button>

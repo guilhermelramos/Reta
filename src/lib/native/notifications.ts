@@ -3,6 +3,7 @@ import type { PermissionState } from "@capacitor/core";
 import { isIgnoringBatteryOptimizations } from "@/lib/native/battery";
 import { buildReminderSchedule } from "@/lib/study/notification-schedule";
 import type { ScheduledReminder } from "@/lib/study/notification-schedule";
+import { formatMin } from "@/lib/study/time";
 import type { PlanDay, Settings, StudySession } from "@/lib/study/types";
 
 /**
@@ -68,6 +69,27 @@ export const REMINDER_CHANNELS = [
   },
 ] as const;
 
+/**
+ * Canal próprio da notificação persistente do timer. Importância baixa e sem
+ * vibração: ela fica parada na gaveta e é atualizada ao pausar/retomar, sem
+ * tocar a cada mudança. O aviso de fim continua no canal `timer`.
+ */
+export const TIMER_ONGOING_CHANNEL = {
+  id: "timer-progresso",
+  name: "Timer em andamento",
+  description: "Bloco e horário de término enquanto o timer roda",
+  importance: 2,
+  vibration: false,
+} as const;
+
+/**
+ * Faixa 2.000.000+ reservada para o timer. Os lembretes do plano usam
+ * 1.000.000+ (ver `notification-schedule.ts`), então não há colisão.
+ */
+export const TIMER_ALARM_ID = 2_000_001;
+export const TIMER_ONGOING_ID = 2_000_002;
+export const TIMER_ALARM_TITLE = "Tempo do bloco acabou";
+
 export function isNativeNotificationService(): boolean {
   return Capacitor.isNativePlatform();
 }
@@ -98,7 +120,7 @@ async function loadPlugin(): Promise<LocalNotificationsApi> {
 /** Cria (ou atualiza) os canais Android. Silencioso em versões sem canais. */
 async function ensureChannels(plugin: LocalNotificationsApi): Promise<void> {
   if (!isAndroid()) return;
-  for (const channel of REMINDER_CHANNELS) {
+  for (const channel of [...REMINDER_CHANNELS, TIMER_ONGOING_CHANNEL]) {
     try {
       await plugin.createChannel({ ...channel });
     } catch {
@@ -327,3 +349,289 @@ export async function cancelNativeNotificationReminders(): Promise<number> {
     return 0;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Timer da sessão (alarme de término + notificação persistente)
+ *
+ * O plugin oficial já expõe `ongoing`/`autoCancel` (documentados desde a
+ * versão 1.0), então não é preciso um foreground service em Kotlin: uma
+ * notificação normal com `setOngoing(true)` mostra o bloco e o horário de
+ * término sem pedir FOREGROUND_SERVICE/SPECIAL_USE no Android 14.
+ * ------------------------------------------------------------------ */
+
+export type TimerNotificationInput = {
+  sessionId: string;
+  /** Rótulo do bloco, ex.: "Bloco A · Biomas". */
+  label: string;
+  /** Sessão ainda aberta; `false` remove alarme e notificação persistente. */
+  active: boolean;
+  running: boolean;
+  /** Fim previsto (epoch ms); `null` quando pausado. */
+  endsAt: number | null;
+  remainingMs: number;
+  expired: boolean;
+  now?: number;
+};
+
+export type TimerNotificationResult = {
+  native: boolean;
+  permission: NotificationPermission;
+  alarmScheduled: boolean;
+  ongoingShown: boolean;
+  /** Android negou alarme exato: o fim foi agendado como inexato. */
+  inexactFallback: boolean;
+  error?: string;
+};
+
+function timerClock(at: number): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(at));
+}
+
+function ongoingCopy(input: TimerNotificationInput): { title: string; body: string } {
+  if (!input.running) {
+    return {
+      title: `${input.label} · pausado`,
+      body: input.expired
+        ? "Tempo cumprido. Encerre ou retome quando quiser."
+        : `Pausado · restam ${formatMin(input.remainingMs / 60000)}`,
+    };
+  }
+  if (input.expired) {
+    return {
+      title: `${input.label} · tempo cumprido`,
+      body: "Encerre o bloco quando quiser.",
+    };
+  }
+  if (input.endsAt != null) {
+    return {
+      title: `${input.label} · estudando`,
+      body: `Termina às ${timerClock(input.endsAt)} · restam ${formatMin(input.remainingMs / 60000)}`,
+    };
+  }
+  return {
+    title: `${input.label} · estudando`,
+    body: `Restam ${formatMin(input.remainingMs / 60000)}`,
+  };
+}
+
+async function removeTimerAlarm(plugin: LocalNotificationsApi): Promise<void> {
+  try {
+    await plugin.cancel({ notifications: [{ id: TIMER_ALARM_ID }] });
+  } catch {
+    // sem alarme pendente
+  }
+  try {
+    // Se o alarme já disparou, some também da gaveta ao encerrar/pausar.
+    await plugin.removeDeliveredNotificationsById({ ids: [TIMER_ALARM_ID] });
+  } catch {
+    // notificação não estava visível
+  }
+}
+
+async function removeTimerOngoing(plugin: LocalNotificationsApi): Promise<void> {
+  try {
+    // `cancel` remove o alarme; a persistente é imediata (sem `schedule`),
+    // então precisa ser retirada da gaveta pelo id.
+    await plugin.cancel({ notifications: [{ id: TIMER_ONGOING_ID }] });
+  } catch {
+    // sem alarme pendente
+  }
+  try {
+    await plugin.removeDeliveredNotificationsById({ ids: [TIMER_ONGOING_ID] });
+  } catch {
+    // notificação não estava visível
+  }
+}
+
+/** Cancela alarme de término e remove a notificação persistente do timer. */
+async function cancelTimerNow(): Promise<void> {
+  if (!isNativeNotificationService()) return;
+  try {
+    const plugin = await loadPlugin();
+    await Promise.all([removeTimerAlarm(plugin), removeTimerOngoing(plugin)]);
+  } catch {
+    // plugin indisponível: a web segue com o comportamento antigo
+  }
+}
+
+/**
+ * Alinha o Android ao estado do cronômetro:
+ *
+ * - sessão fechada/pausada: cancela o alarme; pausada mantém a persistente
+ *   informando o tempo restante;
+ * - correndo: agenda (ou reagenda) o alarme para `endsAt` no canal `timer`
+ *   com `allowWhileIdle`, e atualiza a persistente com bloco + término.
+ *
+ * `isExactNotification` só é `true` quando o Android autorizou alarmes exatos;
+ * negado, o plugin agenda como inexato e o fallback é registrado no console.
+ */
+async function runTimerSync(input: TimerNotificationInput): Promise<TimerNotificationResult> {
+  const base: TimerNotificationResult = {
+    native: isNativeNotificationService(),
+    permission: "unsupported",
+    alarmScheduled: false,
+    ongoingShown: false,
+    inexactFallback: false,
+  };
+  if (!base.native) return base;
+
+  const now = input.now ?? Date.now();
+  try {
+    const plugin = await loadPlugin();
+    let status = await plugin.checkPermissions();
+    if (status.display === "prompt" && input.active) {
+      // Início do timer é um toque explícito; o Android 13+ pede uma vez.
+      // Sessão sem timer iniciado não dispara pedido nenhum.
+      status = await plugin.requestPermissions();
+    }
+    const permission = permissionFrom(status.display);
+    if (permission !== "granted") {
+      await Promise.all([removeTimerAlarm(plugin), removeTimerOngoing(plugin)]);
+      return { ...base, permission, error: "notificações não autorizadas" };
+    }
+
+    await ensureChannels(plugin);
+    const exactAlarms = await checkExactAlarms(plugin);
+    const inexactFallback = isAndroid() && exactAlarms === "denied";
+
+    if (!input.active) {
+      await Promise.all([removeTimerAlarm(plugin), removeTimerOngoing(plugin)]);
+      return { ...base, permission, inexactFallback };
+    }
+
+    let alarmScheduled = false;
+    const shouldAlarm =
+      input.running && input.endsAt != null && input.endsAt > now && !input.expired;
+    if (shouldAlarm && input.endsAt != null) {
+      await removeTimerAlarm(plugin);
+      const exact = exactAlarms === "granted";
+      const result = await plugin.schedule({
+        notifications: [
+          {
+            id: TIMER_ALARM_ID,
+            title: TIMER_ALARM_TITLE,
+            body: `${input.label} · fim às ${timerClock(input.endsAt)}`,
+            channelId: "timer",
+            autoCancel: true,
+            ongoing: false,
+            isExactNotification: exact,
+            schedule: { at: new Date(input.endsAt), allowWhileIdle: true },
+            extra: {
+              reta: "timer",
+              sessionId: input.sessionId,
+              endsAt: input.endsAt,
+              exact,
+            },
+          },
+        ],
+      });
+      alarmScheduled = result.notifications.some((item) => item.id === TIMER_ALARM_ID);
+      if (inexactFallback) {
+        console.warn(
+          `[timer] alarme exato negado pelo Android; "${TIMER_ALARM_TITLE}" agendado como inexato.`,
+        );
+      }
+    } else {
+      await removeTimerAlarm(plugin);
+    }
+
+    const copy = ongoingCopy(input);
+    await plugin.schedule({
+      notifications: [
+        {
+          id: TIMER_ONGOING_ID,
+          title: copy.title,
+          body: copy.body,
+          channelId: TIMER_ONGOING_CHANNEL.id,
+          // `setOngoing(true)`: não pode ser deslizada para fora da gaveta.
+          ongoing: true,
+          autoCancel: false,
+          // Sem `schedule` = publica na hora. `isExactNotification: false`
+          // evita que o plugin abra a tela de alarmes exatos por engano.
+          isExactNotification: false,
+          extra: {
+            reta: "timer-progresso",
+            sessionId: input.sessionId,
+            endsAt: input.endsAt,
+            running: input.running,
+          },
+        },
+      ],
+    });
+
+    return {
+      ...base,
+      permission,
+      alarmScheduled,
+      ongoingShown: true,
+      inexactFallback,
+    };
+  } catch (error) {
+    return { ...base, error: errorMessage(error) };
+  }
+}
+
+function emptyTimerResult(): TimerNotificationResult {
+  return {
+    native: isNativeNotificationService(),
+    permission: "unsupported",
+    alarmScheduled: false,
+    ongoingShown: false,
+    inexactFallback: false,
+  };
+}
+
+type TimerCommand = { type: "sync"; input: TimerNotificationInput } | { type: "cancel" };
+
+let queuedTimerCommand: TimerCommand | null = null;
+let runningTimerCommand: Promise<TimerNotificationResult> | null = null;
+
+/**
+ * Fila de comandos do timer. Começar, pausar e encerrar podem acontecer antes
+ * de a chamada anterior ao plugin terminar; sem a fila, um agendamento atrasado
+ * poderia ressuscitar o alarme depois da pausa. Só vale o último comando.
+ */
+function flushTimerCommands(): Promise<TimerNotificationResult> {
+  if (runningTimerCommand) return runningTimerCommand;
+
+  runningTimerCommand = (async () => {
+    let last = emptyTimerResult();
+    try {
+      while (queuedTimerCommand) {
+        const command = queuedTimerCommand;
+        queuedTimerCommand = null;
+        if (command.type === "cancel") {
+          await cancelTimerNow();
+          last = emptyTimerResult();
+        } else {
+          last = await runTimerSync(command.input);
+        }
+      }
+    } finally {
+      runningTimerCommand = null;
+    }
+    return last;
+  })();
+
+  return runningTimerCommand;
+}
+
+/** Alinha alarme + notificação persistente ao estado atual (último comando vence). */
+export function syncTimerNotifications(
+  input: TimerNotificationInput,
+): Promise<TimerNotificationResult> {
+  if (!isNativeNotificationService()) return Promise.resolve(emptyTimerResult());
+  queuedTimerCommand = { type: "sync", input };
+  return flushTimerCommands();
+}
+
+/** Cancela alarme e notificação persistente na mesma fila do timer. */
+export function cancelTimerNotifications(): Promise<void> {
+  if (!isNativeNotificationService()) return Promise.resolve();
+  queuedTimerCommand = { type: "cancel" };
+  return flushTimerCommands().then(() => undefined);
+}
+
