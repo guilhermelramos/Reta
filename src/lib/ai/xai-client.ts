@@ -15,7 +15,13 @@ import {
   type ResearchInput,
   type TutorInput,
 } from "./core.ts";
-import { AiRequestError, emptyError, httpError, mapFailure, transportFailure } from "./errors.ts";
+import {
+  AiRequestError,
+  emptyError,
+  failureOf,
+  httpError,
+  transportFailure,
+} from "./errors.ts";
 import { commonsImages, type JsonFetcher } from "./images.ts";
 import { FAST_MODEL, SEARCH_MODEL } from "./models.ts";
 import type { PackageBody } from "./parse.ts";
@@ -54,10 +60,16 @@ const KEY_NAMES: Record<ResearcherId, KeyName> = {
   claude: "claude",
 };
 
-const CHAT_TIMEOUT = 75000;
+/**
+ * Todo pedido de IA tem 15 s para conectar e para responder nos fluxos
+ * interativos (teste de conexão, tutor, professor). A geração de um pacote
+ * completo continua com um teto maior: 15 s cortaria a aula no meio.
+ */
+const AI_CONNECT_TIMEOUT = 15000;
+const QUICK_TIMEOUT = 15000;
 const SEARCH_TIMEOUT = 90000;
-const PING_TIMEOUT = 40000;
-const PROFESSOR_TIMEOUT = 55000;
+const GENERATE_TIMEOUT = 90000;
+const PROFESSOR_TIMEOUT = 15000;
 
 export function isNativeAi(): boolean {
   try {
@@ -126,8 +138,8 @@ async function nativeRequest(options: {
       headers: options.headers,
       data: options.data,
       responseType: "json",
-      connectTimeout: options.connectTimeout ?? 15000,
-      readTimeout: options.readTimeout ?? CHAT_TIMEOUT,
+      connectTimeout: options.connectTimeout ?? AI_CONNECT_TIMEOUT,
+      readTimeout: options.readTimeout ?? QUICK_TIMEOUT,
     });
     return {
       status: typeof response.status === "number" ? response.status : 0,
@@ -182,7 +194,9 @@ async function xaiChat(options: {
       stream: false,
       messages: options.messages,
     },
-    readTimeout: options.readTimeout ?? CHAT_TIMEOUT,
+    readTimeout:
+      options.readTimeout ??
+      (options.maxTokens > 1500 ? GENERATE_TIMEOUT : QUICK_TIMEOUT),
   });
   requireOk(response, "grok");
   const text = textFromChat(response.data);
@@ -236,7 +250,7 @@ async function nativeProviderChat(
         max_tokens: maxTokens,
         messages: [{ role: "user", content: prompt }],
       },
-      readTimeout: CHAT_TIMEOUT,
+      readTimeout: maxTokens > 1500 ? GENERATE_TIMEOUT : QUICK_TIMEOUT,
     });
     requireOk(response, provider);
     const text = textFromChat(response.data);
@@ -257,7 +271,7 @@ async function nativeProviderChat(
           responseMimeType: "application/json",
         },
       },
-      readTimeout: CHAT_TIMEOUT,
+      readTimeout: maxTokens > 1500 ? GENERATE_TIMEOUT : QUICK_TIMEOUT,
     });
     requireOk(response, provider);
     const body = response.data as {
@@ -282,7 +296,7 @@ async function nativeProviderChat(
       max_tokens: maxTokens,
       messages: [{ role: "user", content: prompt }],
     },
-    readTimeout: CHAT_TIMEOUT,
+    readTimeout: maxTokens > 1500 ? GENERATE_TIMEOUT : QUICK_TIMEOUT,
   });
   requireOk(response, provider);
   const body = response.data as { content?: { text?: string }[] } | null;
@@ -349,7 +363,8 @@ async function webResult<T>(call: () => Promise<AiResult<T>>): Promise<AiResult<
   try {
     return await call();
   } catch (error) {
-    return { ok: false, error: mapFailure(error, { online: isOnline() }) };
+    const failure = failureOf(error, { online: isOnline() });
+    return { ok: false, error: failure.message, failure };
   }
 }
 
@@ -405,7 +420,7 @@ export type ProfessorInput = {
 export async function nativeProfessorReply(input: ProfessorInput): Promise<string> {
   const key = await nativeKey("grok", input.userKey);
   if (!key)
-    throw new AiRequestError("Sem chave da xAI. Cole a sua chave em Ajustes.", "unauthorized");
+    throw new AiRequestError("Sem chave da xAI. Cole a sua chave em Ajustes.", "missing-key");
   const history = normalizeProfessorHistory(input.messages);
   if (!history.length) throw new AiRequestError("Escreva a dúvida primeiro.", "bad-request");
   return xaiChat({

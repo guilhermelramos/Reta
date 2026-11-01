@@ -22,7 +22,10 @@ export const Route = createFileRoute("/api/professor")({
         const key = (userKey || process.env.XAI_API_KEY?.trim() || "").slice(0, 400);
         if (!key) {
           return Response.json(
-            { error: "Sem chave da xAI neste aparelho. O resto da sessão continua." },
+            {
+              error: "Sem chave da xAI neste aparelho. O resto da sessão continua.",
+              kind: "missing-key",
+            },
             { status: 503 },
           );
         }
@@ -43,7 +46,7 @@ export const Route = createFileRoute("/api/professor")({
               max_tokens: 700,
               messages: [{ role: "system", content: system }, ...history],
             }),
-            signal: AbortSignal.timeout(55000),
+            signal: AbortSignal.timeout(15000),
           });
         } catch {
           return Response.json(
@@ -56,7 +59,15 @@ export const Route = createFileRoute("/api/professor")({
             retryAfter: upstream.headers.get("retry-after"),
             providerLabel: "xAI",
           });
-          return Response.json({ error: mapped.message }, { status: upstream.status || 502 });
+          return Response.json(
+            {
+              error: mapped.message,
+              kind: mapped.kind,
+              status: mapped.status,
+              retryAfterSeconds: mapped.retryAfterSeconds ?? null,
+            },
+            { status: upstream.status || 502 },
+          );
         }
 
         const encoder = new TextEncoder();

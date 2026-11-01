@@ -1,5 +1,5 @@
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
-import { mapFailure } from "./errors.ts";
+import { AiRequestError, failureOf, type AiErrorKind } from "./errors.ts";
 import { isNativeAi, nativeProfessorReply, type ProfessorInput } from "./xai-client";
 
 /**
@@ -20,6 +20,34 @@ function isOnline(): boolean {
   return typeof navigator === "undefined" || navigator.onLine !== false;
 }
 
+const KINDS: AiErrorKind[] = [
+  "offline",
+  "timeout",
+  "unauthorized",
+  "missing-key",
+  "rate-limit",
+  "server",
+  "bad-request",
+  "empty",
+  "unknown",
+];
+
+function asKind(value: unknown): AiErrorKind {
+  return typeof value === "string" && KINDS.includes(value as AiErrorKind)
+    ? (value as AiErrorKind)
+    : "unknown";
+}
+
+/** Mantém `kind`/status até a UI, que escolhe o texto e a ação do erro. */
+function structured(error: unknown): AiRequestError {
+  if (error instanceof AiRequestError) return error;
+  const failure = failureOf(error, { online: isOnline() });
+  return new AiRequestError(failure.message, failure.kind, {
+    status: failure.status,
+    retryAfterSeconds: failure.retryAfterSeconds,
+  });
+}
+
 export type AskProfessorResult = { text: string; streamed: boolean };
 
 export async function askProfessor(
@@ -34,9 +62,9 @@ export async function askProfessor(
   try {
     return await webProfessor(input, onRaw);
   } catch (error) {
-    // "Failed to fetch" e timeout do navegador viram a mesma mensagem clara
-    // usada no caminho nativo.
-    throw new Error(mapFailure(error, { online: isOnline() }));
+    // "Failed to fetch" e timeout do navegador viram o mesmo erro estruturado
+    // usado no caminho nativo.
+    throw structured(error);
   }
 }
 
@@ -46,6 +74,7 @@ async function webProfessor(
 ): Promise<AskProfessorResult> {
   const res = await fetch(apiPath("/api/professor"), {
     method: "POST",
+    signal: AbortSignal.timeout(15000),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       messages: input.messages,
@@ -60,8 +89,19 @@ async function webProfessor(
   });
 
   if (!res.ok || !res.body) {
-    const fail = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(fail?.error || "O professor não respondeu. A sessão continua.");
+    const fail = (await res.json().catch(() => null)) as {
+      error?: string;
+      kind?: string;
+      retryAfterSeconds?: number | null;
+    } | null;
+    throw new AiRequestError(
+      fail?.error || "O professor não respondeu. A sessão continua.",
+      asKind(fail?.kind),
+      {
+        status: res.status,
+        retryAfterSeconds: fail?.retryAfterSeconds ?? null,
+      },
+    );
   }
 
   const reader = res.body.getReader();
@@ -82,7 +122,7 @@ async function webProfessor(
         .join("");
       if (!line || line === "[DONE]") continue;
       const json = JSON.parse(line) as { t?: string; error?: string };
-      if (json.error) throw new Error(json.error);
+      if (json.error) throw new AiRequestError(json.error, "server");
       if (json.t) raw += json.t;
     }
     onRaw(raw);

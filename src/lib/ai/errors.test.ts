@@ -5,6 +5,7 @@ import {
   NETWORK_MESSAGE,
   OFFLINE_MESSAGE,
   TIMEOUT_MESSAGE,
+  failureOf,
   httpError,
   mapFailure,
   retryAfterSeconds,
@@ -91,6 +92,25 @@ describe("mapFailure", () => {
       mapFailure(new Error("A resposta não veio em JSON.")),
       "A resposta não veio em JSON.",
     );
+  });
+});
+
+describe("failureOf", () => {
+  it("preserva a chave do erro para a UI escolher a ação", () => {
+    const limited = failureOf(httpError(429, "", { retryAfter: "9" }));
+    assert.equal(limited.kind, "rate-limit");
+    assert.equal(limited.status, 429);
+    assert.equal(limited.retryAfterSeconds, 9);
+
+    const denied = failureOf(new AiRequestError("x", "unauthorized", { status: 403 }));
+    assert.equal(denied.kind, "unauthorized");
+    assert.equal(denied.status, 403);
+  });
+
+  it("classifica falha crua de rede como offline", () => {
+    const failure = failureOf(new Error("Failed to fetch"), { online: false });
+    assert.equal(failure.kind, "offline");
+    assert.equal(failure.message, OFFLINE_MESSAGE);
   });
 });
 

@@ -10,11 +10,23 @@ export type AiErrorKind =
   | "offline"
   | "timeout"
   | "unauthorized"
+  | "missing-key"
   | "rate-limit"
   | "server"
   | "bad-request"
   | "empty"
   | "unknown";
+
+/**
+ * Erro estruturado que atravessa `AiResult` sem perder o `kind`/status — é o
+ * que permite a UI escolher o texto e a ação certos (chave, 429, offline).
+ */
+export type AiFailure = {
+  kind: AiErrorKind;
+  message: string;
+  status?: number;
+  retryAfterSeconds?: number | null;
+};
 
 export const OFFLINE_MESSAGE = "Sem internet. Conecte-se e tente de novo.";
 export const NETWORK_MESSAGE =
@@ -168,6 +180,32 @@ export function transportFailure(
     );
   }
   return new AiRequestError(message, "unknown");
+}
+
+/**
+ * Versão estruturada de `mapFailure`: mantém `kind`, status e `Retry-After`
+ * para a UI mapear a ação (ex.: 401 → Atualizar chave, 429 → contagem).
+ */
+export function failureOf(
+  error: unknown,
+  options: { online?: boolean } = {},
+): AiFailure {
+  let info: AiRequestError;
+  if (error instanceof AiRequestError) {
+    info = error;
+  } else {
+    const transport = transportFailure(error, options);
+    info =
+      transport.kind === "unknown"
+        ? new AiRequestError(mapFailure(error, options), "unknown")
+        : transport;
+  }
+  return {
+    kind: info.kind,
+    message: info.message,
+    ...(info.status != null ? { status: info.status } : {}),
+    retryAfterSeconds: info.retryAfterSeconds ?? null,
+  };
 }
 
 /** Mensagem final para qualquer falha do fluxo de IA. */

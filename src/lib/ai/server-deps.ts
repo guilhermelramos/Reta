@@ -17,6 +17,10 @@ const LABELS: Record<ResearcherId, string> = {
   claude: "Claude",
 };
 
+/** Mesmo contrato do APK: 15 s nos fluxos curtos, teto maior na geração. */
+const QUICK_TIMEOUT = 15000;
+const GENERATE_TIMEOUT = 90000;
+
 function authHeader(key: string): Record<string, string> {
   return { "Content-Type": "application/json", Authorization: `Bearer ${key}` };
 }
@@ -194,9 +198,10 @@ async function serverText(request: TextRequest): Promise<{ text: string; webSear
       // Mesmo comportamento de antes: se a pesquisa falhar, tenta o chat normal.
     }
   }
+  const timeoutMs = request.maxTokens > 1500 ? GENERATE_TIMEOUT : QUICK_TIMEOUT;
   if (request.provider === "grok") {
     return {
-      text: await xaiChat(request.key, request.prompt, request.maxTokens, 75000),
+      text: await xaiChat(request.key, request.prompt, request.maxTokens, timeoutMs),
       webSearch: false,
     };
   }
@@ -206,7 +211,7 @@ async function serverText(request: TextRequest): Promise<{ text: string; webSear
       request.key,
       request.prompt,
       request.maxTokens,
-      70000,
+      timeoutMs,
     ),
     webSearch: false,
   };

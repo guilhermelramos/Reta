@@ -2,7 +2,7 @@ import { isModernaBlock } from "../study/coverage.ts";
 import { buildHumanasPackage } from "../study/humanas-pack.ts";
 import type { Difficulty, ImageCredit, QuizItem, ResearcherId } from "../study/types.ts";
 import { parseBlockPackage, type AiBlockPackage } from "./block-package.ts";
-import { mapFailure } from "./errors.ts";
+import { failureOf, type AiFailure } from "./errors.ts";
 import {
   imageQueries,
   asQuiz,
@@ -31,7 +31,9 @@ import { clip } from "./text.ts";
  * implementações de prompt/parse que possam divergir.
  */
 
-export type AiResult<T> = { ok: true; data: T } | { ok: false; error: string };
+export type AiResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; failure?: AiFailure };
 
 export type TextRequest = {
   provider: ResearcherId;
@@ -81,8 +83,25 @@ export function isResearcherId(value: unknown): value is ResearcherId {
   return PROVIDERS.includes(value as ResearcherId);
 }
 
-function fail(error: unknown, deps: CoreDeps): { ok: false; error: string } {
-  return { ok: false, error: mapFailure(error, { online: deps.isOnline?.() }) };
+function fail(
+  error: unknown,
+  deps: CoreDeps,
+): { ok: false; error: string; failure: AiFailure } {
+  const failure = failureOf(error, { online: deps.isOnline?.() });
+  return { ok: false, error: failure.message, failure };
+}
+
+/** Chave ausente é um erro de configuração, não uma falha de rede. */
+function noKey(
+  provider: ResearcherId,
+  deps: CoreDeps,
+): { ok: false; error: string; failure: AiFailure } {
+  const message = deps.noKeyMessage(provider);
+  return {
+    ok: false,
+    error: message,
+    failure: { kind: "missing-key", message, retryAfterSeconds: null },
+  };
 }
 
 function providerKey(
@@ -113,7 +132,7 @@ export async function runGeneratePackage(
   }
 
   const key = providerKey(input.provider, input.userKey, deps);
-  if (!key) return { ok: false, error: deps.noKeyMessage(input.provider) };
+  if (!key) return noKey(input.provider, deps);
 
   try {
     const { text, webSearch: usedWeb } = await deps.text({
@@ -157,7 +176,7 @@ export async function runGenerateBlockPackage(
   const minutes = Number.isFinite(rawMinutes) ? Math.min(240, Math.max(5, rawMinutes)) : 30;
 
   const key = providerKey("grok", input.userKey, deps);
-  if (!key) return { ok: false, error: deps.noKeyMessage("grok") };
+  if (!key) return noKey("grok", deps);
 
   let rejection = "estrutura incompleta";
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -208,7 +227,7 @@ export async function runResearchAdd(
   if (question.length < 5 || !topic) return { ok: false, error: "Dúvida incompleta." };
 
   const key = providerKey("grok", input.userKey, deps);
-  if (!key) return { ok: false, error: deps.noKeyMessage("grok") };
+  if (!key) return noKey("grok", deps);
 
   try {
     const { text } = await deps.text({
@@ -244,7 +263,7 @@ export async function runTutorTurn(
   const previous = clip(typeof input.previous === "string" ? input.previous : "", 800);
 
   const key = providerKey("grok", input.userKey, deps);
-  if (!key) return { ok: false, error: deps.noKeyMessage("grok") };
+  if (!key) return noKey("grok", deps);
 
   try {
     if (action === "reexplain") {
@@ -287,7 +306,7 @@ export async function runPingAi(
 ): Promise<AiResult<{ text: string }>> {
   if (!isResearcherId(input.provider)) return { ok: false, error: "Provedor inválido." };
   const key = providerKey(input.provider, input.userKey, deps);
-  if (!key) return { ok: false, error: deps.noKeyMessage(input.provider) };
+  if (!key) return noKey(input.provider, deps);
   try {
     const { text } = await deps.text({
       provider: input.provider,
