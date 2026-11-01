@@ -63,7 +63,7 @@ function Frame() {
       </a>
       <div className="mx-auto flex max-w-6xl">
         <aside className="no-print sticky top-0 hidden h-screen w-56 shrink-0 flex-col gap-8 border-r border-border px-5 py-8 md:flex">
-          <Link to="/" className="flex items-center gap-2">
+          <Link to="/" className="flex min-h-12 items-center gap-2">
             <span className="size-3 rounded-sm bg-primary" aria-hidden />
             <span className="font-display text-3xl leading-none">Reta</span>
           </Link>
