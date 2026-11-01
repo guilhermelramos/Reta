@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #10130f;
+  --color-surface: #1a1f18;
+  --color-surface-2: #242b22;
+  --color-fg: #f3efe4;
+  --color-muted: #b7ae9c;
+  --color-primary: #e4a04a;
+  --color-primary-fg: #1c1408;
+  --color-clay: #c4654a;
+  --color-clay-text: #f0c2b6;
+  --color-border: #343c31;
+  --font-sans: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+}
+
+@layer base {
+  html {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    min-height: 100vh;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+@keyframes reta-bar {
+  from { transform: scaleX(0.15); }
+  to { transform: scaleX(1); }
+}
+
+.study-diagram svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: transparent;
+}
+
+#essencia,
+#conceitos,
+#visuais,
+#pegadinhas {
+  scroll-margin-top: 4.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reta-bar { animation: none; }
+}
+
+@media print {
+  nav, aside, .no-print { display: none !important; }
+  html, body, main {
+    background: #fff !important;
+    color: #16140f !important;
+  }
+  .print-only { display: block !important; }
+}
