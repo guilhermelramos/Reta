@@ -1,4 +1,12 @@
-import type { ColumnKey, ColumnMap, PlanDay, RowWarning, SheetTable } from "./types.ts";
+import type {
+  BlockKind,
+  ColumnKey,
+  ColumnMap,
+  PlanBlock,
+  PlanDay,
+  RowWarning,
+  SheetTable,
+} from "./types.ts";
 import { parseDateKey, parseDuration, utcKeyFromDate } from "./time.ts";
 import * as XLSXImport from "xlsx";
 
@@ -121,6 +129,78 @@ function scoreSheet(sheet: SheetTable): number {
   return score;
 }
 
+const KIND_ORDER: BlockKind[] = ["A", "B", "R", "L"];
+const BLANK_CONTENT = "Sem descrição";
+
+/** Conteúdo realmente informado (ignora o placeholder de bloco só com tempo). */
+function hasContent(block: PlanBlock | undefined): boolean {
+  const text = block?.content.trim() ?? "";
+  return Boolean(text) && text !== BLANK_CONTENT;
+}
+
+function sameContent(a: string, b: string): boolean {
+  return norm(a) === norm(b);
+}
+
+/** Junta dois textos no formato "Tópico 1 + Tópico 2", sem repetir o mesmo tópico. */
+function joinContent(current: string, incoming: string): { content: string; repeated: boolean } {
+  const first = current.trim();
+  const second = incoming.trim();
+  const firstReal = Boolean(first) && first !== BLANK_CONTENT;
+  const secondReal = Boolean(second) && second !== BLANK_CONTENT;
+  if (!firstReal) return { content: secondReal ? second : first || second, repeated: false };
+  if (!secondReal) return { content: first, repeated: false };
+  if (sameContent(first, second)) return { content: first, repeated: true };
+  return { content: `${first} + ${second}`, repeated: false };
+}
+
+function addBlock(blocks: PlanBlock[], block: PlanBlock, kind: BlockKind = block.kind): void {
+  const existing = blocks.find((b) => b.kind === kind);
+  if (!existing) {
+    blocks.push({ kind, content: block.content, plannedMin: block.plannedMin });
+    return;
+  }
+  const joined = joinContent(existing.content, block.content);
+  existing.content = joined.content;
+  if (!joined.repeated) existing.plannedMin += block.plannedMin;
+}
+
+function sortBlocks(blocks: PlanBlock[]): PlanBlock[] {
+  return [...blocks].sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
+}
+
+/**
+ * Mescla uma linha repetida da planilha no dia já existente, em vez de descartá-la.
+ * - Conteúdo novo de Bloco A vai para o Bloco B quando ele está livre.
+ * - Sem espaço no B, concatena "Tópico 1 + Tópico 2" e soma os minutos.
+ * - Revisões e leituras são preservadas (concatenadas quando diferentes).
+ */
+function mergeDay(base: PlanDay, next: PlanDay): PlanDay {
+  const blocks = base.blocks.map((b) => ({ ...b }));
+  const incomingB = next.blocks.some((b) => b.kind === "B" && hasContent(b));
+  for (const block of next.blocks) {
+    if (block.kind === "A") {
+      const existingA = blocks.find((b) => b.kind === "A");
+      const existingB = blocks.find((b) => b.kind === "B");
+      const sameAsA = hasContent(existingA) && sameContent(existingA!.content, block.content);
+      if (sameAsA) {
+        addBlock(blocks, block, "A");
+        continue;
+      }
+      if (hasContent(existingA) && !hasContent(existingB) && !incomingB) {
+        addBlock(blocks, block, "B");
+        continue;
+      }
+    }
+    addBlock(blocks, block);
+  }
+  return {
+    date: base.date,
+    phase: base.phase.trim() ? base.phase : next.phase,
+    blocks: sortBlocks(blocks),
+  };
+}
+
 export function applyMap(
   matrix: string[][],
   headerRow: number,
@@ -128,6 +208,7 @@ export function applyMap(
 ): { days: PlanDay[]; warnings: RowWarning[] } {
   const warnings: RowWarning[] = [];
   const byDate = new Map<string, PlanDay>();
+  const merged = new Map<string, { count: number; row: number }>();
   if (map.date == null || map.contentA == null) {
     return { days: [], warnings: [{ row: headerRow + 1, message: "Faltou mapear Data ou conteúdo A." }] };
   }
@@ -151,10 +232,23 @@ export function applyMap(
       warnings.push({ row: i + 1, message: `${date}: sem conteúdo A, B ou revisão.` });
       continue;
     }
-    if (byDate.has(date)) warnings.push({ row: i + 1, message: `${date} repetida — ficou a última.` });
-    byDate.set(date, { date, phase, blocks });
+    const previous = byDate.get(date);
+    if (previous) {
+      byDate.set(date, mergeDay(previous, { date, phase, blocks }));
+      const seen = merged.get(date) ?? { count: 1, row: i + 1 };
+      merged.set(date, { count: seen.count + 1, row: i + 1 });
+    } else {
+      byDate.set(date, { date, phase, blocks: sortBlocks(blocks) });
+    }
+  }
+  for (const [date, info] of merged) {
+    warnings.push({
+      row: info.row,
+      message: `${date}: ${info.count} linhas mescladas no mesmo dia`,
+    });
   }
   const days = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  warnings.sort((a, b) => a.row - b.row);
   return { days, warnings };
 }
 
