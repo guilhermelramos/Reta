@@ -3,7 +3,7 @@ import type { PermissionState } from "@capacitor/core";
 import { isIgnoringBatteryOptimizations } from "@/lib/native/battery";
 import { buildReminderSchedule } from "@/lib/study/notification-schedule";
 import type { ScheduledReminder } from "@/lib/study/notification-schedule";
-import { formatMin } from "@/lib/study/time";
+import { formatClock } from "@/lib/study/time";
 import type { PlanDay, Settings, StudySession } from "@/lib/study/types";
 
 /**
@@ -276,7 +276,13 @@ async function runSync(snapshot: ReminderSnapshot): Promise<NativeSyncResult> {
     // antigo para trás.
     if (!reminders.length || permission !== "granted") {
       const cancelled = await cancelReminders(plugin);
-      return { ...base, permission, exactAlarms, cancelled, inexactFallback: exactAlarms === "denied" };
+      return {
+        ...base,
+        permission,
+        exactAlarms,
+        cancelled,
+        inexactFallback: exactAlarms === "denied",
+      };
     }
 
     await ensureChannels(plugin);
@@ -390,13 +396,17 @@ function timerClock(at: number): string {
   }).format(new Date(at));
 }
 
+function remainingClock(ms: number): string {
+  return formatClock(Math.ceil(Math.max(0, ms) / 1000));
+}
+
 function ongoingCopy(input: TimerNotificationInput): { title: string; body: string } {
   if (!input.running) {
     return {
-      title: `${input.label} · pausado`,
+      title: `${input.label} · ${remainingClock(input.remainingMs)} restantes`,
       body: input.expired
         ? "Tempo cumprido. Encerre ou retome quando quiser."
-        : `Pausado · restam ${formatMin(input.remainingMs / 60000)}`,
+        : "Pausado · retome no app",
     };
   }
   if (input.expired) {
@@ -407,13 +417,13 @@ function ongoingCopy(input: TimerNotificationInput): { title: string; body: stri
   }
   if (input.endsAt != null) {
     return {
-      title: `${input.label} · estudando`,
-      body: `Termina às ${timerClock(input.endsAt)} · restam ${formatMin(input.remainingMs / 60000)}`,
+      title: `${input.label} · ${remainingClock(input.remainingMs)} restantes`,
+      body: `Termina às ${timerClock(input.endsAt)}`,
     };
   }
   return {
-    title: `${input.label} · estudando`,
-    body: `Restam ${formatMin(input.remainingMs / 60000)}`,
+    title: `${input.label} · ${remainingClock(input.remainingMs)} restantes`,
+    body: "Estudando",
   };
 }
 
@@ -634,7 +644,6 @@ export function cancelTimerNotifications(): Promise<void> {
   queuedTimerCommand = { type: "cancel" };
   return flushTimerCommands().then(() => undefined);
 }
-
 
 /* ------------------------------------------------------------------ *
  * Permissão na web (Notification API + service worker)

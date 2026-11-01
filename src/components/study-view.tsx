@@ -197,7 +197,7 @@ export function QuestionCard({
   const diagram = sanitizeSvg(item.diagramSvg);
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-lg leading-relaxed">{item.prompt}</p>
+      <p className="text-base leading-relaxed">{item.prompt}</p>
       {diagram ? <div className="rounded-xl border border-border bg-surface p-3" dangerouslySetInnerHTML={{ __html: diagram }} /> : null}
       <div className="flex flex-col gap-2" role="listbox" aria-label="Alternativas">
         {item.choices.map((choice, index) => {
@@ -213,7 +213,7 @@ export function QuestionCard({
               disabled={confirmed}
               onClick={() => onSelect(index)}
               className={cn(
-                "min-h-12 rounded-xl border px-3 py-2 text-left",
+                "min-h-14 rounded-xl border px-3 py-2.5 text-left text-base leading-relaxed",
                 isRight && "border-primary bg-primary/15",
                 isWrong && "border-clay text-clay-text",
                 !isRight && !isWrong && isSel && "border-primary",
@@ -230,12 +230,12 @@ export function QuestionCard({
       {!confirmed ? (
         <div>
           <Button variant="ghost" onClick={onHint}>{showHint ? "Esconder dica" : "Quero uma dica"}</Button>
-          {showHint ? <p className="mt-2 rounded-xl bg-surface-2 p-3 text-sm leading-relaxed">{item.hint || "Tenta pelo conceito central do pacote."}</p> : null}
+          {showHint ? <p className="mt-2 rounded-xl bg-surface-2 p-3 text-base leading-relaxed">{item.hint || "Tenta pelo conceito central do pacote."}</p> : null}
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-sm font-semibold">{selected === item.correctIndex ? "Acertou." : "Ainda não."}</p>
-          <p className="mt-2 text-sm leading-relaxed">{altText || item.explanation}</p>
+          <p className="text-base font-semibold">{selected === item.correctIndex ? "Acertou." : "Ainda não."}</p>
+          <p className="mt-2 text-base leading-relaxed">{altText || item.explanation}</p>
           <Button className="mt-3" variant="surface" onClick={onOther} disabled={otherBusy}>
             {otherBusy ? "Reformulando…" : "Explique de outro jeito"}
           </Button>

@@ -19,8 +19,9 @@ function Frame() {
   const { ready, loadError, settings, days, sessions, notifyLog, keys, seeded, onboardingDone, rememberNotify } = useStudy();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
-  // Modo foco: a sessão de estudo esconde a navegação inferior.
-  const focusMode = path === "/sessao";
+  // Modo foco: a sessão de estudo esconde a navegação inferior para o timer
+  // ocupar a tela inteira (qualquer subrota de /sessao continua em foco).
+  const focusMode = path === "/sessao" || path.startsWith("/sessao/");
 
   // Primeira abertura (ou revisão pendente): a introdução mora fora da barra
   // de navegação. Chave salva ou planilha importada contam como "já feito".
@@ -117,10 +118,7 @@ function Frame() {
           {loadError ? <p className="px-5 pt-4 text-sm text-clay-text">{loadError}</p> : null}
           <main
             id="conteudo"
-            className={cn(
-              "px-4 py-6 md:px-8 md:py-8 md:pb-20",
-              focusMode ? "pb-6" : "pb-[calc(6rem_+_env(safe-area-inset-bottom))]",
-            )}
+            className="px-4 py-6 pb-[calc(6rem_+_env(safe-area-inset-bottom))] md:px-8 md:py-8 md:pb-20"
           >
             <Outlet />
           </main>

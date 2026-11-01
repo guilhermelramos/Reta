@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { MessageCircle, Pause, Play } from "lucide-react";
 import { FlashcardDeck, GeneratePackage } from "@/components/generate-package";
 import { LessonView } from "@/components/lesson-view";
 import { ErrorReasonPicker } from "@/components/mistake-reason";
@@ -8,9 +10,12 @@ import { TeacherChat } from "@/components/teacher-chat";
 import { ButtonSpinner } from "@/components/feedback/button-spinner";
 import { ErrorState } from "@/components/feedback/error-state";
 import { InlineError } from "@/components/feedback/inline-error";
+import { Snackbar } from "@/components/feedback/snackbar";
 import { Button } from "@/components/ui/button";
+import { useBackOverlay } from "@/lib/android/use-back-overlay";
 import { isRichPackage } from "@/lib/ai/package.functions";
 import { blockMissingCopy, describeError, type ErrorCopy } from "@/lib/feedback/error-copy";
+import { blockDoneHaptic } from "@/lib/native/haptics";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
 import {
   clearActiveSession,
@@ -20,31 +25,50 @@ import {
 } from "@/lib/study/db";
 import { bumpLevel, emptyFlow, pickPractice, questionFor } from "@/lib/study/flow";
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
-import { cancelTimerNotifications, syncTimerNotifications } from "@/lib/native/notifications";
+import {
+  cancelTimerNotifications,
+  requestNativeNotifications,
+  syncTimerNotifications,
+} from "@/lib/native/notifications";
 import { notifyBlockDone } from "@/lib/study/notify";
 import { blockHeading } from "@/lib/study/outline";
+import {
+  EXACT_ALARM_PROMPT,
+  exactAlarmsAlreadyAsked,
+  rememberExactAlarmsAsked,
+  shouldAskExactAlarms,
+} from "@/lib/study/exact-alarm";
+import { completedSnackbarText, endDialogTitle, sessionTimerView } from "@/lib/study/session-timer";
 import { newMistakeSrs } from "@/lib/study/srs";
 import { useStudy } from "@/lib/study/store";
 import {
-  formatClock,
   formatMin,
   saoPauloToday,
   timerElapsedMs,
   timerExpired,
   timerFromSession,
   timerPause,
-  timerRemainingMs,
   timerStart,
   timerToSession,
 } from "@/lib/study/time";
 import { pauseTimerPlan, restoreTimerPlan, resumeTimerPlan } from "@/lib/study/timer-plan";
 import { KIND_LABEL } from "@/lib/study/types";
-import type { BlockKind, ErrorReason, QuizItem, SessionMode, StudyPackage, StudySession, Subtopic } from "@/lib/study/types";
+import type {
+  BlockKind,
+  ErrorReason,
+  QuizItem,
+  SessionMode,
+  StudyPackage,
+  StudySession,
+  Subtopic,
+} from "@/lib/study/types";
 
 export const Route = createFileRoute("/_shell/sessao")({
   validateSearch: (search: Record<string, unknown>) => ({
     dia: typeof search.dia === "string" ? search.dia : "",
-    bloco: (search.bloco === "B" || search.bloco === "R" || search.bloco === "L" ? search.bloco : "A") as BlockKind,
+    bloco: (search.bloco === "B" || search.bloco === "R" || search.bloco === "L"
+      ? search.bloco
+      : "A") as BlockKind,
     modo: (search.modo === "15" ? "15" : "cheio") as SessionMode,
     auto: search.auto === 1 || search.auto === "1" ? 1 : 0,
   }),
@@ -64,10 +88,6 @@ function online(): boolean {
   return typeof navigator === "undefined" || navigator.onLine !== false;
 }
 
-function liveSeconds(session: StudySession, now: number): number {
-  return timerElapsedMs(timerFromSession(session), now) / 1000;
-}
-
 function freeze(session: StudySession, now: number): StudySession {
   return { ...session, ...timerToSession(timerPause(timerFromSession(session), now), now) };
 }
@@ -76,7 +96,10 @@ function blockKeyOf(session: Pick<StudySession, "date" | "kind" | "mode">): stri
   return `${session.date}:${session.kind}:${session.mode}`;
 }
 
-function activeRecordOf(session: StudySession, timer = timerFromSession(session)): ActiveSessionRecord {
+function activeRecordOf(
+  session: StudySession,
+  timer = timerFromSession(session),
+): ActiveSessionRecord {
   return {
     blockKey: blockKeyOf(session),
     sessionId: session.id,
@@ -169,8 +192,10 @@ function withFlow(session: StudySession): StudySession {
 function briefOf(pkg: StudyPackage, sub?: Subtopic): string {
   const lines = [
     pkg.essence.join("\n"),
-    ...(sub?.beats.flatMap((beat) => [`## ${beat.heading}`, ...beat.paragraphs, beat.whyExam]) ?? []),
-    ...(sub?.concepts.map((concept) => `Conceito ${concept.term}: ${concept.meaning}`) ?? pkg.concepts.map((concept) => `${concept.term}: ${concept.meaning}`)),
+    ...(sub?.beats.flatMap((beat) => [`## ${beat.heading}`, ...beat.paragraphs, beat.whyExam]) ??
+      []),
+    ...(sub?.concepts.map((concept) => `Conceito ${concept.term}: ${concept.meaning}`) ??
+      pkg.concepts.map((concept) => `${concept.term}: ${concept.meaning}`)),
     ...(sub?.pitfalls.map((pit) => `Pegadinha ${pit.mistake}`) ?? []),
   ];
   return lines.join("\n").slice(0, 6000);
@@ -194,6 +219,9 @@ function SessionPage() {
   const [chat, setChat] = useState(false);
   const [quote, setQuote] = useState<string | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [exactPrompt, setExactPrompt] = useState(false);
+  const [timerSyncNonce, setTimerSyncNonce] = useState(0);
+  const [snack, setSnack] = useState<{ text: string; restore: StudySession } | null>(null);
   const [barOpen, setBarOpen] = useState(false);
   const [restored, setRestored] = useState(false);
   const [wrongMistakeId, setWrongMistakeId] = useState<string | null>(null);
@@ -201,6 +229,7 @@ function SessionPage() {
   const tried = useRef(false);
   const restoredRef = useRef(false);
   const alertedRef = useRef("");
+  const exactPromptedRef = useRef(false);
   const sessionRef = useRef<StudySession | null>(null);
   const studyRef = useRef(study);
   studyRef.current = study;
@@ -287,7 +316,15 @@ function SessionPage() {
       live = false;
       window.clearTimeout(fallback);
     };
-  }, [study, study.ready, study.sessions, study.upsertSession, search.dia, search.bloco, search.modo]);
+  }, [
+    study,
+    study.ready,
+    study.sessions,
+    study.upsertSession,
+    search.dia,
+    search.bloco,
+    search.modo,
+  ]);
 
   // Mantém alarme de término e notificação persistente alinhados à sessão.
   // Também cobre a reabertura do app: se `endsAt` ainda está no futuro, o
@@ -320,15 +357,39 @@ function SessionPage() {
 
     void syncTimerNotifications({
       sessionId: current.id,
-      label: sessionLabel ? `${KIND_LABEL[current.kind]} · ${sessionLabel}` : KIND_LABEL[current.kind],
+      label: sessionLabel
+        ? `${KIND_LABEL[current.kind]} · ${sessionLabel}`
+        : KIND_LABEL[current.kind],
       active: sessionTimerActive,
       running: current.running,
       endsAt: plan.endsAt,
       remainingMs: plan.remainingMs,
       expired: plan.expired,
       now: nowMs,
+    }).then((result) => {
+      // Android liberou notificações mas negou alarmes exatos: pergunta uma
+      // única vez, na primeira vez que o timer começa a correr. O alarme
+      // inexato já foi agendado e continua valendo se a pessoa recusar.
+      if (!result.native || !result.inexactFallback) return;
+      const live = sessionRef.current;
+      if (!live || live.status !== "active" || !live.running) return;
+      if (exactPromptedRef.current || exactAlarmsAlreadyAsked()) return;
+      if (
+        !shouldAskExactAlarms({
+          native: result.native,
+          asked: false,
+          started: true,
+          permission: result.permission,
+          exactAlarms: "denied",
+        })
+      ) {
+        return;
+      }
+      rememberExactAlarmsAsked();
+      exactPromptedRef.current = true;
+      setExactPrompt(true);
     });
-  }, [timerSyncKey, sessionLabel, sessionTimerActive]);
+  }, [timerSyncKey, sessionLabel, sessionTimerActive, timerSyncNonce]);
 
   // Fim do tempo do bloco / Revisão Relâmpago: vibra uma vez e notifica.
   useEffect(() => {
@@ -348,6 +409,10 @@ function SessionPage() {
 
   useScreenWakeLock(Boolean(session && session.status === "active" && session.running));
 
+  // Diálogos são overlays: o voltar/gesto do Android fecha só o diálogo.
+  useBackOverlay(confirmEnd, () => setConfirmEnd(false));
+  useBackOverlay(exactPrompt, () => setExactPrompt(false));
+
   useEffect(() => {
     if (!block || !isModernaBlock(block.content)) return;
     if (!pkg) {
@@ -359,13 +424,26 @@ function SessionPage() {
       return;
     }
     if (pkg.schemaVersion === 2 && coverageProblems(pkg, block.content).length === 0) return;
-    void study.saveBuilt(buildHumanasPackage({ id: `${search.dia}:${search.bloco}`, date: search.dia, kind: search.bloco, topic: block.content }));
+    void study.saveBuilt(
+      buildHumanasPackage({
+        id: `${search.dia}:${search.bloco}`,
+        date: search.dia,
+        kind: search.bloco,
+        topic: block.content,
+      }),
+    );
   }, [block, pkg, search.dia, search.bloco, study]);
 
   useEffect(() => {
     if (!restored || sid || !block || block.plannedMin <= 0) return;
     const key = `${search.dia}:${search.bloco}:${search.modo}`;
-    const active = study.sessions.find((item) => item.date === search.dia && item.kind === search.bloco && item.mode === search.modo && item.status === "active");
+    const active = study.sessions.find(
+      (item) =>
+        item.date === search.dia &&
+        item.kind === search.bloco &&
+        item.mode === search.modo &&
+        item.status === "active",
+    );
     if (active) {
       setSid(active.id);
       return;
@@ -434,7 +512,8 @@ function SessionPage() {
       if (!current || confirmed) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-      if (event.key >= "1" && Number(event.key) <= current.choices.length) setSelected(Number(event.key) - 1);
+      if (event.key >= "1" && Number(event.key) <= current.choices.length)
+        setSelected(Number(event.key) - 1);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -516,9 +595,34 @@ function SessionPage() {
     if (!session) return;
     pendingSessions.delete(`${session.date}:${session.kind}:${session.mode}`);
     const frozen = freeze(session, Date.now());
-    await save({ ...frozen, status: "done", step: "dominio", endedAt: Date.now(), endsAt: null, flow: { ...(frozen.flow ?? emptyFlow()), phase: "bloco" } });
+    await save({
+      ...frozen,
+      status: "done",
+      step: "dominio",
+      endedAt: Date.now(),
+      endsAt: null,
+      flow: { ...(frozen.flow ?? emptyFlow()), phase: "bloco" },
+    });
     void cancelTimerNotifications();
     setConfirmEnd(false);
+    setSnack({ text: completedSnackbarText(frozen.elapsedSec), restore: frozen });
+    void blockDoneHaptic();
+  }
+
+  /** Desfaz o encerramento: volta a sessão para "ativa" com o tempo já salvo. */
+  async function undoFinish(restore: StudySession) {
+    setSnack(null);
+    pendingSessions.set(`${restore.date}:${restore.kind}:${restore.mode}`, restore.id);
+    setNow(Date.now());
+    await save(restore);
+  }
+
+  /** "Permitir" do diálogo de alarme exato: abre a tela do Android e reagenda. */
+  async function allowExactAlarms() {
+    setExactPrompt(false);
+    await requestNativeNotifications({ askExact: true });
+    setTimerSyncNonce((value) => value + 1);
+    setNow(Date.now());
   }
 
   async function grade() {
@@ -528,11 +632,14 @@ function SessionPage() {
     setErrorReason(null);
     const ok = selected === current.correctIndex;
     let nextFlow = { ...(session.flow ?? emptyFlow()) };
-    if (!trap && nextFlow.phase === "diag" && !ok) nextFlow = { ...nextFlow, diagMiss: true, practiceLevel: "facil" };
+    if (!trap && nextFlow.phase === "diag" && !ok)
+      nextFlow = { ...nextFlow, diagMiss: true, practiceLevel: "facil" };
     if (!trap && nextFlow.phase === "pratica") {
       nextFlow = {
         ...nextFlow,
-        practiceAsked: nextFlow.practiceAsked.includes(current.id) ? nextFlow.practiceAsked : [...nextFlow.practiceAsked, current.id],
+        practiceAsked: nextFlow.practiceAsked.includes(current.id)
+          ? nextFlow.practiceAsked
+          : [...nextFlow.practiceAsked, current.id],
         practiceLevel: bumpLevel(nextFlow.practiceLevel, ok),
       };
     }
@@ -542,7 +649,10 @@ function SessionPage() {
       correct: session.correct + (ok ? 1 : 0),
       wrong: session.wrong + (ok ? 0 : 1),
       diagCorrect: nextFlow.phase === "diag" && nextFlow.q === 0 ? ok : session.diagCorrect,
-      missed: ok || session.missed.includes(current.id) ? session.missed : [...session.missed, current.id],
+      missed:
+        ok || session.missed.includes(current.id)
+          ? session.missed
+          : [...session.missed, current.id],
     });
     if (!ok) {
       const today = saoPauloToday();
@@ -593,7 +703,8 @@ function SessionPage() {
       void save({ ...session, flow: { ...currentFlow } });
       return;
     }
-    if (currentFlow.phase === "checagem") void save({ ...session, flow: { ...currentFlow, phase: "fecho" } });
+    if (currentFlow.phase === "checagem")
+      void save({ ...session, flow: { ...currentFlow, phase: "fecho" } });
   }
 
   function closeSub(status: "ok" | "later") {
@@ -617,7 +728,12 @@ function SessionPage() {
     const currentFlow = session.flow ?? emptyFlow();
     void save({
       ...session,
-      flow: { ...emptyFlow(), sub: index, checks: currentFlow.checks, phase: currentFlow.checks[target.id] ? "aula" : "diag" },
+      flow: {
+        ...emptyFlow(),
+        sub: index,
+        checks: currentFlow.checks,
+        phase: currentFlow.checks[target.id] ? "aula" : "diag",
+      },
     });
   }
 
@@ -625,87 +741,184 @@ function SessionPage() {
     const sel = window.getSelection();
     const text = sel?.toString().replace(/\s+/g, " ").trim() ?? "";
     if (text.length < 12 || text.length > 380) return;
-    const parent = sel?.anchorNode instanceof Element ? sel.anchorNode : sel?.anchorNode?.parentElement;
+    const parent =
+      sel?.anchorNode instanceof Element ? sel.anchorNode : sel?.anchorNode?.parentElement;
     if (parent?.closest("button, a, input, textarea")) return;
     setQuote(text);
   }
 
-  const elapsed = session ? liveSeconds(session, now) : 0;
-  const studied = Math.floor(elapsed / 60);
-  const remainingSec = session ? timerRemainingMs(session.budgetMin, elapsed * 1000) / 1000 : 0;
-  const timeUp = session ? timerExpired(session.budgetMin, elapsed * 1000) : false;
+  const timerView = session
+    ? sessionTimerView({ budgetMin: session.budgetMin, timer: timerFromSession(session), now })
+    : null;
+  const elapsed = timerView?.elapsedSec ?? 0;
+  const studied = timerView?.studiedMin ?? 0;
+  const timeUp = timerView?.expired ?? false;
   const timerLabel = session?.running ? "Pausar" : elapsed > 0 ? "Retomar" : "Iniciar";
+  const timerStatus = timeUp
+    ? "Tempo cumprido"
+    : session?.running
+      ? `Restam ${timerView?.remainingClock ?? "00:00"}`
+      : elapsed > 0
+        ? "Pausado"
+        : "Pronto para começar";
   const doneCount = subs.filter((item) => flow.checks[item.id]).length;
-  const asking = Boolean(current && !confirmed && (trap || flow.phase === "diag" || flow.phase === "pratica" || flow.phase === "checagem"));
-  const recentMistakes = study.mistakes.filter((item) => item.date === search.dia && item.kind === search.bloco).slice(-5).map((item) => item.prompt);
+  const asking = Boolean(
+    current &&
+    !confirmed &&
+    (trap || flow.phase === "diag" || flow.phase === "pratica" || flow.phase === "checagem"),
+  );
+  const recentMistakes = study.mistakes
+    .filter((item) => item.date === search.dia && item.kind === search.bloco)
+    .slice(-5)
+    .map((item) => item.prompt);
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4" onMouseUp={onSelectText}>
-      <header>
-        <p className="text-sm text-muted">
-          <Link to="/" className="inline-flex min-h-12 items-center underline">Hoje</Link>
-          {search.modo === "15" ? " · 15 min" : ""}
-        </p>
-        <h1 className="mt-1 text-3xl">{pkg?.displayTitle || heading.title}</h1>
-        <ul className="mt-2 flex flex-wrap gap-2">
-          {(pkg?.codes?.length ? pkg.codes : heading.codes).map((code) => (
-            <li key={code} className="rounded-full border border-border px-2 py-1 text-xs text-muted">{code}</li>
-          ))}
-        </ul>
-      </header>
-
-      {!isRichPackage(pkg) && !isModernaBlock(block.content) && block.plannedMin > 0 ? (
-        <GeneratePackage date={search.dia} kind={search.bloco} topic={block.content} minutes={block.plannedMin} />
-      ) : null}
-
-      {session && session.status === "active" ? (
-        <div className="sticky top-0 z-20 -mx-4 border-b border-border bg-bg/95 px-4 backdrop-blur">
-          <div className="flex h-12 items-center gap-2">
-            <button type="button" className="min-h-12 min-w-0 flex-1 text-left" onClick={() => setBarOpen((v) => !v)} aria-expanded={barOpen}>
-              <span className="font-display text-xl tabular-nums" role="timer">{formatClock(elapsed)}</span>
-              <span className="ml-3 text-xs text-muted">
-                Estudado: {studied} min
-                {timeUp ? " · tempo cumprido" : session.running ? ` · restam ${formatClock(remainingSec)}` : ""}
-                {flow.phase === "aula" && !barOpen ? " · toque para as seções" : ""}
-              </span>
+      {session && session.status === "active" && timerView ? (
+        <header className="sticky top-0 z-30 -mx-4 border-b border-border bg-bg/95 backdrop-blur">
+          <div className="flex h-16 items-center gap-3 px-4">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold leading-5 text-muted">
+                {KIND_LABEL[session.kind]} · {sessionLabel}
+              </p>
+              <p
+                className="font-mono text-[32px] leading-8 tabular-nums text-fg"
+                role="timer"
+                aria-label={`Tempo estudado: ${timerView.clock}`}
+              >
+                {timerView.clock}
+              </p>
+            </div>
+            <Button
+              className="h-14 min-h-14 shrink-0 rounded-full px-5"
+              aria-label={
+                timerLabel === "Pausar"
+                  ? "Pausar o cronômetro"
+                  : timerLabel === "Retomar"
+                    ? "Retomar o cronômetro"
+                    : "Iniciar o cronômetro"
+              }
+              onClick={toggleTimer}
+            >
+              {session.running ? (
+                <Pause className="size-5" aria-hidden />
+              ) : (
+                <Play className="size-5" aria-hidden />
+              )}
+              {timerLabel}
+            </Button>
+          </div>
+          <div
+            className="h-1 bg-surface-2"
+            role="progressbar"
+            aria-label="Progresso do bloco"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(timerView.progress * 100)}
+          >
+            <div
+              className="h-full bg-primary transition-[width] duration-500 motion-reduce:transition-none"
+              style={{ width: `${Math.round(timerView.progress * 100)}%` }}
+            />
+          </div>
+          <div className="flex items-center gap-1 px-4">
+            <button
+              type="button"
+              className="min-h-12 min-w-0 flex-1 text-left text-xs text-muted"
+              aria-expanded={barOpen}
+              onClick={() => setBarOpen((value) => !value)}
+            >
+              {timerStatus} · {studied} min estudados
+              {flow.phase === "aula" && !barOpen ? " · seções" : ""}
             </button>
-            <Button onClick={toggleTimer}>{timerLabel}</Button>
+            <button
+              type="button"
+              className="min-h-12 shrink-0 px-2 text-sm font-semibold underline decoration-border underline-offset-4"
+              onClick={() => setConfirmEnd(true)}
+            >
+              Encerrar
+            </button>
           </div>
           {barOpen ? (
-            <div className="flex flex-col gap-2 pb-3">
+            <div className="flex flex-col gap-2 border-t border-border px-4 pb-3 pt-2">
               <div className="flex flex-wrap items-center gap-2">
-                <Button variant="surface" onClick={() => extendBudget(5)}>+5 min</Button>
-                <Button variant="ghost" onClick={() => setConfirmEnd(true)}>Encerrar</Button>
-                <p className="text-xs text-muted">Meta deste modo: {formatMin(session.budgetMin)}</p>
+                <Button variant="surface" onClick={() => extendBudget(5)}>
+                  +5 min
+                </Button>
+                <p className="text-xs text-muted">
+                  Meta deste modo: {formatMin(session.budgetMin)}
+                </p>
               </div>
               {flow.phase === "aula" && !trap ? (
                 <nav className="flex gap-2 overflow-x-auto" aria-label="Seções da aula">
                   {SECTIONS.map(([id, label]) => (
-                    <button key={id} type="button" className="min-h-12 shrink-0 rounded-full border border-border px-3 py-2 text-xs" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                    <button
+                      key={id}
+                      type="button"
+                      className="min-h-12 shrink-0 rounded-full border border-border px-3 py-2 text-xs"
+                      onClick={() =>
+                        document
+                          .getElementById(id)
+                          ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                      }
+                    >
                       {label}
                     </button>
                   ))}
-                  <button type="button" className="min-h-12 shrink-0 rounded-full border border-border px-3 py-2 text-xs" onClick={() => void save({ ...session, flow: { ...flow, phase: "pratica", q: 0 } })}>
+                  <button
+                    type="button"
+                    className="min-h-12 shrink-0 rounded-full border border-border px-3 py-2 text-xs"
+                    onClick={() =>
+                      void save({ ...session, flow: { ...flow, phase: "pratica", q: 0 } })
+                    }
+                  >
                     Praticar
                   </button>
                 </nav>
               ) : null}
             </div>
           ) : null}
-        </div>
+        </header>
+      ) : null}
+
+      <header>
+        <p className="text-sm text-muted">
+          <Link to="/" className="inline-flex min-h-12 items-center underline">
+            Hoje
+          </Link>
+          {search.modo === "15" ? " · 15 min" : ""}
+        </p>
+        <h1 className="mt-1 text-3xl">{pkg?.displayTitle || heading.title}</h1>
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {(pkg?.codes?.length ? pkg.codes : heading.codes).map((code) => (
+            <li
+              key={code}
+              className="rounded-full border border-border px-2 py-1 text-xs text-muted"
+            >
+              {code}
+            </li>
+          ))}
+        </ul>
+      </header>
+
+      {!isRichPackage(pkg) && !isModernaBlock(block.content) && block.plannedMin > 0 ? (
+        <GeneratePackage
+          date={search.dia}
+          kind={search.bloco}
+          topic={block.content}
+          minutes={block.plannedMin}
+        />
       ) : null}
 
       {session && timeUp && session.status === "active" ? (
         <section className="rounded-xl border border-primary/40 bg-surface p-4">
           <p className="text-xs text-primary">Tempo do bloco cumprido</p>
           <p className="mt-1 text-sm leading-relaxed">
-            Você já cumpriu {formatMin(Math.max(1, session.budgetMin))} neste bloco. Fecha o bloco agora ou estica mais 5 min.
+            Você já cumpriu {formatMin(Math.max(1, session.budgetMin))} neste bloco. Fecha o bloco
+            agora ou estica mais 5 min.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              variant="surface"
-              onClick={() => extendBudget(5)}
-            >
+            <Button variant="surface" onClick={() => extendBudget(5)}>
               +5 min
             </Button>
             <Button onClick={() => setConfirmEnd(true)}>Encerrar bloco</Button>
@@ -713,33 +926,39 @@ function SessionPage() {
         </section>
       ) : null}
 
-      {confirmEnd ? (
-        <section className="rounded-xl border border-border bg-surface p-4">
-          <p>Encerrar e salvar o tempo estudado até aqui?</p>
-          <div className="mt-3 flex gap-2">
-            <Button onClick={() => void finish()}>Salvar e encerrar</Button>
-            <Button variant="ghost" onClick={() => setConfirmEnd(false)}>Continuar estudando</Button>
-          </div>
-        </section>
-      ) : null}
-
       {subs.length ? (
         <section>
           <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-surface-2">
-            <div className="h-full bg-primary" style={{ width: `${subs.length ? Math.round((doneCount / subs.length) * 100) : 0}%` }} />
+            <div
+              className="h-full bg-primary"
+              style={{ width: `${subs.length ? Math.round((doneCount / subs.length) * 100) : 0}%` }}
+            />
           </div>
           <ul className="flex flex-col gap-2">
             {subs.map((item, index) => {
               const state = flow.checks[item.id];
-              const here = index === flow.sub && session?.status === "active" && flow.phase !== "bloco";
+              const here =
+                index === flow.sub && session?.status === "active" && flow.phase !== "bloco";
               return (
                 <li key={item.id}>
-                  <button type="button" onClick={() => jump(index)} className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border border-border px-3 py-2 text-left">
+                  <button
+                    type="button"
+                    onClick={() => jump(index)}
+                    className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border border-border px-3 py-2 text-left"
+                  >
                     <span>
                       <span className="mr-2 text-xs text-primary">{item.code}</span>
                       {item.title}
                     </span>
-                    <span className="shrink-0 text-xs text-muted">{here ? "agora" : state === "ok" ? "entendido" : state === "later" ? "revisar" : `${item.minutes} min`}</span>
+                    <span className="shrink-0 text-xs text-muted">
+                      {here
+                        ? "agora"
+                        : state === "ok"
+                          ? "entendido"
+                          : state === "later"
+                            ? "revisar"
+                            : `${item.minutes} min`}
+                    </span>
                   </button>
                 </li>
               );
@@ -769,21 +988,52 @@ function SessionPage() {
         </section>
       ) : null}
 
-      {pkg && session && sub && session.status === "active" && flow.phase !== "bloco" && !trap && (flow.phase === "diag" || flow.phase === "pratica" || flow.phase === "checagem") && current ? (
+      {pkg &&
+      session &&
+      sub &&
+      session.status === "active" &&
+      flow.phase !== "bloco" &&
+      !trap &&
+      (flow.phase === "diag" || flow.phase === "pratica" || flow.phase === "checagem") &&
+      current ? (
         <section className="rounded-xl border border-border bg-surface p-4">
           <p className="text-xs text-primary">
-            {flow.phase === "diag" ? `Diagnóstico · ${flow.q + 1} de ${sub.diagnostic.length}` : flow.phase === "checagem" ? "Checagem de domínio" : `Prática · ${flow.practiceLevel}`}
+            {flow.phase === "diag"
+              ? `Diagnóstico · ${flow.q + 1} de ${sub.diagnostic.length}`
+              : flow.phase === "checagem"
+                ? "Checagem de domínio"
+                : `Prática · ${flow.practiceLevel}`}
           </p>
           {flow.phase === "diag" && flow.diagMiss && flow.q > 0 && !confirmed ? (
-            <p className="mt-2 rounded-xl bg-surface-2 p-3 text-sm leading-relaxed">Vamos do básico. {sub.concepts[0]?.meaning}</p>
+            <p className="mt-2 rounded-xl bg-surface-2 p-3 text-sm leading-relaxed">
+              Vamos do básico. {sub.concepts[0]?.meaning}
+            </p>
           ) : null}
           <div className="mt-3">
-            <QuestionCard item={current} selected={selected} confirmed={confirmed} showHint={showHint} altText="" onSelect={setSelected} onHint={() => setShowHint(true)} onOther={() => undefined} otherBusy={false} />
+            <QuestionCard
+              item={current}
+              selected={selected}
+              confirmed={confirmed}
+              showHint={showHint}
+              altText=""
+              onSelect={setSelected}
+              onHint={() => setShowHint(true)}
+              onOther={() => undefined}
+              otherBusy={false}
+            />
           </div>
           {!confirmed ? (
-            <Button className="mt-4" disabled={selected == null} onClick={() => void grade()}>Confirmar</Button>
+            <Button className="mt-4" disabled={selected == null} onClick={() => void grade()}>
+              Confirmar
+            </Button>
           ) : (
-            <Button className="mt-4" onClick={advance}>{flow.phase === "diag" && flow.q >= sub.diagnostic.length - 1 ? "Ir para a aula" : flow.phase === "checagem" ? "Ver o fechamento" : "Continuar"}</Button>
+            <Button className="mt-4" onClick={advance}>
+              {flow.phase === "diag" && flow.q >= sub.diagnostic.length - 1
+                ? "Ir para a aula"
+                : flow.phase === "checagem"
+                  ? "Ver o fechamento"
+                  : "Continuar"}
+            </Button>
           )}
         </section>
       ) : null}
@@ -792,12 +1042,26 @@ function SessionPage() {
         <section className="rounded-xl border border-clay/40 bg-surface p-4">
           <p className="text-xs text-clay-text">Pegadinha</p>
           <div className="mt-3">
-            <QuestionCard item={trap} selected={selected} confirmed={confirmed} showHint={showHint} altText="" onSelect={setSelected} onHint={() => setShowHint(true)} onOther={() => undefined} otherBusy={false} />
+            <QuestionCard
+              item={trap}
+              selected={selected}
+              confirmed={confirmed}
+              showHint={showHint}
+              altText=""
+              onSelect={setSelected}
+              onHint={() => setShowHint(true)}
+              onOther={() => undefined}
+              otherBusy={false}
+            />
           </div>
           {!confirmed ? (
-            <Button className="mt-4" disabled={selected == null} onClick={() => void grade()}>Confirmar</Button>
+            <Button className="mt-4" disabled={selected == null} onClick={() => void grade()}>
+              Confirmar
+            </Button>
           ) : (
-            <Button className="mt-4" variant="surface" onClick={() => setTrap(null)}>Voltar à aula</Button>
+            <Button className="mt-4" variant="surface" onClick={() => setTrap(null)}>
+              Voltar à aula
+            </Button>
           )}
         </section>
       ) : null}
@@ -814,27 +1078,47 @@ function SessionPage() {
               void study.setMistakeErrorReason(wrongMistakeId, reason);
             }}
           />
-          <p className="mt-2 text-xs text-muted">A revisão espaçada já deixou este erro para hoje.</p>
+          <p className="mt-2 text-xs text-muted">
+            A revisão espaçada já deixou este erro para hoje.
+          </p>
         </section>
       ) : null}
 
-      {pkg && pkg.flashcards.length && flow.phase === "aula" && !trap ? <FlashcardDeck cards={pkg.flashcards} /> : null}
+      {pkg && pkg.flashcards.length && flow.phase === "aula" && !trap ? (
+        <FlashcardDeck cards={pkg.flashcards} />
+      ) : null}
 
       {pkg && session && sub && session.status === "active" && flow.phase === "aula" && !trap ? (
-        <LessonView sub={sub} onTrain={(item) => { setTrap(item); setConfirmed(false); setSelected(null); setShowHint(false); }} />
+        <LessonView
+          sub={sub}
+          onTrain={(item) => {
+            setTrap(item);
+            setConfirmed(false);
+            setSelected(null);
+            setShowHint(false);
+          }}
+        />
       ) : null}
 
       {pkg && session && sub && flow.phase === "aula" && !trap ? (
-        <Button onClick={() => void save({ ...session, flow: { ...flow, phase: "pratica", q: 0 } })}>Ir para a prática</Button>
+        <Button
+          onClick={() => void save({ ...session, flow: { ...flow, phase: "pratica", q: 0 } })}
+        >
+          Ir para a prática
+        </Button>
       ) : null}
 
       {session && sub && flow.phase === "fecho" ? (
         <section className="rounded-xl border border-border bg-surface p-4">
           <h2 className="text-2xl">{sub.title}</h2>
-          <p className="mt-2 text-sm text-muted">Marque como você ficou neste subtópico. Dá para voltar pelo checklist.</p>
+          <p className="mt-2 text-sm text-muted">
+            Marque como você ficou neste subtópico. Dá para voltar pelo checklist.
+          </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button onClick={() => closeSub("ok")}>Entendi</Button>
-            <Button variant="surface" onClick={() => closeSub("later")}>Revisar depois</Button>
+            <Button variant="surface" onClick={() => closeSub("later")}>
+              Revisar depois
+            </Button>
           </div>
         </section>
       ) : null}
@@ -842,16 +1126,33 @@ function SessionPage() {
       {session && (flow.phase === "bloco" || session.status === "done") ? (
         <section className="rounded-xl border border-primary/40 bg-surface p-5">
           <p className="text-xs text-primary">Checagem do bloco</p>
-          <h2 className="mt-1 text-3xl">{doneCount === subs.length && subs.length ? "Bloco percorrido" : "Parou no meio"}</h2>
-          <p className="mt-2 text-sm text-muted">Estudado: {formatMin(Math.round((session.status === "done" ? session.elapsedSec : elapsed) / 60))} · {session.correct} acertos · {session.wrong} erros</p>
+          <h2 className="mt-1 text-3xl">
+            {doneCount === subs.length && subs.length ? "Bloco percorrido" : "Parou no meio"}
+          </h2>
+          <p className="mt-2 text-sm text-muted">
+            Estudado:{" "}
+            {formatMin(Math.round((session.status === "done" ? session.elapsedSec : elapsed) / 60))}{" "}
+            · {session.correct} acertos · {session.wrong} erros
+          </p>
           <ul className="mt-3 space-y-1 text-sm">
             {subs.map((item) => (
-              <li key={item.id}>{item.code} · {flow.checks[item.id] === "ok" ? "entendido" : flow.checks[item.id] === "later" ? "revisar depois" : "ainda não fechou"}</li>
+              <li key={item.id}>
+                {item.code} ·{" "}
+                {flow.checks[item.id] === "ok"
+                  ? "entendido"
+                  : flow.checks[item.id] === "later"
+                    ? "revisar depois"
+                    : "ainda não fechou"}
+              </li>
             ))}
           </ul>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button asChild><Link to="/">Hoje</Link></Button>
-            <Button variant="surface" asChild><Link to="/erros">Caderno de erros</Link></Button>
+            <Button asChild>
+              <Link to="/">Hoje</Link>
+            </Button>
+            <Button variant="surface" asChild>
+              <Link to="/erros">Caderno de erros</Link>
+            </Button>
           </div>
         </section>
       ) : null}
@@ -860,7 +1161,13 @@ function SessionPage() {
         <ul className="text-xs leading-relaxed text-muted">
           {pkg.sources.map((source) => (
             <li key={source.title}>
-              {source.url ? <a className="underline" href={source.url} target="_blank" rel="noreferrer">{source.title}</a> : source.title}
+              {source.url ? (
+                <a className="underline" href={source.url} target="_blank" rel="noreferrer">
+                  {source.title}
+                </a>
+              ) : (
+                source.title
+              )}
               {source.note ? ` — ${source.note}` : ""}
             </li>
           ))}
@@ -868,15 +1175,90 @@ function SessionPage() {
       ) : null}
 
       {quote && !chat ? (
-        <button type="button" className="fixed bottom-44 right-4 z-40 min-h-12 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-fg" onClick={() => setChat(true)}>
+        <button
+          type="button"
+          className="fixed bottom-[calc(6.5rem_+_env(safe-area-inset-bottom))] right-4 z-40 inline-flex min-h-12 max-w-[calc(100vw-2rem)] items-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-fg shadow-lg md:right-8"
+          onClick={() => setChat(true)}
+        >
           Perguntar sobre isso
         </button>
       ) : null}
       {!chat ? (
-        <button type="button" className="fixed bottom-28 right-4 z-40 min-h-12 rounded-full border border-primary bg-bg px-4 text-sm font-semibold text-primary md:bottom-6" onClick={() => setChat(true)}>
-          Perguntar ao professor
+        <button
+          type="button"
+          className="fixed bottom-[calc(1.5rem_+_env(safe-area-inset-bottom))] right-4 z-40 inline-flex h-14 min-h-14 items-center gap-2 rounded-full border border-primary bg-bg px-5 text-sm font-semibold text-primary shadow-lg md:right-8"
+          aria-label="Perguntar ao professor"
+          onClick={() => setChat(true)}
+        >
+          <MessageCircle className="size-5" aria-hidden />
+          Professor
         </button>
       ) : null}
+
+      {session ? (
+        <DialogPrimitive.Root
+          open={confirmEnd}
+          onOpenChange={(next) => {
+            if (!next) setConfirmEnd(false);
+          }}
+        >
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70" />
+            <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-border bg-surface p-6 shadow-2xl outline-none">
+              <DialogPrimitive.Title className="text-2xl">
+                {endDialogTitle(elapsed)}
+              </DialogPrimitive.Title>
+              <DialogPrimitive.Description className="mt-2 text-base leading-relaxed text-muted">
+                O tempo estudado até aqui fica salvo no bloco. Você pode voltar a ele depois.
+              </DialogPrimitive.Description>
+              <div className="mt-6 flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setConfirmEnd(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={() => void finish()}>Encerrar</Button>
+              </div>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
+      ) : null}
+
+      <DialogPrimitive.Root
+        open={exactPrompt}
+        onOpenChange={(next) => {
+          if (!next) setExactPrompt(false);
+        }}
+      >
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70" />
+          <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-border bg-surface p-6 shadow-2xl outline-none">
+            <DialogPrimitive.Title className="text-2xl">
+              Permitir alarmes exatos?
+            </DialogPrimitive.Title>
+            <DialogPrimitive.Description className="mt-2 text-base leading-relaxed text-muted">
+              {EXACT_ALARM_PROMPT}.
+            </DialogPrimitive.Description>
+            <p className="mt-3 text-sm leading-relaxed text-muted">
+              Sem isso o aviso do fim do bloco pode atrasar alguns minutos com a tela bloqueada.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setExactPrompt(false)}>
+                Agora não
+              </Button>
+              <Button onClick={() => void allowExactAlarms()}>Permitir</Button>
+            </div>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
+
+      {snack ? (
+        <Snackbar
+          message={snack.text}
+          actionLabel="Desfazer"
+          onAction={() => void undoFinish(snack.restore)}
+          onDismiss={() => setSnack(null)}
+        />
+      ) : null}
+
       <TeacherChat
         open={chat}
         onClose={() => setChat(false)}
@@ -893,10 +1275,16 @@ function SessionPage() {
         doubts={study.doubts}
         onSaveDoubt={(doubt) => void study.saveDoubt(doubt)}
         onSavePackage={(next) => void study.saveBuilt(next)}
-        makeTest={() => sub?.practice.find((item) => !(session?.flow?.practiceAsked ?? []).includes(item.id)) ?? sub?.mastery ?? null}
+        makeTest={() =>
+          sub?.practice.find((item) => !(session?.flow?.practiceAsked ?? []).includes(item.id)) ??
+          sub?.mastery ??
+          null
+        }
         quote={quote}
         onQuoteUsed={() => setQuote(null)}
         questionId={asking && current ? current.id : undefined}
+        remainingClock={timerView?.remainingClock}
+        timeUp={timeUp}
       />
     </div>
   );

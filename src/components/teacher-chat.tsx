@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Mic, X } from "lucide-react";
-import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Clock, Mic, X } from "lucide-react";
 import { Drawer } from "vaul";
 import { useBackOverlay } from "@/lib/android/use-back-overlay";
 import { QuestionCard } from "@/components/study-view";
-import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { ButtonSpinner } from "@/components/feedback/button-spinner";
 import { InlineError } from "@/components/feedback/inline-error";
@@ -51,7 +49,12 @@ function present(raw: string): { text: string; outside: boolean; cite: string; s
   return { text: text || "…", outside, cite: text.match(/«([^»]+)»/)?.[1] ?? "", svg };
 }
 
-const SHORTCUTS = ["Explique de outro jeito", "Dê um exemplo", "Resuma em 3 linhas", "Qual é a pegadinha?"] as const;
+const SHORTCUTS = [
+  "Explique de outro jeito",
+  "Dê um exemplo",
+  "Resuma em 3 linhas",
+  "Qual é a pegadinha?",
+] as const;
 
 /** Perguntas de 1 toque: evitam digitação longa no teclado do celular. */
 const QUICK_QUESTIONS = [
@@ -61,60 +64,36 @@ const QUICK_QUESTIONS = [
   "Resuma a fórmula/conceito em 3 linhas",
 ] as const;
 
-/** Detecta a largura de celular sem quebrar a hidratação do SSR. */
-function useIsMobile(): boolean {
-  const [mobile, setMobile] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 767px)");
-    const sync = () => setMobile(query.matches);
-    sync();
-    query.addEventListener("change", sync);
-    return () => query.removeEventListener("change", sync);
-  }, []);
-  return mobile;
-}
-
-/**
- * No celular o professor vira gaveta inferior (vaul) arrastável. O `Dialog`
- * interno repete o estado com `modal={false}`: sem travar rolagem, sem esconder
- * o resto da tela da acessibilidade e sem prender o foco, o enunciado e o
- * cronômetro do topo seguem legíveis e clicáveis enquanto o chat está aberto.
- * No desktop fica o painel lateral de sempre.
- */
+/** Folha inferior modal (vaul): 90% da altura, alça de arraste e volta do Android. */
 function SheetFrame({
-  mobile,
   open,
   onClose,
   children,
 }: {
-  mobile: boolean;
   open: boolean;
   onClose: () => void;
   children: ReactNode;
 }) {
-  if (!mobile) return <>{children}</>;
   return (
     <Drawer.Root
       open={open}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
-      modal={false}
       noBodyStyles
       dismissible
       shouldScaleBackground={false}
     >
       <Drawer.Portal>
-        <DialogPrimitive.Root open={open} onOpenChange={(next) => { if (!next) onClose(); }} modal={false}>
-          <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 outline-none">
-            <DialogPrimitive.Title className="sr-only">Professor IA</DialogPrimitive.Title>
-            <DialogPrimitive.Description className="sr-only">
-              Converse sobre a questão aberta. O cronômetro continua contando enquanto a gaveta está aberta.
-            </DialogPrimitive.Description>
-            <Drawer.Handle className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-border" aria-hidden />
-            {children}
-          </Drawer.Content>
-        </DialogPrimitive.Root>
+        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/60" />
+        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex h-[90dvh] max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-border bg-surface outline-none">
+          <Drawer.Title className="sr-only">Professor</Drawer.Title>
+          <Drawer.Description className="sr-only">
+            Converse sobre a questão aberta. O cronômetro continua contando enquanto a folha está
+            aberta.
+          </Drawer.Description>
+          {children}
+        </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
   );
@@ -144,6 +123,10 @@ export type TeacherChatProps = {
    * dúvidas antigas, sem o campo, continuam aparecendo no escopo do bloco.
    */
   questionId?: string;
+  /** Tempo restante do bloco para o chip no topo da folha (ex.: "23:14"). */
+  remainingClock?: string;
+  /** O bloco já cumpriu a meta. */
+  timeUp?: boolean;
 };
 
 /** Dúvidas salvas que pertencem a um bloco — e, quando informado, à questão aberta. */
@@ -173,6 +156,8 @@ export function TeacherChat({
   quote,
   onQuoteUsed,
   questionId,
+  remainingClock,
+  timeUp,
 }: TeacherChatProps) {
   const [draft, setDraft] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -186,14 +171,18 @@ export function TeacherChat({
   const [confirmed, setConfirmed] = useState(false);
   const [hint, setHint] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
-  const isMobile = useIsMobile();
-  const speech = typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+  const speech =
+    typeof window !== "undefined" &&
+    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
 
   // A gaveta do professor é um overlay: o voltar do Android fecha só ela,
   // sem sair da sessão nem perder o cronômetro.
   useBackOverlay(open, onClose);
 
-  const blockDoubts = useMemo(() => doubtsForBlock(doubts, blockId, questionId), [doubts, blockId, questionId]);
+  const blockDoubts = useMemo(
+    () => doubtsForBlock(doubts, blockId, questionId),
+    [doubts, blockId, questionId],
+  );
   const active = blockDoubts.find((item) => item.id === activeId) ?? null;
 
   // Ao reabrir o bloco (ou a questão vinda do Caderno de Erros), a conversa
@@ -259,7 +248,10 @@ export function TeacherChat({
     try {
       await askProfessor(
         {
-          messages: history.map((item) => ({ role: item.role === "professor" ? "assistant" : "user", content: item.text })),
+          messages: history.map((item) => ({
+            role: item.role === "professor" ? "assistant" : "user",
+            content: item.text,
+          })),
           brief,
           topic: title,
           subtopic,
@@ -273,7 +265,16 @@ export function TeacherChat({
           const streaming: Doubt = {
             ...doubt,
             updatedAt: Date.now(),
-            messages: [...history, { role: "professor", text: view.text || "…", outside: view.outside, cite: view.cite, svg: view.svg || undefined }],
+            messages: [
+              ...history,
+              {
+                role: "professor",
+                text: view.text || "…",
+                outside: view.outside,
+                cite: view.cite,
+                svg: view.svg || undefined,
+              },
+            ],
           };
           onSaveDoubt(streaming);
         },
@@ -308,9 +309,18 @@ export function TeacherChat({
     const svg = diagramSvg && validateDiagram(diagramSvg).ok ? sanitizeSvg(diagramSvg) : "";
     const base = ensureDoubt("Desenhe isso");
     const msg: ChatMsg = svg
-      ? { role: "professor", text: "Desenho do subtópico, no gabarito. «Visuais › Diagrama»", svg, cite: "Visuais › Diagrama" }
+      ? {
+          role: "professor",
+          text: "Desenho do subtópico, no gabarito. «Visuais › Diagrama»",
+          svg,
+          cite: "Visuais › Diagrama",
+        }
       : { role: "professor", text: "Este subtópico ainda não tem um diagrama válido." };
-    onSaveDoubt({ ...base, updatedAt: Date.now(), messages: [...base.messages, { role: "user", text: "Desenhe isso em SVG" }, msg] });
+    onSaveDoubt({
+      ...base,
+      updatedAt: Date.now(),
+      messages: [...base.messages, { role: "user", text: "Desenhe isso em SVG" }, msg],
+    });
   }
 
   function testMe() {
@@ -340,15 +350,33 @@ export function TeacherChat({
     try {
       const res = await researchAddClient({ question: last.text, topic: title, userKey });
       if (!res.ok) {
-        showError(describeError(res.failure ?? res.error, { online: online() }), () => void research());
+        showError(
+          describeError(res.failure ?? res.error, { online: online() }),
+          () => void research(),
+        );
         return;
       }
-      onSavePackage(mergeAddition(pkg, pkg.subtopics?.find((item) => item.title === subtopic)?.id || pkg.subtopics?.[0]?.id || "", res.data));
+      onSavePackage(
+        mergeAddition(
+          pkg,
+          pkg.subtopics?.find((item) => item.title === subtopic)?.id ||
+            pkg.subtopics?.[0]?.id ||
+            "",
+          res.data,
+        ),
+      );
       if (active) {
         onSaveDoubt({
           ...active,
           updatedAt: Date.now(),
-          messages: [...active.messages, { role: "professor", text: "Pesquisei e acrescentei ao pacote, com as fontes que vieram.", cite: "Essência › Acrescentado agora" }],
+          messages: [
+            ...active.messages,
+            {
+              role: "professor",
+              text: "Pesquisei e acrescentei ao pacote, com as fontes que vieram.",
+              cite: "Essência › Acrescentado agora",
+            },
+          ],
         });
       }
     } catch (err) {
@@ -360,7 +388,10 @@ export function TeacherChat({
   }
 
   function listen() {
-    const w = window as Window & { SpeechRecognition?: SpeechCtor; webkitSpeechRecognition?: SpeechCtor };
+    const w = window as Window & {
+      SpeechRecognition?: SpeechCtor;
+      webkitSpeechRecognition?: SpeechCtor;
+    };
     const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!Ctor) return;
     const rec = new Ctor();
@@ -379,164 +410,245 @@ export function TeacherChat({
   }
 
   return (
-    <SheetFrame mobile={isMobile} open={open} onClose={onClose}>
-    <section
-      className={cn(
-        "flex flex-col overflow-hidden border border-border bg-surface",
-        isMobile
-          ? "h-[72dvh] max-h-[85dvh] rounded-t-2xl"
-          : "fixed inset-x-0 bottom-0 z-50 h-[50dvh] rounded-t-2xl md:left-auto md:right-4 md:w-[28rem]",
-      )}
-      aria-label="Professor"
-    >
-      <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <p className="min-w-0 flex-1 truncate text-sm">Professor · o tempo segue contando</p>
-        <button type="button" className="min-h-12 px-2 text-xs text-muted" onClick={() => setTab(tab === "chat" ? "caderno" : "chat")}>
-          {tab === "chat" ? "Caderno" : "Conversa"}
-        </button>
-        <button type="button" className="grid size-12 place-items-center" aria-label="Fechar professor" onClick={onClose}>
-          <X className="size-4" />
-        </button>
-      </header>
-      {tab === "caderno" ? (
-        <ul className="flex-1 space-y-2 overflow-y-auto p-3">
-          {blockDoubts.length ? null : <li className="text-sm text-muted">Nenhuma dúvida neste bloco ainda.</li>}
-          {blockDoubts.map((doubt) => (
-            <li key={doubt.id}>
-              <button
-                type="button"
-                className="flex min-h-12 w-full flex-col justify-center rounded-xl border border-border px-3 py-2 text-left"
-                onClick={() => {
-                  setActiveId(doubt.id);
-                  setTab("chat");
+    <SheetFrame open={open} onClose={onClose}>
+      <Drawer.Handle
+        className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-border"
+        aria-hidden
+      />
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="Professor">
+        <header className="flex flex-col border-b border-border">
+          <div className="flex items-center gap-2 px-3 pt-2">
+            {remainingClock ? (
+              <span
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-semibold tabular-nums text-primary"
+                aria-label={timeUp ? "Tempo cumprido" : `Tempo restante: ${remainingClock}`}
+              >
+                <Clock className="size-4" aria-hidden />
+                {timeUp ? "tempo cumprido" : remainingClock}
+              </span>
+            ) : null}
+            <p className="min-w-0 flex-1 truncate text-xs text-muted">
+              Professor · o tempo segue contando
+            </p>
+            <button
+              type="button"
+              className="grid size-12 shrink-0 place-items-center rounded-full"
+              aria-label="Fechar professor"
+              onClick={onClose}
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+          <div className="flex items-center gap-2 px-3 pb-2">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{title}</p>
+              <p className="truncate text-xs text-muted">{subtopic}</p>
+            </div>
+            <button
+              type="button"
+              className="min-h-12 shrink-0 px-2 text-xs text-muted"
+              onClick={() => setTab(tab === "chat" ? "caderno" : "chat")}
+            >
+              {tab === "chat" ? "Caderno" : "Conversa"}
+            </button>
+          </div>
+        </header>
+        {tab === "caderno" ? (
+          <ul className="flex-1 space-y-2 overflow-y-auto p-3">
+            {blockDoubts.length ? null : (
+              <li className="text-sm text-muted">Nenhuma dúvida neste bloco ainda.</li>
+            )}
+            {blockDoubts.map((doubt) => (
+              <li key={doubt.id}>
+                <button
+                  type="button"
+                  className="flex min-h-12 w-full flex-col justify-center rounded-xl border border-border px-3 py-2 text-left"
+                  onClick={() => {
+                    setActiveId(doubt.id);
+                    setTab("chat");
+                  }}
+                >
+                  <span className="block text-sm">{doubt.title}</span>
+                  <span className="text-xs text-muted">
+                    {doubt.status === "resolvida"
+                      ? "Resolvida"
+                      : doubt.status === "revisar"
+                        ? "Revisar depois"
+                        : "Aberta"}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <>
+            <div ref={scroller} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+              {(active?.messages ?? []).map((msg, index) => (
+                <div
+                  key={`${msg.role}-${index}`}
+                  className={
+                    msg.role === "user"
+                      ? "ml-8 rounded-xl bg-surface-2 px-3 py-2 text-base leading-relaxed"
+                      : "mr-6 text-base leading-relaxed"
+                  }
+                >
+                  {msg.outside ? (
+                    <p className="mb-1 text-xs text-clay-text">
+                      Isso não está no pacote deste bloco.
+                    </p>
+                  ) : null}
+                  <p className="whitespace-pre-wrap">{msg.text}</p>
+                  {msg.cite ? <p className="mt-1 text-xs text-primary">{msg.cite}</p> : null}
+                  {msg.svg ? (
+                    <div
+                      className="study-diagram mt-2"
+                      dangerouslySetInnerHTML={{ __html: msg.svg }}
+                    />
+                  ) : null}
+                </div>
+              ))}
+              {!active?.messages.length && !test ? (
+                <div className="rounded-xl border border-dashed border-border p-3 text-base leading-relaxed text-muted">
+                  <p>
+                    Pergunte sem sair da questão: toque numa pergunta rápida abaixo ou escreva do
+                    seu jeito.
+                  </p>
+                  <p className="mt-1 text-xs">
+                    O cronômetro continua contando com a gaveta aberta.
+                  </p>
+                </div>
+              ) : null}
+              {test ? (
+                <div className="rounded-xl border border-border p-3">
+                  <QuestionCard
+                    item={test}
+                    selected={picked}
+                    confirmed={confirmed}
+                    showHint={hint}
+                    altText=""
+                    onSelect={setPicked}
+                    onHint={() => setHint(true)}
+                    onOther={() => undefined}
+                    otherBusy={false}
+                  />
+                  {!confirmed ? (
+                    <Button
+                      className="mt-3"
+                      disabled={picked == null}
+                      onClick={() => setConfirmed(true)}
+                    >
+                      Confirmar
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              {error ? <InlineError copy={error} onAction={() => retry.current?.()} /> : null}
+              {active?.messages.some((msg) => msg.outside) ? (
+                <Button variant="surface" disabled={busy} onClick={() => void research()}>
+                  {busy && busyKind === "research" ? (
+                    <>
+                      <ButtonSpinner />
+                      Pesquisando…
+                    </>
+                  ) : (
+                    "Pesquisar e adicionar ao pacote"
+                  )}
+                </Button>
+              ) : null}
+            </div>
+            <div className="border-t border-border p-2 pb-[calc(env(safe-area-inset-bottom)_+_0.5rem)] md:pb-2">
+              <div className="mb-2 flex gap-2 overflow-x-auto pb-1" aria-label="Perguntas rápidas">
+                {QUICK_QUESTIONS.map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    disabled={busy}
+                    className="min-h-12 shrink-0 rounded-full border border-primary/60 bg-primary/10 px-3 text-sm font-semibold text-primary disabled:opacity-50"
+                    onClick={() => void send(label)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {SHORTCUTS.map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className="min-h-12 shrink-0 rounded-full border border-border px-3 text-sm"
+                    onClick={() => void send(label)}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="min-h-12 shrink-0 rounded-full border border-border px-3 text-sm"
+                  onClick={draw}
+                >
+                  Desenhe isso em SVG
+                </button>
+                <button
+                  type="button"
+                  className="min-h-12 shrink-0 rounded-full border border-border px-3 text-sm"
+                  onClick={testMe}
+                >
+                  Me teste nisso
+                </button>
+              </div>
+              {active ? (
+                <div className="mb-2 flex gap-2">
+                  <Button variant="surface" onClick={() => mark("resolvida")}>
+                    Resolvida
+                  </Button>
+                  <Button variant="ghost" onClick={() => mark("revisar")}>
+                    Revisar depois
+                  </Button>
+                </div>
+              ) : null}
+              {!speech ? (
+                <p className="px-1 pb-1 text-xs text-muted">
+                  Sem microfone neste navegador: digite a dúvida.
+                </p>
+              ) : null}
+              <form
+                className="flex gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void send(draft);
                 }}
               >
-                <span className="block text-sm">{doubt.title}</span>
-                <span className="text-xs text-muted">{doubt.status === "resolvida" ? "Resolvida" : doubt.status === "revisar" ? "Revisar depois" : "Aberta"}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <>
-          <div ref={scroller} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
-            {(active?.messages ?? []).map((msg, index) => (
-              <div key={`${msg.role}-${index}`} className={msg.role === "user" ? "ml-8 rounded-xl bg-surface-2 px-3 py-2 text-sm" : "mr-6 text-sm leading-relaxed"}>
-                {msg.outside ? <p className="mb-1 text-xs text-clay-text">Isso não está no pacote deste bloco.</p> : null}
-                <p className="whitespace-pre-wrap">{msg.text}</p>
-                {msg.cite ? <p className="mt-1 text-xs text-primary">{msg.cite}</p> : null}
-                {msg.svg ? <div className="study-diagram mt-2" dangerouslySetInnerHTML={{ __html: msg.svg }} /> : null}
-              </div>
-            ))}
-            {!active?.messages.length && !test ? (
-              <div className="rounded-xl border border-dashed border-border p-3 text-sm leading-relaxed text-muted">
-                <p>Pergunte sem sair da questão: toque numa pergunta rápida abaixo ou escreva do seu jeito.</p>
-                <p className="mt-1 text-xs">O cronômetro continua contando com a gaveta aberta.</p>
-              </div>
-            ) : null}
-            {test ? (
-              <div className="rounded-xl border border-border p-3">
-                <QuestionCard
-                  item={test}
-                  selected={picked}
-                  confirmed={confirmed}
-                  showHint={hint}
-                  altText=""
-                  onSelect={setPicked}
-                  onHint={() => setHint(true)}
-                  onOther={() => undefined}
-                  otherBusy={false}
-                />
-                {!confirmed ? (
-                  <Button className="mt-3" disabled={picked == null} onClick={() => setConfirmed(true)}>
-                    Confirmar
-                  </Button>
+                {speech ? (
+                  <button
+                    type="button"
+                    className="grid size-12 shrink-0 place-items-center rounded-xl border border-border"
+                    aria-label="Falar a dúvida"
+                    onClick={listen}
+                  >
+                    <Mic className="size-4" />
+                  </button>
                 ) : null}
-              </div>
-            ) : null}
-            {error ? (
-              <InlineError copy={error} onAction={() => retry.current?.()} />
-            ) : null}
-            {active?.messages.some((msg) => msg.outside) ? (
-              <Button variant="surface" disabled={busy} onClick={() => void research()}>
-                {busy && busyKind === "research" ? (
-                  <>
-                    <ButtonSpinner />
-                    Pesquisando…
-                  </>
-                ) : (
-                  "Pesquisar e adicionar ao pacote"
-                )}
-              </Button>
-            ) : null}
-          </div>
-          <div className="border-t border-border p-2 pb-[calc(env(safe-area-inset-bottom)_+_0.5rem)] md:pb-2">
-            <div className="mb-2 flex gap-2 overflow-x-auto pb-1" aria-label="Perguntas rápidas">
-              {QUICK_QUESTIONS.map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  disabled={busy}
-                  className="min-h-12 shrink-0 rounded-full border border-primary/60 bg-primary/10 px-3 text-xs font-semibold text-primary disabled:opacity-50"
-                  onClick={() => void send(label)}
-                >
-                  {label}
-                </button>
-              ))}
+                <input
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  placeholder="Pergunte sobre este trecho"
+                  className="min-h-12 min-w-0 flex-1 rounded-xl border border-border bg-bg px-3 text-base"
+                />
+                <Button type="submit" disabled={busy || !draft.trim()}>
+                  {busy && busyKind === "chat" ? (
+                    <>
+                      <ButtonSpinner />
+                      Enviando…
+                    </>
+                  ) : (
+                    "Enviar"
+                  )}
+                </Button>
+              </form>
             </div>
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              {SHORTCUTS.map((label) => (
-                <button key={label} type="button" className="min-h-12 shrink-0 rounded-full border border-border px-3 text-xs" onClick={() => void send(label)}>
-                  {label}
-                </button>
-              ))}
-              <button type="button" className="min-h-12 shrink-0 rounded-full border border-border px-3 text-xs" onClick={draw}>
-                Desenhe isso em SVG
-              </button>
-              <button type="button" className="min-h-12 shrink-0 rounded-full border border-border px-3 text-xs" onClick={testMe}>
-                Me teste nisso
-              </button>
-            </div>
-            {active ? (
-              <div className="mb-2 flex gap-2">
-                <Button variant="surface" onClick={() => mark("resolvida")}>Resolvida</Button>
-                <Button variant="ghost" onClick={() => mark("revisar")}>Revisar depois</Button>
-              </div>
-            ) : null}
-            {!speech ? <p className="px-1 pb-1 text-xs text-muted">Sem microfone neste navegador: digite a dúvida.</p> : null}
-            <form
-              className="flex gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void send(draft);
-              }}
-            >
-              {speech ? (
-                <button type="button" className="grid size-12 shrink-0 place-items-center rounded-xl border border-border" aria-label="Falar a dúvida" onClick={listen}>
-                  <Mic className="size-4" />
-                </button>
-              ) : null}
-              <input
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder="Pergunte sobre este trecho"
-                className="min-h-12 min-w-0 flex-1 rounded-xl border border-border bg-bg px-3 text-sm"
-              />
-              <Button type="submit" disabled={busy || !draft.trim()}>
-                {busy && busyKind === "chat" ? (
-                  <>
-                    <ButtonSpinner />
-                    Enviando…
-                  </>
-                ) : (
-                  "Enviar"
-                )}
-              </Button>
-            </form>
-          </div>
-        </>
-      )}
-    </section>
+          </>
+        )}
+      </section>
     </SheetFrame>
   );
 }
