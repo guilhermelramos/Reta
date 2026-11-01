@@ -1,4 +1,5 @@
 import type { PlanDay, Settings, StudySession } from "@/lib/study/types";
+import type { BlockKind, SessionMode } from "@/lib/study/types";
 import { KIND_LABEL } from "@/lib/study/types";
 import { formatMin, saoPauloParts, topicLine } from "@/lib/study/time";
 
@@ -79,4 +80,46 @@ export async function showNotice(notice: Notice): Promise<void> {
   } catch {
     /* permissão ou iframe sem Notification */
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Fim do tempo de bloco / Revisão Relâmpago
+ * ------------------------------------------------------------------ */
+
+/** Vibração curta; aparelhos sem suporte (ou desktop) ficam em silêncio. */
+export function vibrateDone(pattern: number | number[] = [200, 100, 200]): void {
+  if (typeof navigator === "undefined") return;
+  const api = navigator as Navigator & { vibrate?: (input: number | number[]) => boolean };
+  try {
+    api.vibrate?.(pattern);
+  } catch {
+    /* sem motor de vibração */
+  }
+}
+
+export function blockDoneNotice(input: {
+  kind: BlockKind;
+  topic: string;
+  minutes: number;
+  mode?: SessionMode;
+}): Notice {
+  const quick = input.mode === "15";
+  return {
+    tag: `bloco-fim:${Date.now()}`,
+    title: quick ? "Revisão Relâmpago concluída" : "Tempo do bloco cumprido",
+    body: `${quick ? "Revisão Relâmpago" : KIND_LABEL[input.kind]} · ${formatMin(input.minutes)} — ${
+      topicLine(input.topic, 70) || "bloco do dia"
+    }. Feche o bloco e marque o que ficou.`,
+  };
+}
+
+/** Feedback tátil + notificação local quando o tempo do bloco acaba. */
+export async function notifyBlockDone(input: {
+  kind: BlockKind;
+  topic: string;
+  minutes: number;
+  mode?: SessionMode;
+}): Promise<void> {
+  vibrateDone([200, 100, 200]);
+  await showNotice(blockDoneNotice(input));
 }

@@ -5,11 +5,28 @@ import { QuestionCard } from "@/components/study-view";
 import { TeacherChat } from "@/components/teacher-chat";
 import { Button } from "@/components/ui/button";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
+import {
+  clearActiveSession,
+  loadActiveSession,
+  saveActiveSession,
+  type ActiveSessionRecord,
+} from "@/lib/study/db";
 import { bumpLevel, emptyFlow, pickPractice, questionFor } from "@/lib/study/flow";
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
+import { notifyBlockDone } from "@/lib/study/notify";
 import { blockHeading } from "@/lib/study/outline";
 import { useStudy } from "@/lib/study/store";
-import { formatClock, formatMin } from "@/lib/study/time";
+import {
+  formatClock,
+  formatMin,
+  timerElapsedMs,
+  timerExpired,
+  timerFromSession,
+  timerPause,
+  timerRemainingMs,
+  timerStart,
+  timerToSession,
+} from "@/lib/study/time";
 import type { BlockKind, QuizItem, SessionMode, StudyPackage, StudySession, Subtopic } from "@/lib/study/types";
 
 export const Route = createFileRoute("/_shell/sessao")({
@@ -32,12 +49,101 @@ const SECTIONS = [
 ] as const;
 
 function liveSeconds(session: StudySession, now: number): number {
-  const extra = session.running && session.runStartedAt ? Math.max(0, (now - session.runStartedAt) / 1000) : 0;
-  return session.elapsedSec + extra;
+  return timerElapsedMs(timerFromSession(session), now) / 1000;
 }
 
 function freeze(session: StudySession, now: number): StudySession {
-  return { ...session, elapsedSec: liveSeconds(session, now), running: false, runStartedAt: null };
+  return { ...session, ...timerToSession(timerPause(timerFromSession(session), now), now) };
+}
+
+function blockKeyOf(session: Pick<StudySession, "date" | "kind" | "mode">): string {
+  return `${session.date}:${session.kind}:${session.mode}`;
+}
+
+function activeRecordOf(session: StudySession, timer = timerFromSession(session)): ActiveSessionRecord {
+  return {
+    blockKey: blockKeyOf(session),
+    sessionId: session.id,
+    date: session.date,
+    kind: session.kind,
+    mode: session.mode,
+    running: timer.startedAt != null,
+    startedAt: timer.startedAt,
+    accumulatedElapsedMs: Math.max(0, timer.accumulatedElapsedMs),
+    budgetMin: session.budgetMin,
+    updatedAt: Date.now(),
+  };
+}
+
+/** Salva o cronômetro da sessão ativa; some do banco quando o bloco fecha. */
+function persistActive(session: StudySession): void {
+  if (session.status !== "active") {
+    void clearActiveSession().catch(() => undefined);
+    return;
+  }
+  void saveActiveSession(activeRecordOf(session)).catch(() => undefined);
+}
+
+type WakeLockLike = {
+  released: boolean;
+  release: () => Promise<void>;
+};
+
+type WakeLockNavigator = Navigator & {
+  wakeLock?: { request: (type: "screen") => Promise<WakeLockLike> };
+};
+
+/**
+ * Mantém a tela acesa enquanto o bloco corre e reativa o lock quando a aba
+ * volta ao primeiro plano. Sem suporte (ou sem permissão), segue em silêncio.
+ */
+function useScreenWakeLock(active: boolean): void {
+  const lockRef = useRef<WakeLockLike | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    let live = true;
+
+    async function acquire() {
+      if (typeof navigator === "undefined") return;
+      const api = (navigator as WakeLockNavigator).wakeLock;
+      if (!api?.request) return;
+      if (lockRef.current && !lockRef.current.released) return;
+      try {
+        const lock = await api.request("screen");
+        if (!live) {
+          void lock.release().catch(() => undefined);
+          return;
+        }
+        lockRef.current = lock;
+      } catch {
+        /* navegador sem Wake Lock ou fora de foco: fallback silencioso */
+      }
+    }
+
+    async function release() {
+      const lock = lockRef.current;
+      lockRef.current = null;
+      if (!lock) return;
+      try {
+        await lock.release();
+      } catch {
+        /* já liberado pelo sistema */
+      }
+    }
+
+    function onVisible() {
+      if (document.visibilityState === "visible") void acquire();
+    }
+
+    void acquire();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      live = false;
+      document.removeEventListener("visibilitychange", onVisible);
+      void release();
+    };
+  }, [active]);
 }
 
 function withFlow(session: StudySession): StudySession {
@@ -73,18 +179,104 @@ function SessionPage() {
   const [quote, setQuote] = useState<string | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [barOpen, setBarOpen] = useState(false);
+  const [restored, setRestored] = useState(false);
   const tried = useRef(false);
+  const restoredRef = useRef(false);
+  const alertedRef = useRef("");
+  const sessionRef = useRef<StudySession | null>(null);
 
   const session = study.sessions.find((item) => item.id === sid) ?? null;
   const flow = session?.flow ?? emptyFlow();
   const subs = pkg?.subtopics ?? [];
   const sub = subs[flow.sub] ?? subs[0];
   const heading = blockHeading(block?.content ?? pkg?.topic ?? "");
+  sessionRef.current = session;
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Voltou da aba/app: recalcula o tempo real na hora, sem esperar o intervalo.
+  useEffect(() => {
+    function resync() {
+      if (document.visibilityState !== "visible") return;
+      setNow(Date.now());
+    }
+    function onHidden() {
+      if (document.visibilityState === "visible") return;
+      const live = sessionRef.current;
+      if (!live || live.status !== "active") return;
+      persistActive(live);
+    }
+    window.addEventListener("focus", resync);
+    window.addEventListener("pageshow", resync);
+    document.addEventListener("visibilitychange", resync);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.removeEventListener("focus", resync);
+      window.removeEventListener("pageshow", resync);
+      document.removeEventListener("visibilitychange", resync);
+      document.removeEventListener("visibilitychange", onHidden);
+    };
+  }, []);
+
+  // Sessão ativa recuperada do IndexedDB (reload, app morto pelo celular, revive).
+  useEffect(() => {
+    if (!study.ready || restoredRef.current) return;
+    restoredRef.current = true;
+    let live = true;
+    const key = `${search.dia}:${search.bloco}:${search.modo}`;
+    // Se o banco local demorar (aparelho engasgado), não trava a sessão.
+    const fallback = window.setTimeout(() => setRestored(true), 1500);
+    loadActiveSession()
+      .then((record) => {
+        if (!live || !record || record.blockKey !== key) return;
+        const stored = study.sessions.find((item) => item.id === record.sessionId);
+        if (!stored || stored.status !== "active") return;
+        pendingSessions.set(key, stored.id);
+        const storedMs = timerElapsedMs(timerFromSession(stored), Date.now());
+        if (record.accumulatedElapsedMs > storedMs + 1000) {
+          void study.upsertSession({
+            ...stored,
+            ...timerToSession(
+              {
+                accumulatedElapsedMs: record.accumulatedElapsedMs,
+                startedAt: record.running ? record.startedAt : null,
+              },
+              Date.now(),
+            ),
+          });
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        window.clearTimeout(fallback);
+        setRestored(true);
+      });
+    return () => {
+      live = false;
+      window.clearTimeout(fallback);
+    };
+  }, [study, study.ready, study.sessions, study.upsertSession, search.dia, search.bloco, search.modo]);
+
+  // Fim do tempo do bloco / Revisão Relâmpago: vibra uma vez e notifica.
+  useEffect(() => {
+    if (!session || session.status !== "active" || !session.running) return;
+    const elapsedMs = timerElapsedMs(timerFromSession(session), now);
+    if (!timerExpired(session.budgetMin, elapsedMs)) return;
+    const key = `${session.id}:${session.budgetMin}`;
+    if (alertedRef.current === key) return;
+    alertedRef.current = key;
+    void notifyBlockDone({
+      kind: session.kind,
+      topic: pkg?.displayTitle || heading.title,
+      minutes: session.budgetMin,
+      mode: session.mode,
+    });
+  }, [session, now, pkg, heading.title]);
+
+  useScreenWakeLock(Boolean(session && session.status === "active" && session.running));
 
   useEffect(() => {
     if (!block || !isModernaBlock(block.content)) return;
@@ -101,7 +293,7 @@ function SessionPage() {
   }, [block, pkg, search.dia, search.bloco, study]);
 
   useEffect(() => {
-    if (sid || !block || block.plannedMin <= 0) return;
+    if (!restored || sid || !block || block.plannedMin <= 0) return;
     const key = `${search.dia}:${search.bloco}:${search.modo}`;
     const active = study.sessions.find((item) => item.date === search.dia && item.kind === search.bloco && item.mode === search.modo && item.status === "active");
     if (active) {
@@ -139,7 +331,8 @@ function SessionPage() {
     pendingSessions.set(key, created.id);
     setSid(created.id);
     void study.upsertSession(created);
-  }, [sid, block, search.dia, search.bloco, search.modo, study]);
+    persistActive(created);
+  }, [restored, sid, block, search.dia, search.bloco, search.modo, study]);
 
   const liveQuestion = sub && session ? questionFor(sub, flow) : null;
   const current = trap
@@ -186,16 +379,23 @@ function SessionPage() {
   }
 
   async function save(next: StudySession) {
-    await study.upsertSession(withFlow(next));
+    const merged = withFlow(next);
+    await study.upsertSession(merged);
+    persistActive(merged);
   }
 
   function toggleTimer() {
     if (!session) return;
+    const nowMs = Date.now();
     if (session.running) {
-      void save(freeze(session, Date.now()));
+      const paused = freeze(session, nowMs);
+      setNow(nowMs);
+      void save(paused);
       return;
     }
-    void save({ ...session, running: true, runStartedAt: Date.now() });
+    const resumed = { ...session, ...timerToSession(timerStart(timerFromSession(session), nowMs), nowMs) };
+    setNow(nowMs);
+    void save(resumed);
   }
 
   async function finish() {
@@ -310,6 +510,8 @@ function SessionPage() {
 
   const elapsed = session ? liveSeconds(session, now) : 0;
   const studied = Math.floor(elapsed / 60);
+  const remainingSec = session ? timerRemainingMs(session.budgetMin, elapsed * 1000) / 1000 : 0;
+  const timeUp = session ? timerExpired(session.budgetMin, elapsed * 1000) : false;
   const timerLabel = session?.running ? "Pausar" : elapsed > 0 ? "Retomar" : "Iniciar";
   const doneCount = subs.filter((item) => flow.checks[item.id]).length;
   const asking = Boolean(current && !confirmed && (trap || flow.phase === "diag" || flow.phase === "pratica" || flow.phase === "checagem"));
@@ -335,7 +537,11 @@ function SessionPage() {
           <div className="flex h-12 items-center gap-2">
             <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setBarOpen((v) => !v)} aria-expanded={barOpen}>
               <span className="font-display text-xl tabular-nums" role="timer">{formatClock(elapsed)}</span>
-              <span className="ml-3 text-xs text-muted">Estudado: {studied} min{flow.phase === "aula" && !barOpen ? " · toque para as seções" : ""}</span>
+              <span className="ml-3 text-xs text-muted">
+                Estudado: {studied} min
+                {timeUp ? " · tempo cumprido" : session.running ? ` · restam ${formatClock(remainingSec)}` : ""}
+                {flow.phase === "aula" && !barOpen ? " · toque para as seções" : ""}
+              </span>
             </button>
             <Button onClick={toggleTimer}>{timerLabel}</Button>
           </div>
@@ -361,6 +567,28 @@ function SessionPage() {
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {session && timeUp && session.status === "active" ? (
+        <section className="rounded-xl border border-primary/40 bg-surface p-4">
+          <p className="text-xs text-primary">Tempo do bloco cumprido</p>
+          <p className="mt-1 text-sm leading-relaxed">
+            Você já cumpriu {formatMin(Math.max(1, session.budgetMin))} neste bloco. Fecha o bloco agora ou estica mais 5 min.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="surface"
+              onClick={() => {
+                const nowMs = Date.now();
+                setNow(nowMs);
+                void save({ ...session, bonusMin: session.bonusMin + 5, budgetMin: session.budgetMin + 5 });
+              }}
+            >
+              +5 min
+            </Button>
+            <Button onClick={() => setConfirmEnd(true)}>Encerrar bloco</Button>
+          </div>
+        </section>
       ) : null}
 
       {confirmEnd ? (
