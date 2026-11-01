@@ -181,7 +181,7 @@ export function QuestionCard({
           );
         })}
       </div>
-      <p className="text-xs text-muted">Teclas 1 a 4 escolhem. Enter confirma.</p>
+      <p className="text-xs text-muted">Teclas 1 a {item.choices.length} escolhem. Enter confirma.</p>
       {!confirmed ? (
         <div>
           <Button variant="ghost" onClick={onHint}>{showHint ? "Esconder dica" : "Quero uma dica"}</Button>

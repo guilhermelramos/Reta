@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { FlashcardDeck, GeneratePackage } from "@/components/generate-package";
 import { LessonView } from "@/components/lesson-view";
 import { QuestionCard } from "@/components/study-view";
 import { TeacherChat } from "@/components/teacher-chat";
 import { Button } from "@/components/ui/button";
+import { isRichPackage } from "@/lib/ai/package.functions";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
 import { bumpLevel, emptyFlow, pickPractice, questionFor } from "@/lib/study/flow";
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
@@ -168,7 +170,7 @@ function SessionPage() {
       if (!current || confirmed) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-      if (event.key >= "1" && event.key <= "4") setSelected(Number(event.key) - 1);
+      if (event.key >= "1" && Number(event.key) <= current.choices.length) setSelected(Number(event.key) - 1);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -330,6 +332,10 @@ function SessionPage() {
         </ul>
       </header>
 
+      {!isRichPackage(pkg) && !isModernaBlock(block.content) && block.plannedMin > 0 ? (
+        <GeneratePackage date={search.dia} kind={search.bloco} topic={block.content} minutes={block.plannedMin} />
+      ) : null}
+
       {session && session.status === "active" ? (
         <div className="sticky top-0 z-20 -mx-4 border-b border-border bg-bg/95 px-4 backdrop-blur">
           <div className="flex h-12 items-center gap-2">
@@ -451,6 +457,8 @@ function SessionPage() {
         </section>
       ) : null}
 
+      {pkg && pkg.flashcards.length && flow.phase === "aula" && !trap ? <FlashcardDeck cards={pkg.flashcards} /> : null}
+
       {pkg && session && sub && session.status === "active" && flow.phase === "aula" && !trap ? (
         <LessonView sub={sub} onTrain={(item) => { setTrap(item); setConfirmed(false); setSelected(null); setShowHint(false); }} />
       ) : null}
@@ -527,6 +535,7 @@ function SessionPage() {
         makeTest={() => sub?.practice.find((item) => !(session?.flow?.practiceAsked ?? []).includes(item.id)) ?? sub?.mastery ?? null}
         quote={quote}
         onQuoteUsed={() => setQuote(null)}
+        questionId={asking && current ? current.id : undefined}
       />
     </div>
   );

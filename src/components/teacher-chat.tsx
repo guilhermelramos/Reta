@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Mic, X } from "lucide-react";
 import { QuestionCard } from "@/components/study-view";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,39 @@ function present(raw: string): { text: string; outside: boolean; cite: string; s
 
 const SHORTCUTS = ["Explique de outro jeito", "Dê um exemplo", "Resuma em 3 linhas", "Qual é a pegadinha?"] as const;
 
+export type TeacherChatProps = {
+  open: boolean;
+  onClose: () => void;
+  blockId: string;
+  title: string;
+  subtopic: string;
+  brief: string;
+  holdAnswer: boolean;
+  question: string;
+  mistakes: string[];
+  userKey: string;
+  pkg: StudyPackage | null;
+  diagramSvg: string;
+  doubts: Doubt[];
+  onSaveDoubt: (doubt: Doubt) => void;
+  onSavePackage: (pkg: StudyPackage) => void;
+  makeTest: () => QuizItem | null;
+  quote: string | null;
+  onQuoteUsed: () => void;
+  /**
+   * Questão aberta (ou erro do Caderno de Erros) desta conversa. Opcional:
+   * dúvidas antigas, sem o campo, continuam aparecendo no escopo do bloco.
+   */
+  questionId?: string;
+};
+
+/** Dúvidas salvas que pertencem a um bloco — e, quando informado, à questão aberta. */
+export function doubtsForBlock(doubts: Doubt[], blockId: string, questionId?: string): Doubt[] {
+  const scoped = doubts.filter((item) => item.blockId === blockId);
+  if (!questionId) return scoped;
+  return scoped.filter((item) => !item.questionId || item.questionId === questionId);
+}
+
 export function TeacherChat({
   open,
   onClose,
@@ -62,26 +95,8 @@ export function TeacherChat({
   makeTest,
   quote,
   onQuoteUsed,
-}: {
-  open: boolean;
-  onClose: () => void;
-  blockId: string;
-  title: string;
-  subtopic: string;
-  brief: string;
-  holdAnswer: boolean;
-  question: string;
-  mistakes: string[];
-  userKey: string;
-  pkg: StudyPackage | null;
-  diagramSvg: string;
-  doubts: Doubt[];
-  onSaveDoubt: (doubt: Doubt) => void;
-  onSavePackage: (pkg: StudyPackage) => void;
-  makeTest: () => QuizItem | null;
-  quote: string | null;
-  onQuoteUsed: () => void;
-}) {
+  questionId,
+}: TeacherChatProps) {
   const [draft, setDraft] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -94,8 +109,20 @@ export function TeacherChat({
   const scroller = useRef<HTMLDivElement>(null);
   const speech = typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
 
-  const blockDoubts = doubts.filter((item) => item.blockId === blockId);
+  const blockDoubts = useMemo(() => doubtsForBlock(doubts, blockId, questionId), [doubts, blockId, questionId]);
   const active = blockDoubts.find((item) => item.id === activeId) ?? null;
+
+  // Ao reabrir o bloco (ou a questão vinda do Caderno de Erros), a conversa
+  // salva aparece na hora — sem nenhuma chamada nova à IA.
+  useEffect(() => {
+    setActiveId(null);
+  }, [blockId, questionId]);
+
+  useEffect(() => {
+    if (!open || activeId) return;
+    const latest = [...blockDoubts].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (latest) setActiveId(latest.id);
+  }, [open, activeId, blockDoubts]);
 
   useEffect(() => {
     if (!open || !quote) return;
@@ -115,6 +142,7 @@ export function TeacherChat({
     const created: Doubt = {
       id: crypto.randomUUID(),
       blockId,
+      questionId,
       title: first.slice(0, 80),
       status: "aberta",
       updatedAt: Date.now(),

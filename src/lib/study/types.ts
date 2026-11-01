@@ -98,6 +98,8 @@ export type ChatMsg = {
 export type Doubt = {
   id: string;
   blockId: string;
+  /** Questão/erro de origem, quando a conversa nasceu com uma questão aberta. Opcional em registros antigos. */
+  questionId?: string;
   title: string;
   status: "aberta" | "resolvida" | "revisar";
   updatedAt: number;
