@@ -84,6 +84,40 @@ recusada), 429 (limite da API, respeitando `Retry-After`), 5xx (indisponível) e
 timeout. O botão **Testar conexão** de Ajustes sempre sai de "Testando…", mesmo
 quando a chamada falha antes de responder.
 
+### Estados de erro padronizados
+
+[`src/lib/feedback/error-copy.ts`](./src/lib/feedback/error-copy.ts) converte o
+erro em `{ title, message, detail, action, secondaryAction }` (testes em
+`error-copy.test.ts`), e os componentes
+[`InlineError`](./src/components/feedback/inline-error.tsx) (banner no cartão) e
+[`ErrorState`](./src/components/feedback/error-state.tsx) (cartão cheio, ícone
+48dp, botão de 48dp) mostram o mesmo texto na web e no APK. Textos e ações:
+
+| Caso | Texto | Ação |
+| --- | --- | --- |
+| Offline | Você está offline. Pacotes baixados continuam funcionando. | Tentar de novo |
+| 429 | Muitas perguntas seguidas. Aguarde ~1 min. | Tentar de novo com contagem (`Retry-After`, padrão 60 s) |
+| 401/403 | Chave xAI inválida. | Atualizar chave → Ajustes |
+| Permissão negada | Lembretes desativados. Você não vai receber aviso do timer. | Abrir configurações |
+| Planilha | Não encontramos as colunas Data, Bloco A, Bloco B e Revisão. | Escolher outro arquivo / Baixar modelo |
+| Bloco ausente | Esse bloco não existe mais no seu plano (talvez a planilha tenha mudado). | Ver plano de hoje |
+
+O `AiResult` carrega `failure` (`kind`, status e `Retry-After`) para a UI não
+perder a causa do erro. Todo pedido de IA usa **15 s** para conectar e para
+responder nos fluxos curtos (teste de conexão, tutor e professor); a geração de
+um pacote completo mantém um teto maior (90 s) para não cortar a aula no meio.
+
+No Android, **Abrir configurações** usa o plugin
+`capacitor-native-settings` 8.2.0 (`src/lib/native/settings.ts`), que abre a
+tela de detalhes do app via intent do sistema. Na web a ação mostra a orientação
+do navegador. A permissão de notificação é lida em
+`src/lib/native/notifications.ts` (hoje a API web `Notification`; o WebView do
+Android a reporta como indisponível).
+
+Para validar no aparelho: a tela de detalhes do app realmente abre, a permissão
+de notificação corresponde ao estado do sistema e a contagem do 429 reinicia o
+botão no tempo do `Retry-After`.
+
 O que continua dependendo de servidor no APK:
 
 | Fluxo | Onde | Depende de |
