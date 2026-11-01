@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { FlashcardDeck, GeneratePackage } from "@/components/generate-package";
 import { LessonView } from "@/components/lesson-view";
+import { ErrorReasonPicker } from "@/components/mistake-reason";
 import { QuestionCard } from "@/components/study-view";
 import { TeacherChat } from "@/components/teacher-chat";
 import { Button } from "@/components/ui/button";
@@ -10,9 +11,10 @@ import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
 import { bumpLevel, emptyFlow, pickPractice, questionFor } from "@/lib/study/flow";
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
 import { blockHeading } from "@/lib/study/outline";
+import { newMistakeSrs } from "@/lib/study/srs";
 import { useStudy } from "@/lib/study/store";
-import { formatClock, formatMin } from "@/lib/study/time";
-import type { BlockKind, QuizItem, SessionMode, StudyPackage, StudySession, Subtopic } from "@/lib/study/types";
+import { formatClock, formatMin, saoPauloToday } from "@/lib/study/time";
+import type { BlockKind, ErrorReason, QuizItem, SessionMode, StudyPackage, StudySession, Subtopic } from "@/lib/study/types";
 
 export const Route = createFileRoute("/_shell/sessao")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -75,6 +77,8 @@ function SessionPage() {
   const [quote, setQuote] = useState<string | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [barOpen, setBarOpen] = useState(false);
+  const [wrongMistakeId, setWrongMistakeId] = useState<string | null>(null);
+  const [errorReason, setErrorReason] = useState<ErrorReason | null>(null);
   const tried = useRef(false);
 
   const session = study.sessions.find((item) => item.id === sid) ?? null;
@@ -163,6 +167,8 @@ function SessionPage() {
     setSelected(null);
     setConfirmed(false);
     setShowHint(false);
+    setWrongMistakeId(null);
+    setErrorReason(null);
   }, [current?.id]);
 
   useEffect(() => {
@@ -211,6 +217,8 @@ function SessionPage() {
   async function grade() {
     if (!session || !current || !sub || selected == null || confirmed) return;
     setConfirmed(true);
+    setWrongMistakeId(null);
+    setErrorReason(null);
     const ok = selected === current.correctIndex;
     let nextFlow = { ...(session.flow ?? emptyFlow()) };
     if (!trap && nextFlow.phase === "diag" && !ok) nextFlow = { ...nextFlow, diagMiss: true, practiceLevel: "facil" };
@@ -230,8 +238,10 @@ function SessionPage() {
       missed: ok || session.missed.includes(current.id) ? session.missed : [...session.missed, current.id],
     });
     if (!ok) {
+      const today = saoPauloToday();
+      const mistakeId = crypto.randomUUID();
       await study.addMistake({
-        id: crypto.randomUUID(),
+        id: mistakeId,
         sessionId: session.id,
         date: session.date,
         kind: session.kind,
@@ -242,8 +252,11 @@ function SessionPage() {
         userIndex: selected,
         explanation: current.explanation,
         createdAt: Date.now(),
+        ...newMistakeSrs(today),
         reviewed: false,
+        source: "sessao",
       });
+      setWrongMistakeId(mistakeId);
     }
   }
 
@@ -454,6 +467,22 @@ function SessionPage() {
           ) : (
             <Button className="mt-4" variant="surface" onClick={() => setTrap(null)}>Voltar à aula</Button>
           )}
+        </section>
+      ) : null}
+
+      {confirmed && wrongMistakeId ? (
+        <section className="rounded-xl border border-clay/40 bg-surface p-4">
+          <p className="text-xs text-clay-text">Erro guardado no caderno</p>
+          <ErrorReasonPicker
+            className="mt-2"
+            label="Classifique rápido a causa (opcional)"
+            value={errorReason ?? undefined}
+            onChange={(reason) => {
+              setErrorReason(reason);
+              void study.setMistakeErrorReason(wrongMistakeId, reason);
+            }}
+          />
+          <p className="mt-2 text-xs text-muted">A revisão espaçada já deixou este erro para hoje.</p>
         </section>
       ) : null}
 

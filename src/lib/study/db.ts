@@ -1,3 +1,4 @@
+import { clampStage } from "@/lib/study/srs";
 import type { Doubt, Mistake, PlanDay, Settings, StudyPackage, StudySession } from "@/lib/study/types";
 import { EMPTY_SETTINGS } from "@/lib/study/types";
 
@@ -38,6 +39,21 @@ function reqToPromise<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
+/**
+ * Registros antigos do caderno não têm os campos de SRS. Na leitura eles
+ * ganham padrões: revisados viram dominados, o resto fica vencido hoje
+ * (`nextReviewAt` ausente = deve ser revisto agora).
+ */
+function normalizeMistake(mistake: Mistake): Mistake {
+  return {
+    ...mistake,
+    reviewed: Boolean(mistake.reviewed),
+    srsStage: typeof mistake.srsStage === "number" ? clampStage(mistake.srsStage) : mistake.reviewed ? 5 : 0,
+    reviewCount: typeof mistake.reviewCount === "number" ? mistake.reviewCount : 0,
+    source: mistake.source ?? "sessao",
+  };
+}
+
 function all<T>(store: IDBObjectStore): Promise<T[]> {
   return reqToPromise(store.getAll() as IDBRequest<T[]>);
 }
@@ -61,7 +77,7 @@ export async function loadSnapshot(): Promise<DbSnapshot> {
     days,
     packages,
     sessions,
-    mistakes,
+    mistakes: mistakes.map(normalizeMistake),
     settings: { ...EMPTY_SETTINGS, ...settings, keys: { ...EMPTY_SETTINGS.keys, ...settings?.keys }, alerts: { ...EMPTY_SETTINGS.alerts, ...settings?.alerts } },
     notifyLog: notifyLog ?? {},
     seeded: Boolean(seeded),

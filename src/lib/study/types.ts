@@ -157,6 +157,12 @@ export type StudySession = {
   flow?: SessionFlow;
 };
 
+/** Causa rápida do erro, usada no caderno e na classificação pós-sessão. */
+export type ErrorReason = "lacuna_teorica" | "atencao" | "interpretacao" | "tempo";
+
+/** De onde o erro veio: de uma questão do app ou de um simulado/PDF. */
+export type MistakeSource = "sessao" | "externo";
+
 export type Mistake = {
   id: string;
   sessionId: string;
@@ -170,6 +176,18 @@ export type Mistake = {
   explanation: string;
   createdAt: number;
   reviewed: boolean;
+  /** Campos opcionais e retrocompatíveis da repetição espaçada. */
+  errorReason?: ErrorReason;
+  srsStage?: number;
+  nextReviewAt?: string;
+  lastReviewedAt?: string;
+  reviewCount?: number;
+  /** Erros anotados à mão (simulado impresso/PDF) ficam marcados como externos. */
+  source?: MistakeSource;
+  subject?: string;
+  /** O que foi marcado e o gabarito, no caso de erro externo. */
+  marked?: string;
+  answerKey?: string;
 };
 
 export type ResearcherId = "grok" | "perplexity" | "gemini" | "claude";
@@ -227,6 +245,18 @@ export const KIND_LABEL: Record<BlockKind, string> = {
   B: "Bloco B",
   R: "Revisão",
   L: "Leitura",
+};
+
+export const ERROR_REASON_LABEL: Record<ErrorReason, string> = {
+  lacuna_teorica: "Teoria",
+  atencao: "Atenção",
+  interpretacao: "Interpretação",
+  tempo: "Tempo",
+};
+
+export const MISTAKE_SOURCE_LABEL: Record<MistakeSource, string> = {
+  sessao: "Sessão",
+  externo: "Externo",
 };
 
 export const EMPTY_SETTINGS: Settings = {

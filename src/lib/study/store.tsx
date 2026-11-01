@@ -5,8 +5,9 @@ import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
 import { loadSnapshot, saveDays, saveMeta, saveMistake, savePackage, saveSession } from "@/lib/study/db";
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
 import { SEED_DAYS } from "@/lib/study/seed";
-import { addDays } from "@/lib/study/time";
-import type { BlockKind, Doubt, Mistake, PlanDay, ResearcherId, Settings, StudyPackage, StudySession } from "@/lib/study/types";
+import { scheduleReview, type SrsOutcome } from "@/lib/study/srs";
+import { addDays, saoPauloToday } from "@/lib/study/time";
+import type { BlockKind, Doubt, ErrorReason, Mistake, PlanDay, ResearcherId, Settings, StudyPackage, StudySession } from "@/lib/study/types";
 import { EMPTY_SETTINGS, KIND_LABEL } from "@/lib/study/types";
 
 export type PrepState = {
@@ -38,6 +39,10 @@ type StudyApi = Snapshot & {
   upsertSession: (session: StudySession) => Promise<void>;
   addMistake: (mistake: Mistake) => Promise<void>;
   reviewMistake: (id: string) => Promise<void>;
+  /** Revisão espaçada: agenda +1/+3/+7… dias conforme a retenção escolhida. */
+  reviewMistakeSrs: (id: string, outcome: SrsOutcome, today?: string) => Promise<void>;
+  /** Classificação rápida da causa do erro (Teoria, Atenção, Interpretação, Tempo). */
+  setMistakeErrorReason: (id: string, reason: ErrorReason) => Promise<void>;
   saveDoubt: (doubt: Doubt) => Promise<void>;
   saveBuilt: (pkg: StudyPackage) => Promise<void>;
   packageFor: (date: string, kind: BlockKind) => StudyPackage | undefined;
@@ -144,6 +149,22 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     const current = snapRef.current.mistakes.find((item) => item.id === id);
     if (!current) return;
     const next = { ...current, reviewed: true };
+    await saveMistake(next);
+    setSnap((s) => ({ ...s, mistakes: s.mistakes.map((item) => (item.id === id ? next : item)) }));
+  }, []);
+
+  const reviewMistakeSrs = useCallback(async (id: string, outcome: SrsOutcome, today = saoPauloToday()) => {
+    const current = snapRef.current.mistakes.find((item) => item.id === id);
+    if (!current) return;
+    const next = scheduleReview(current, outcome, today);
+    await saveMistake(next);
+    setSnap((s) => ({ ...s, mistakes: s.mistakes.map((item) => (item.id === id ? next : item)) }));
+  }, []);
+
+  const setMistakeErrorReason = useCallback(async (id: string, reason: ErrorReason) => {
+    const current = snapRef.current.mistakes.find((item) => item.id === id);
+    if (!current) return;
+    const next = { ...current, errorReason: reason };
     await saveMistake(next);
     setSnap((s) => ({ ...s, mistakes: s.mistakes.map((item) => (item.id === id ? next : item)) }));
   }, []);
@@ -268,6 +289,8 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       upsertSession,
       addMistake,
       reviewMistake,
+      reviewMistakeSrs,
+      setMistakeErrorReason,
       saveDoubt,
       saveBuilt,
       packageFor,
@@ -275,7 +298,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       startPrep,
       cancelPrep,
     }),
-    [snap, ready, loadError, prep, importDays, saveSettings, rememberNotify, upsertSession, addMistake, reviewMistake, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep],
+    [snap, ready, loadError, prep, importDays, saveSettings, rememberNotify, upsertSession, addMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
