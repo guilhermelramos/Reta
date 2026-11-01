@@ -114,6 +114,12 @@ do navegador. A permissão de notificação é lida em
 `src/lib/native/notifications.ts` (hoje a API web `Notification`; o WebView do
 Android a reporta como indisponível).
 
+A ação **Baixar modelo** grava o `.xlsx` no cache do app
+(`@capacitor/filesystem` 8.1.5) e abre o share sheet
+(`@capacitor/share` 8.0.3) no APK; na web continua sendo o download normal do
+navegador (`src/lib/native/files.ts`). O backup `.json` de Ajustes ainda usa o
+caminho antigo — fica para a correção de backup nativo.
+
 Para validar no aparelho: a tela de detalhes do app realmente abre, a permissão
 de notificação corresponde ao estado do sistema e a contagem do 429 reinicia o
 botão no tempo do `Retry-After`.
