@@ -15,7 +15,7 @@ import {
   type ResearchInput,
   type TutorInput,
 } from "./core.ts";
-import { AiRequestError, emptyError, httpError, transportFailure } from "./errors.ts";
+import { AiRequestError, emptyError, httpError, mapFailure, transportFailure } from "./errors.ts";
 import { commonsImages, type JsonFetcher } from "./images.ts";
 import { FAST_MODEL, SEARCH_MODEL } from "./models.ts";
 import type { PackageBody } from "./parse.ts";
@@ -341,34 +341,46 @@ const nativeDeps: CoreDeps = {
 
 /* ------------------------------ API usada pela UI ------------------------------ */
 
+/**
+ * Na web a chamada é uma server function. Falha de rede/rota não pode escapar
+ * como `TypeError` cru: vira o mesmo `AiResult` com mensagem em português.
+ */
+async function webResult<T>(call: () => Promise<AiResult<T>>): Promise<AiResult<T>> {
+  try {
+    return await call();
+  } catch (error) {
+    return { ok: false, error: mapFailure(error, { online: isOnline() }) };
+  }
+}
+
 export async function generatePackageClient(
   input: GeneratePackageInput,
 ): Promise<AiResult<PackageBody>> {
-  if (!isNativeAi()) return generatePackage({ data: input });
+  if (!isNativeAi()) return webResult(() => generatePackage({ data: input }));
   const userKey = await nativeKey(input.provider, input.userKey);
   return runGeneratePackage({ ...input, userKey }, nativeDeps);
 }
 
 export async function generateBlockPackageClient(input: GenerateBlockInput) {
-  if (!isNativeAi()) return generateBlockPackage({ data: input });
+  if (!isNativeAi()) return webResult(() => generateBlockPackage({ data: input }));
   const userKey = await nativeKey("grok", input.userKey);
   return runGenerateBlockPackage({ ...input, userKey }, nativeDeps);
 }
 
 export async function researchAddClient(input: ResearchInput) {
-  if (!isNativeAi()) return researchAdd({ data: input });
+  if (!isNativeAi()) return webResult(() => researchAdd({ data: input }));
   const userKey = await nativeKey("grok", input.userKey);
   return runResearchAdd({ ...input, userKey }, nativeDeps);
 }
 
 export async function pingAiClient(input: PingInput) {
-  if (!isNativeAi()) return pingAi({ data: input });
+  if (!isNativeAi()) return webResult(() => pingAi({ data: input }));
   const userKey = await nativeKey(input.provider, input.userKey);
   return runPingAi({ ...input, userKey }, nativeDeps);
 }
 
 export async function tutorTurnClient(input: TutorInput) {
-  if (!isNativeAi()) return tutorTurn({ data: input });
+  if (!isNativeAi()) return webResult(() => tutorTurn({ data: input }));
   const userKey = await nativeKey("grok", input.userKey);
   return runTutorTurn({ ...input, userKey }, nativeDeps);
 }

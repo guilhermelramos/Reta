@@ -1,4 +1,5 @@
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
+import { mapFailure } from "./errors.ts";
 import { isNativeAi, nativeProfessorReply, type ProfessorInput } from "./xai-client";
 
 /**
@@ -15,6 +16,10 @@ function apiPath(path: string): string {
   return `${prefix ?? ""}${path}`;
 }
 
+function isOnline(): boolean {
+  return typeof navigator === "undefined" || navigator.onLine !== false;
+}
+
 export type AskProfessorResult = { text: string; streamed: boolean };
 
 export async function askProfessor(
@@ -26,7 +31,19 @@ export async function askProfessor(
     onRaw(text);
     return { text, streamed: false };
   }
+  try {
+    return await webProfessor(input, onRaw);
+  } catch (error) {
+    // "Failed to fetch" e timeout do navegador viram a mesma mensagem clara
+    // usada no caminho nativo.
+    throw new Error(mapFailure(error, { online: isOnline() }));
+  }
+}
 
+async function webProfessor(
+  input: ProfessorInput,
+  onRaw: (raw: string) => void,
+): Promise<AskProfessorResult> {
   const res = await fetch(apiPath("/api/professor"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
