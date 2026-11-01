@@ -79,6 +79,17 @@ export function StudyProvider({ children }: { children: ReactNode }) {
   const snapRef = useRef(snap);
   snapRef.current = snap;
 
+  // Pede ao navegador para não despejar o IndexedDB por inatividade (iOS e
+  // Android). Silencioso quando a API não existe ou o navegador nega.
+  useEffect(() => {
+    try {
+      const request = navigator.storage?.persist?.();
+      if (request) void request.catch(() => undefined);
+    } catch {
+      // Storage API indisponível: o backup manual continua sendo a proteção.
+    }
+  }, []);
+
   useEffect(() => {
     let live = true;
     loadSnapshot()
