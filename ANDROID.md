@@ -72,6 +72,28 @@ app mostra mensagem de erro/espera em vez de quebrar. Para ter IA no app nativo
 seria preciso chamar a API da xAI direto do cliente (ou embarcar um backend) —
 fora do escopo desta etapa, que só empacota.
 
+## Notificações locais
+
+- `src/lib/study/notification-schedule.ts` calcula, de forma pura, os avisos
+  dos próximos 7 dias com a mesma lógica/texto de `src/lib/study/notify.ts`
+  (início, questões, revisão e bloco não iniciado).
+- `src/lib/native/notifications.ts` entrega essa lista ao
+  `@capacitor/local-notifications` (canais `estudo`, `questoes` e `timer`,
+  `allowWhileIdle`, alarme exato quando autorizado e inexato como fallback).
+  Na web o serviço é inerte: o comportamento antigo (Notification API +
+  service worker) continua igual.
+- O shell reagenda ao abrir/voltar ao app e quando o plano ou os ajustes
+  mudam; o modo silencioso cancela os lembretes agendados.
+- O botão “Permitir notificações” dos Ajustes pede `POST_NOTIFICATIONS` e,
+  se preciso, abre a tela de alarmes exatos do Android.
+- `BatteryOptimizationPlugin.java` expõe `isIgnoringBatteryOptimizations()` e
+  `openBatteryOptimizationSettings()` (sem pedir
+  `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
+- Permissões no manifesto: `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM` e
+  `RECEIVE_BOOT_COMPLETED` (esta última restaura os alarmes após reiniciar).
+- Entrega real em Doze, telas de permissão, reboot e otimização de bateria só
+  podem ser validadas num aparelho.
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**
