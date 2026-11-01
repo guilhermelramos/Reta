@@ -24,11 +24,13 @@ import {
 } from "@/lib/study/parse-sheet";
 import { readWorkbookOffThread, SheetReadError } from "@/lib/study/parse-sheet-client";
 import {
+  isKeyCheckSuccess,
   isValidKeyDraft,
   keyCheckErrorCopy,
   ONBOARDING_STEP_COUNT,
   previousOnboardingStep,
   type KeyCheckErrorCopy,
+  type KeyCheckFailure,
   type OnboardingStep,
 } from "@/lib/study/onboarding";
 import { StudyProvider, useStudy } from "@/lib/study/store";
@@ -437,8 +439,15 @@ function ProfessorStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
         pingAiClient({ provider: "grok", userKey: key }),
         timeout,
       ]);
-      if (!result.ok) {
-        setError(keyErrorCopy(keyCheckErrorCopy(result.failure ?? { message: result.error }, { online: online() })));
+      if (!isKeyCheckSuccess(result)) {
+        // Resultado real de falha traz `failure`; uma resposta 200 que não é o
+        // JSON da server function (host estático) cai no texto neutro.
+        const failure: KeyCheckFailure =
+          result && typeof result === "object" && (result as { ok?: unknown }).ok === false
+            ? (((result as { failure?: KeyCheckFailure }).failure ??
+                { message: String((result as { error?: unknown }).error ?? "") }) as KeyCheckFailure)
+            : { kind: "unknown" };
+        setError(keyErrorCopy(keyCheckErrorCopy(failure, { online: online() })));
         return;
       }
       // Só guarda depois que a xAI aceitou: Keystore no Android, IndexedDB na web.

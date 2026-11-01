@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   hasImportedPlan,
+  isKeyCheckSuccess,
   isValidKeyDraft,
   KEY_CHECK_INVALID_MESSAGE,
   KEY_CHECK_OFFLINE_MESSAGE,
@@ -119,5 +120,23 @@ describe("isValidKeyDraft", () => {
     assert.equal(isValidKeyDraft(""), false);
     assert.equal(isValidKeyDraft("   \n "), false);
     assert.equal(isValidKeyDraft("  xai-123  "), true);
+  });
+});
+
+describe("isKeyCheckSuccess", () => {
+  it("aceita o ping com texto", () => {
+    assert.equal(isKeyCheckSuccess({ ok: true, data: { text: "ok" } }), true);
+  });
+
+  it("recusa uma Response 200 de HTML que só tem ok:true", () => {
+    // `window.Response` não existe no Node; o formato é o que importa.
+    assert.equal(isKeyCheckSuccess({ ok: true, status: 200 }), false);
+  });
+
+  it("recusa erro, vazio e nulo", () => {
+    assert.equal(isKeyCheckSuccess({ ok: false, error: "Chave inválida." }), false);
+    assert.equal(isKeyCheckSuccess({ ok: true, data: { text: "   " } }), false);
+    assert.equal(isKeyCheckSuccess(null), false);
+    assert.equal(isKeyCheckSuccess(undefined), false);
   });
 });

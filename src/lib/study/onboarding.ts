@@ -119,3 +119,20 @@ export function keyCheckErrorCopy(
 export function isValidKeyDraft(draft: string): boolean {
   return draft.trim().length > 0;
 }
+
+/**
+ * Confere o formato da resposta de `pingAiClient` antes de salvar a chave.
+ *
+ * Sem isso, uma resposta HTTP 200 que não seja o JSON da server function (por
+ * exemplo, o HTML de um host estático) tem `ok: true` de `Response` e seria
+ * confundida com sucesso. O ping de verdade devolve `{ ok: true, data: { text } }`.
+ */
+export function isKeyCheckSuccess(result: unknown): boolean {
+  if (!result || typeof result !== "object") return false;
+  const candidate = result as { ok?: unknown; data?: unknown };
+  if (candidate.ok !== true) return false;
+  const data = candidate.data;
+  if (!data || typeof data !== "object") return false;
+  const text = (data as { text?: unknown }).text;
+  return typeof text === "string" && text.trim().length > 0;
+}
