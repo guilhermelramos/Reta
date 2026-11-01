@@ -1,0 +1,10 @@
+light/360 após onboarding url=http://127.0.0.1:8099/
+light/360 botoes sessao: Iniciar / Pronto para começar · 0 min estudados / Encerrar / Gerar Aula, Flashcards e Questões com IA / Montar esta aula / Professor
+light alvos<48px /sessao: 2 Ir para o conteúdo 1x1 | Hoje 27x48
+light/320 após onboarding url=http://127.0.0.1:8099/
+light/320 botoes sessao: Iniciar / Pronto para começar · 0 min estudados / Encerrar / Gerar Aula, Flashcards e Questões com IA / Montar esta aula / Professor
+light/paisagem após onboarding url=http://127.0.0.1:8099/
+light/paisagem botoes sessao: Iniciar / Pronto para começar · 0 min estudados / Encerrar / Gerar Aula, Flashcards e Questões com IA / Montar esta aula / Professor
+dark/360 após onboarding url=http://127.0.0.1:8099/
+dark/360 botoes sessao: Iniciar / Pronto para começar · 0 min estudados / Encerrar / Gerar Aula, Flashcards e Questões com IA / Montar esta aula / Professor
+dark alvos<48px /sessao: 2 Ir para o conteúdo 1x1 | Hoje 27x48
