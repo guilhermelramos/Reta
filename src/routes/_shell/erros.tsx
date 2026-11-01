@@ -192,7 +192,7 @@ function ErrorsPage() {
                   aria-selected={active}
                   onClick={() => setFilter(tab.id)}
                   className={cn(
-                    "min-h-11 rounded-full border px-3 text-xs transition-colors",
+                    "min-h-12 rounded-full border px-3 text-xs transition-colors",
                     active
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border text-muted hover:border-primary/50 hover:text-fg",
@@ -476,7 +476,7 @@ type FieldProps = {
 };
 
 function Field({ label, value, placeholder, multiline, onChange }: FieldProps) {
-  const className = "min-h-11 w-full rounded-xl border border-border bg-bg px-3 text-sm";
+  const className = "min-h-12 w-full rounded-xl border border-border bg-bg px-3 text-sm";
   return (
     <label className="flex flex-col gap-1">
       <span className="text-xs text-muted">{label}</span>

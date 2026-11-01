@@ -161,7 +161,7 @@ function ImportPage() {
           {sheets.length > 1 ? (
             <label className="flex flex-col gap-1 text-sm">
               Aba
-              <select className="min-h-11 rounded-xl border border-border bg-surface-2 px-3" value={sheetName} onChange={(e) => {
+              <select className="min-h-12 rounded-xl border border-border bg-surface-2 px-3" value={sheetName} onChange={(e) => {
                 const next = sheets.find((s) => s.name === e.target.value);
                 setSheetName(e.target.value);
                 if (!next) return;
@@ -194,7 +194,7 @@ function ImportPage() {
 
           {manual && OPTIONAL_FIELDS.length ? (
             <details className="rounded-xl border border-border bg-surface px-3 py-2">
-              <summary className="cursor-pointer text-sm font-semibold">Campos opcionais</summary>
+              <summary className="flex min-h-12 cursor-pointer items-center text-sm font-semibold">Campos opcionais</summary>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {OPTIONAL_FIELDS.map((field) => (
                   <FieldSelect
@@ -243,7 +243,7 @@ function FieldSelect({
     <label className="flex flex-col gap-1 text-sm">
       {field.label}
       <select
-        className="min-h-11 rounded-xl border border-border bg-surface-2 px-3"
+        className="min-h-12 rounded-xl border border-border bg-surface-2 px-3"
         value={map[field.key] ?? ""}
         onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
       >

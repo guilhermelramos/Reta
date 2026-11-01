@@ -59,13 +59,13 @@ export function LessonView({ sub, onTrain }: { sub: Subtopic; onTrain: (item: Qu
           ["visuais", "Visuais"],
           ["pegadinhas", "Pegadinhas"],
         ].map(([id, label]) => (
-          <a key={id} href={`#${id}`} className="shrink-0 rounded-full border border-border px-3 py-2 text-xs">
+          <a key={id} href={`#${id}`} className="inline-flex min-h-12 shrink-0 items-center rounded-full border border-border px-3 text-xs">
             {label}
           </a>
         ))}
       </nav>
       <details id="essencia" open className="rounded-xl border border-border bg-surface p-4">
-        <summary className="cursor-pointer text-xs tracking-wide text-primary">Essência</summary>
+        <summary className="flex min-h-12 cursor-pointer items-center text-xs tracking-wide text-primary">Essência</summary>
         <div className="mt-3 flex flex-col gap-4">
           {sub.beats.map((beat) => (
             <section key={beat.heading}>
@@ -83,7 +83,7 @@ export function LessonView({ sub, onTrain }: { sub: Subtopic; onTrain: (item: Qu
       </details>
 
       <details id="conceitos" open className="rounded-xl border border-border bg-surface p-4">
-        <summary className="cursor-pointer text-xs tracking-wide text-muted">Conceitos</summary>
+        <summary className="flex min-h-12 cursor-pointer items-center text-xs tracking-wide text-muted">Conceitos</summary>
         <ul className="mt-3 flex flex-col gap-4">
           {sub.concepts.map((concept) => {
             const image = sub.images.find((item) => item.relatedTerm === concept.term);
@@ -106,7 +106,7 @@ export function LessonView({ sub, onTrain }: { sub: Subtopic; onTrain: (item: Qu
       </details>
 
       <details id="visuais" open className="rounded-xl border border-border bg-surface p-4">
-        <summary className="cursor-pointer text-xs tracking-wide text-muted">Visuais</summary>
+        <summary className="flex min-h-12 cursor-pointer items-center text-xs tracking-wide text-muted">Visuais</summary>
         <div className="mt-3 flex flex-col gap-3">
           <Diagram svg={sub.diagramSvg} caption="Diagrama" />
           <Diagram svg={sub.mapSvg} caption={`Mapa · ${sub.subject}. Cada seta diz a relação.`} />
@@ -114,7 +114,7 @@ export function LessonView({ sub, onTrain }: { sub: Subtopic; onTrain: (item: Qu
       </details>
 
       <details id="pegadinhas" open className="rounded-xl border border-clay/40 bg-surface p-4">
-        <summary className="cursor-pointer text-xs tracking-wide text-clay-text">Pegadinhas</summary>
+        <summary className="flex min-h-12 cursor-pointer items-center text-xs tracking-wide text-clay-text">Pegadinhas</summary>
         <ul className="mt-3 flex flex-col gap-3">
           {sub.pitfalls.map((pit) => (
             <li key={pit.id} className="rounded-xl border border-border p-3">

@@ -372,10 +372,10 @@ export function TeacherChat({
     >
       <header className="flex items-center gap-2 border-b border-border px-3 py-2">
         <p className="min-w-0 flex-1 truncate text-sm">Professor · o tempo segue contando</p>
-        <button type="button" className="min-h-11 px-2 text-xs text-muted" onClick={() => setTab(tab === "chat" ? "caderno" : "chat")}>
+        <button type="button" className="min-h-12 px-2 text-xs text-muted" onClick={() => setTab(tab === "chat" ? "caderno" : "chat")}>
           {tab === "chat" ? "Caderno" : "Conversa"}
         </button>
-        <button type="button" className="grid size-11 place-items-center" aria-label="Fechar professor" onClick={onClose}>
+        <button type="button" className="grid size-12 place-items-center" aria-label="Fechar professor" onClick={onClose}>
           <X className="size-4" />
         </button>
       </header>
@@ -386,7 +386,7 @@ export function TeacherChat({
             <li key={doubt.id}>
               <button
                 type="button"
-                className="w-full rounded-xl border border-border px-3 py-2 text-left"
+                className="flex min-h-12 w-full flex-col justify-center rounded-xl border border-border px-3 py-2 text-left"
                 onClick={() => {
                   setActiveId(doubt.id);
                   setTab("chat");
@@ -449,7 +449,7 @@ export function TeacherChat({
                   key={label}
                   type="button"
                   disabled={busy}
-                  className="min-h-11 shrink-0 rounded-full border border-primary/60 bg-primary/10 px-3 text-xs font-semibold text-primary disabled:opacity-50"
+                  className="min-h-12 shrink-0 rounded-full border border-primary/60 bg-primary/10 px-3 text-xs font-semibold text-primary disabled:opacity-50"
                   onClick={() => void send(label)}
                 >
                   {label}
@@ -458,14 +458,14 @@ export function TeacherChat({
             </div>
             <div className="flex gap-2 overflow-x-auto pb-2">
               {SHORTCUTS.map((label) => (
-                <button key={label} type="button" className="min-h-11 shrink-0 rounded-full border border-border px-3 text-xs" onClick={() => void send(label)}>
+                <button key={label} type="button" className="min-h-12 shrink-0 rounded-full border border-border px-3 text-xs" onClick={() => void send(label)}>
                   {label}
                 </button>
               ))}
-              <button type="button" className="min-h-11 shrink-0 rounded-full border border-border px-3 text-xs" onClick={draw}>
+              <button type="button" className="min-h-12 shrink-0 rounded-full border border-border px-3 text-xs" onClick={draw}>
                 Desenhe isso em SVG
               </button>
-              <button type="button" className="min-h-11 shrink-0 rounded-full border border-border px-3 text-xs" onClick={testMe}>
+              <button type="button" className="min-h-12 shrink-0 rounded-full border border-border px-3 text-xs" onClick={testMe}>
                 Me teste nisso
               </button>
             </div>
@@ -484,7 +484,7 @@ export function TeacherChat({
               }}
             >
               {speech ? (
-                <button type="button" className="grid size-11 shrink-0 place-items-center rounded-xl border border-border" aria-label="Falar a dúvida" onClick={listen}>
+                <button type="button" className="grid size-12 shrink-0 place-items-center rounded-xl border border-border" aria-label="Falar a dúvida" onClick={listen}>
                   <Mic className="size-4" />
                 </button>
               ) : null}
@@ -492,7 +492,7 @@ export function TeacherChat({
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder="Pergunte sobre este trecho"
-                className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-bg px-3 text-sm"
+                className="min-h-12 min-w-0 flex-1 rounded-xl border border-border bg-bg px-3 text-sm"
               />
               <Button type="submit" disabled={busy || !draft.trim()}>
                 {busy ? "…" : "Enviar"}

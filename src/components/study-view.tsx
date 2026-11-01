@@ -213,7 +213,7 @@ export function QuestionCard({
               disabled={confirmed}
               onClick={() => onSelect(index)}
               className={cn(
-                "min-h-11 rounded-xl border px-3 py-2 text-left",
+                "min-h-12 rounded-xl border px-3 py-2 text-left",
                 isRight && "border-primary bg-primary/15",
                 isWrong && "border-clay text-clay-text",
                 !isRight && !isWrong && isSel && "border-primary",

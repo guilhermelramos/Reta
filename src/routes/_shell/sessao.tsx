@@ -537,7 +537,7 @@ function SessionPage() {
     <div className="mx-auto flex max-w-2xl flex-col gap-4" onMouseUp={onSelectText}>
       <header>
         <p className="text-sm text-muted">
-          <Link to="/" className="underline">Hoje</Link>
+          <Link to="/" className="inline-flex min-h-12 items-center underline">Hoje</Link>
           {search.modo === "15" ? " · 15 min" : ""}
         </p>
         <h1 className="mt-1 text-3xl">{pkg?.displayTitle || heading.title}</h1>
@@ -555,7 +555,7 @@ function SessionPage() {
       {session && session.status === "active" ? (
         <div className="sticky top-0 z-20 -mx-4 border-b border-border bg-bg/95 px-4 backdrop-blur">
           <div className="flex h-12 items-center gap-2">
-            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setBarOpen((v) => !v)} aria-expanded={barOpen}>
+            <button type="button" className="min-h-12 min-w-0 flex-1 text-left" onClick={() => setBarOpen((v) => !v)} aria-expanded={barOpen}>
               <span className="font-display text-xl tabular-nums" role="timer">{formatClock(elapsed)}</span>
               <span className="ml-3 text-xs text-muted">
                 Estudado: {studied} min
@@ -575,11 +575,11 @@ function SessionPage() {
               {flow.phase === "aula" && !trap ? (
                 <nav className="flex gap-2 overflow-x-auto" aria-label="Seções da aula">
                   {SECTIONS.map(([id, label]) => (
-                    <button key={id} type="button" className="shrink-0 rounded-full border border-border px-3 py-2 text-xs" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                    <button key={id} type="button" className="min-h-12 shrink-0 rounded-full border border-border px-3 py-2 text-xs" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
                       {label}
                     </button>
                   ))}
-                  <button type="button" className="shrink-0 rounded-full border border-border px-3 py-2 text-xs" onClick={() => void save({ ...session, flow: { ...flow, phase: "pratica", q: 0 } })}>
+                  <button type="button" className="min-h-12 shrink-0 rounded-full border border-border px-3 py-2 text-xs" onClick={() => void save({ ...session, flow: { ...flow, phase: "pratica", q: 0 } })}>
                     Praticar
                   </button>
                 </nav>
@@ -632,7 +632,7 @@ function SessionPage() {
               const here = index === flow.sub && session?.status === "active" && flow.phase !== "bloco";
               return (
                 <li key={item.id}>
-                  <button type="button" onClick={() => jump(index)} className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-border px-3 py-2 text-left">
+                  <button type="button" onClick={() => jump(index)} className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border border-border px-3 py-2 text-left">
                     <span>
                       <span className="mr-2 text-xs text-primary">{item.code}</span>
                       {item.title}
@@ -765,12 +765,12 @@ function SessionPage() {
       ) : null}
 
       {quote && !chat ? (
-        <button type="button" className="fixed bottom-44 right-4 z-40 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-fg" onClick={() => setChat(true)}>
+        <button type="button" className="fixed bottom-44 right-4 z-40 min-h-12 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-fg" onClick={() => setChat(true)}>
           Perguntar sobre isso
         </button>
       ) : null}
       {!chat ? (
-        <button type="button" className="fixed bottom-28 right-4 z-40 min-h-11 rounded-full border border-primary bg-bg px-4 text-sm font-semibold text-primary md:bottom-6" onClick={() => setChat(true)}>
+        <button type="button" className="fixed bottom-28 right-4 z-40 min-h-12 rounded-full border border-primary bg-bg px-4 text-sm font-semibold text-primary md:bottom-6" onClick={() => setChat(true)}>
           Perguntar ao professor
         </button>
       ) : null}
