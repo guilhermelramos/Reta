@@ -1,0 +1,11 @@
+import { chromium } from "playwright";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+page.on("console", (m) => console.log("CONSOLE", m.type(), m.text()));
+page.on("pageerror", (e) => console.log("PAGEERROR", e.message));
+await page.goto("http://127.0.0.1:8090/plano", { waitUntil: "networkidle" });
+await page.waitForTimeout(2500);
+console.log((await page.locator("body").innerText()).slice(0, 1200));
+console.log("BUTTONS", await page.locator("button").allInnerTexts());
+await page.screenshot({ path: "/workspace/screenshots/plano-debug.png", fullPage: true });
+await browser.close();
