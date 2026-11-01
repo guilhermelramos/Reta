@@ -17,6 +17,8 @@ const NAV = [
 function Frame() {
   const { ready, loadError, settings, days, sessions, notifyLog, rememberNotify } = useStudy();
   const path = useRouterState({ select: (s) => s.location.pathname });
+  // Modo foco: a sessão de estudo esconde a navegação inferior.
+  const focusMode = path === "/sessao";
 
   useEffect(() => {
     registerWorker();
@@ -72,13 +74,13 @@ function Frame() {
     <div className="min-h-screen bg-bg text-fg">
       <a
         href="#conteudo"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-xl focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-fg"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:flex focus:min-h-12 focus:items-center focus:rounded-xl focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-fg"
       >
         Ir para o conteúdo
       </a>
       <div className="mx-auto flex max-w-6xl">
         <aside className="no-print sticky top-0 hidden h-screen w-56 shrink-0 flex-col gap-8 border-r border-border px-5 py-8 md:flex">
-          <Link to="/" className="flex items-center gap-2">
+          <Link to="/" className="flex min-h-12 items-center gap-2">
             <span className="size-3 rounded-sm bg-primary" aria-hidden />
             <span className="font-display text-3xl leading-none">Reta</span>
           </Link>
@@ -91,7 +93,7 @@ function Frame() {
                   key={item.to}
                   to={item.to}
                   className={cn(
-                    "flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm",
+                    "flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm",
                     active ? "bg-surface-2 text-primary" : "text-muted hover:bg-surface hover:text-fg",
                   )}
                 >
@@ -106,38 +108,48 @@ function Frame() {
           {loadError ? <p className="px-5 pt-4 text-sm text-clay-text">{loadError}</p> : null}
           <main
             id="conteudo"
-            className="px-4 py-6 pb-[calc(8.5rem_+_env(safe-area-inset-bottom))] md:px-8 md:py-8 md:pb-20"
+            className={cn(
+              "px-4 py-6 md:px-8 md:py-8 md:pb-20",
+              focusMode ? "pb-6" : "pb-[calc(6rem_+_env(safe-area-inset-bottom))]",
+            )}
           >
             <Outlet />
           </main>
         </div>
       </div>
-      <nav
-        className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-border bg-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
-        aria-label="Seções"
-      >
-        <ul className="grid grid-cols-5">
-          {NAV.map((item) => {
-            const active = item.to === "/" ? path === "/" : path.startsWith(item.to);
-            const Icon = item.icon;
-            return (
-              <li key={item.to}>
-                <Link
-                  to={item.to}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "flex min-h-14 min-w-11 flex-col items-center justify-center gap-1 px-1 text-xs",
-                    active ? "text-primary" : "text-muted",
-                  )}
-                >
-                  <Icon className="size-5" aria-hidden />
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+      {focusMode ? null : (
+        <nav
+          className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-border bg-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+          aria-label="Seções"
+        >
+          {/* M3 Navigation bar: 80dp de conteúdo + safe area. */}
+          <ul className="grid h-20 grid-cols-5">
+            {NAV.map((item) => {
+              const active = item.to === "/" ? path === "/" : path.startsWith(item.to);
+              const Icon = item.icon;
+              return (
+                <li key={item.to} className="min-w-0">
+                  <Link
+                    to={item.to}
+                    aria-current={active ? "page" : undefined}
+                    className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-xs font-medium"
+                  >
+                    <span
+                      className={cn(
+                        "flex h-8 w-16 items-center justify-center rounded-full transition-colors",
+                        active ? "bg-primary/25" : "bg-transparent",
+                      )}
+                    >
+                      <Icon className={cn("size-6", active ? "text-fg" : "text-muted")} aria-hidden />
+                    </span>
+                    <span className={active ? "text-fg" : "text-muted"}>{item.label}</span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      )}
     </div>
   );
 }

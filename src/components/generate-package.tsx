@@ -92,7 +92,7 @@ export function FlashcardDeck({ cards }: { cards: Flashcard[] }) {
   if (!cards.length) return null;
   return (
     <details className="rounded-xl border border-border bg-surface p-4">
-      <summary className="flex cursor-pointer items-center gap-2 text-xs tracking-wide text-primary">
+      <summary className="flex min-h-12 cursor-pointer items-center gap-2 text-xs tracking-wide text-primary">
         <Layers className="size-4" />
         Flashcards ({cards.length})
       </summary>

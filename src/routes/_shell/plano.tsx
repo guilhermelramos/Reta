@@ -264,7 +264,7 @@ function PlanPage() {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
-        <ul className="flex max-h-96 flex-col gap-1 overflow-auto pr-1 md:max-h-screen">
+        <ul className="flex max-h-96 flex-col gap-2 overflow-auto pr-1 md:max-h-screen">
           {days.map((day) => {
             const done = day.blocks.filter((b) => b.plannedMin > 0 && sessions.some((s) => s.date === day.date && s.kind === b.kind && s.status === "done")).length;
             const load = day.blocks.filter((b) => b.plannedMin > 0).length;
@@ -277,7 +277,7 @@ function PlanPage() {
                   disabled={Boolean(draft)}
                   title={draft ? "Salve ou cancele a edição para trocar de dia" : undefined}
                   className={cn(
-                    "flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 text-left disabled:opacity-60",
+                    "flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 text-left disabled:opacity-60",
                     active ? "bg-surface-2" : "hover:bg-surface",
                     day.date === today && "ring-1 ring-primary/50",
                   )}
@@ -364,7 +364,7 @@ function DayForm({
     onChange({ ...draft, blocks: [...draft.blocks, emptyBlock(nextKind)] });
   }
 
-  const fieldClass = "min-h-11 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm text-fg placeholder:text-muted/60";
+  const fieldClass = "min-h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm text-fg placeholder:text-muted/80";
 
   return (
     <form
@@ -445,7 +445,7 @@ function DayForm({
                 onChange={(event) => patchBlock(block.key, { content: event.target.value })}
                 rows={2}
                 placeholder="Ex.: Matemática: progressão aritmética — soma e termo geral"
-                className="min-h-16 w-full resize-y rounded-xl border border-border bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted/60"
+                className="min-h-16 w-full resize-y rounded-xl border border-border bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted/80"
               />
             </label>
             <div className="mt-2 flex justify-end">

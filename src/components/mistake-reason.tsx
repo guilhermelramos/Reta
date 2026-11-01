@@ -31,7 +31,7 @@ export function ErrorReasonPicker({
               aria-pressed={active}
               onClick={() => onChange(reason)}
               className={cn(
-                "min-h-11 rounded-full border px-3 text-xs transition-colors",
+                "min-h-12 rounded-full border px-3 text-xs transition-colors",
                 active
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-border text-muted hover:border-primary/50 hover:text-fg",

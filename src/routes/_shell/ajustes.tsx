@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ZodError } from "zod";
 import { Button } from "@/components/ui/button";
 import { ButtonSpinner } from "@/components/feedback/button-spinner";
@@ -280,11 +280,11 @@ function SettingsPage() {
         <div className="flex gap-3">
           <label className="flex flex-col gap-1 text-sm">
             Hora
-            <input className="min-h-11 w-24 rounded-xl border border-border bg-surface-2 px-3 tabular-nums" type="number" min={0} max={23} value={draft.studyHour} onChange={(e) => patch({ studyHour: clampHour(e.target.value) })} />
+            <input className="min-h-12 w-24 rounded-xl border border-border bg-surface-2 px-3 tabular-nums" type="number" min={0} max={23} value={draft.studyHour} onChange={(e) => patch({ studyHour: clampHour(e.target.value) })} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             Minuto
-            <input className="min-h-11 w-24 rounded-xl border border-border bg-surface-2 px-3 tabular-nums" type="number" min={0} max={59} value={draft.studyMinute} onChange={(e) => patch({ studyMinute: clampMin(e.target.value) })} />
+            <input className="min-h-12 w-24 rounded-xl border border-border bg-surface-2 px-3 tabular-nums" type="number" min={0} max={59} value={draft.studyMinute} onChange={(e) => patch({ studyMinute: clampMin(e.target.value) })} />
           </label>
         </div>
         <Check label="Lembrete de início, com o tema do dia" on={draft.alerts.start} set={(start) => patch({ alerts: { ...draft.alerts, start } })} />
@@ -368,7 +368,7 @@ function SettingsPage() {
         </p>
         <label className="flex flex-col gap-1 text-sm">
           Pesquisador
-          <select className="min-h-11 rounded-xl border border-border bg-surface-2 px-3" value={draft.researcher} onChange={(e) => patch({ researcher: e.target.value as ResearcherId })}>
+          <select className="min-h-12 rounded-xl border border-border bg-surface-2 px-3" value={draft.researcher} onChange={(e) => patch({ researcher: e.target.value as ResearcherId })}>
             {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
         </label>
@@ -401,7 +401,7 @@ function SettingsPage() {
       </section>
 
       <p className="text-sm">
-        <Link to="/importar" className="underline">Importar outra planilha</Link>
+        <Link to="/importar" className="inline-flex min-h-12 items-center underline">Importar outra planilha</Link>
       </p>
     </div>
   );
@@ -459,10 +459,12 @@ function clampMin(value: string): number {
 }
 
 function Check({ label, on, set }: { label: string; on: boolean; set: (v: boolean) => void }) {
+  const id = useId();
   return (
-    <label className="flex min-h-11 items-center justify-between gap-3 text-sm">
+    <label htmlFor={id} className="flex min-h-12 cursor-pointer items-center justify-between gap-3 text-sm">
       <span>{label}</span>
-      <input type="checkbox" className="size-5 accent-primary" checked={on} onChange={(e) => set(e.target.checked)} />
+      {/* Visual de 20px; a linha inteira do label é o alvo de toque. */}
+      <input id={id} type="checkbox" className="size-5 accent-primary" checked={on} onChange={(e) => set(e.target.checked)} />
     </label>
   );
 }
@@ -471,7 +473,7 @@ function Key({ id, label, value, set }: { id?: string; label: string; value: str
   return (
     <label className="flex flex-col gap-1 text-sm">
       {label}
-      <input id={id} className="min-h-11 rounded-xl border border-border bg-surface-2 px-3" type="password" autoComplete="off" value={value} onChange={(e) => set(e.target.value)} />
+      <input id={id} className="min-h-12 rounded-xl border border-border bg-surface-2 px-3" type="password" autoComplete="off" value={value} onChange={(e) => set(e.target.value)} />
     </label>
   );
 }

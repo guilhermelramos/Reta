@@ -25,7 +25,7 @@ export function FeedbackActionButton({
     action.id === "retry" ? action.retryAfterSeconds : undefined,
   );
   const label = left > 0 ? `${action.label} em ${left} s` : action.label;
-  const look = cn(emphasis === "primary" ? "min-h-12 px-5" : "min-h-11", className);
+  const look = cn(emphasis === "primary" ? "min-h-12 px-5" : "min-h-12", className);
 
   if (action.href) {
     return (
