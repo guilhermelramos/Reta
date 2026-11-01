@@ -182,3 +182,79 @@ export function examDate(days: PlanDay[]): string | null {
   if (marked) return marked.date;
   return days.length ? days[days.length - 1].date : null;
 }
+
+/* ------------------------------------------------------------------ *
+ * Timer resiliente da sessão (timestamps reais, sem confiar no setInterval)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Estado do cronômetro de uma sessão.
+ *
+ * O tempo andado é sempre `Date.now() - startedAt + accumulatedElapsedMs`,
+ * então tela bloqueada, aba congelada ou app em segundo plano não atrasam a
+ * contagem: ao voltar, o valor é recalculado de uma vez.
+ */
+export type SessionTimerState = {
+  /** Epoch ms em que o trecho atual começou a correr; `null` quando pausado. */
+  startedAt: number | null;
+  /** Milissegundos já acumulados dos trechos anteriores. */
+  accumulatedElapsedMs: number;
+};
+
+/** Lê o cronômetro a partir dos campos já salvos em `StudySession`. */
+export function timerFromSession(session: {
+  elapsedSec: number;
+  runStartedAt: number | null;
+  running: boolean;
+}): SessionTimerState {
+  const elapsed = Number.isFinite(session.elapsedSec) ? session.elapsedSec : 0;
+  return {
+    startedAt: session.running && session.runStartedAt != null ? session.runStartedAt : null,
+    accumulatedElapsedMs: Math.max(0, elapsed) * 1000,
+  };
+}
+
+/** Tempo andado em ms, por diferença de timestamps reais. */
+export function timerElapsedMs(state: SessionTimerState, now = Date.now()): number {
+  const banked = Number.isFinite(state.accumulatedElapsedMs)
+    ? Math.max(0, state.accumulatedElapsedMs)
+    : 0;
+  const running = state.startedAt != null ? Math.max(0, now - state.startedAt) : 0;
+  return banked + running;
+}
+
+/** Começa/retoma a contagem a partir de `now` (idempotente). */
+export function timerStart(state: SessionTimerState, now = Date.now()): SessionTimerState {
+  if (state.startedAt != null) return state;
+  return { accumulatedElapsedMs: timerElapsedMs(state, now), startedAt: now };
+}
+
+/** Pausa a contagem guardando o que já passou. */
+export function timerPause(state: SessionTimerState, now = Date.now()): SessionTimerState {
+  return { accumulatedElapsedMs: timerElapsedMs(state, now), startedAt: null };
+}
+
+/** Converte o cronômetro de volta para os campos persistidos da sessão. */
+export function timerToSession(
+  state: SessionTimerState,
+  now = Date.now(),
+): { elapsedSec: number; running: boolean; runStartedAt: number | null } {
+  const elapsedMs = timerElapsedMs(state, now);
+  return {
+    elapsedSec: Math.floor(elapsedMs / 1000),
+    running: state.startedAt != null,
+    runStartedAt: state.startedAt,
+  };
+}
+
+/** Quanto falta para a meta do bloco (ms, nunca negativo). */
+export function timerRemainingMs(budgetMin: number, elapsedMs: number): number {
+  const budget = Number.isFinite(budgetMin) ? Math.max(0, budgetMin) : 0;
+  return Math.max(0, budget * 60000 - Math.max(0, elapsedMs));
+}
+
+/** `true` quando o tempo planejado do bloco já foi cumprido. */
+export function timerExpired(budgetMin: number, elapsedMs: number): boolean {
+  const budget = Number.isFinite(budgetMin) ? budgetMin : 0;
+  return budget > 0 && elapsedMs >= budget * 60000;
+}

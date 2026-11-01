@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Mic, X } from "lucide-react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Drawer } from "vaul";
 import { QuestionCard } from "@/components/study-view";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { researchAdd } from "@/lib/ai/study.functions";
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
@@ -42,6 +45,73 @@ function present(raw: string): { text: string; outside: boolean; cite: string; s
 }
 
 const SHORTCUTS = ["Explique de outro jeito", "Dê um exemplo", "Resuma em 3 linhas", "Qual é a pegadinha?"] as const;
+
+/** Perguntas de 1 toque: evitam digitação longa no teclado do celular. */
+const QUICK_QUESTIONS = [
+  "Me dê uma dica sem entregar a resposta",
+  "Por que a minha alternativa está errada?",
+  "Qual é a pegadinha desta questão?",
+  "Resuma a fórmula/conceito em 3 linhas",
+] as const;
+
+/** Detecta a largura de celular sem quebrar a hidratação do SSR. */
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const sync = () => setMobile(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  return mobile;
+}
+
+/**
+ * No celular o professor vira gaveta inferior (vaul) arrastável. O `Dialog`
+ * interno repete o estado com `modal={false}`: sem travar rolagem, sem esconder
+ * o resto da tela da acessibilidade e sem prender o foco, o enunciado e o
+ * cronômetro do topo seguem legíveis e clicáveis enquanto o chat está aberto.
+ * No desktop fica o painel lateral de sempre.
+ */
+function SheetFrame({
+  mobile,
+  open,
+  onClose,
+  children,
+}: {
+  mobile: boolean;
+  open: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (!mobile) return <>{children}</>;
+  return (
+    <Drawer.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      modal={false}
+      noBodyStyles
+      dismissible
+      shouldScaleBackground={false}
+    >
+      <Drawer.Portal>
+        <DialogPrimitive.Root open={open} onOpenChange={(next) => { if (!next) onClose(); }} modal={false}>
+          <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 outline-none">
+            <DialogPrimitive.Title className="sr-only">Professor IA</DialogPrimitive.Title>
+            <DialogPrimitive.Description className="sr-only">
+              Converse sobre a questão aberta. O cronômetro continua contando enquanto a gaveta está aberta.
+            </DialogPrimitive.Description>
+            <Drawer.Handle className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-border" aria-hidden />
+            {children}
+          </Drawer.Content>
+        </DialogPrimitive.Root>
+      </Drawer.Portal>
+    </Drawer.Root>
+  );
+}
 
 export function TeacherChat({
   open,
@@ -92,6 +162,7 @@ export function TeacherChat({
   const [confirmed, setConfirmed] = useState(false);
   const [hint, setHint] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
   const speech = typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
 
   const blockDoubts = doubts.filter((item) => item.blockId === blockId);
@@ -261,7 +332,16 @@ export function TeacherChat({
   }
 
   return (
-    <section className="fixed inset-x-0 bottom-0 z-50 flex h-[50dvh] flex-col rounded-t-2xl border border-border bg-surface md:left-auto md:right-4 md:w-[28rem]" aria-label="Professor">
+    <SheetFrame mobile={isMobile} open={open} onClose={onClose}>
+    <section
+      className={cn(
+        "flex flex-col overflow-hidden border border-border bg-surface",
+        isMobile
+          ? "h-[72dvh] max-h-[85dvh] rounded-t-2xl"
+          : "fixed inset-x-0 bottom-0 z-50 h-[50dvh] rounded-t-2xl md:left-auto md:right-4 md:w-[28rem]",
+      )}
+      aria-label="Professor"
+    >
       <header className="flex items-center gap-2 border-b border-border px-3 py-2">
         <p className="min-w-0 flex-1 truncate text-sm">Professor · o tempo segue contando</p>
         <button type="button" className="min-h-11 px-2 text-xs text-muted" onClick={() => setTab(tab === "chat" ? "caderno" : "chat")}>
@@ -301,6 +381,12 @@ export function TeacherChat({
                 {msg.svg ? <div className="study-diagram mt-2" dangerouslySetInnerHTML={{ __html: msg.svg }} /> : null}
               </div>
             ))}
+            {!active?.messages.length && !test ? (
+              <div className="rounded-xl border border-dashed border-border p-3 text-sm leading-relaxed text-muted">
+                <p>Pergunte sem sair da questão: toque numa pergunta rápida abaixo ou escreva do seu jeito.</p>
+                <p className="mt-1 text-xs">O cronômetro continua contando com a gaveta aberta.</p>
+              </div>
+            ) : null}
             {test ? (
               <div className="rounded-xl border border-border p-3">
                 <QuestionCard
@@ -328,17 +414,30 @@ export function TeacherChat({
               </Button>
             ) : null}
           </div>
-          <div className="border-t border-border p-2 pb-12 md:pb-2">
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              {SHORTCUTS.map((label) => (
-                <button key={label} type="button" className="shrink-0 rounded-full border border-border px-3 py-2 text-xs" onClick={() => void send(label)}>
+          <div className="border-t border-border p-2 pb-[calc(env(safe-area-inset-bottom)_+_0.5rem)] md:pb-2">
+            <div className="mb-2 flex gap-2 overflow-x-auto pb-1" aria-label="Perguntas rápidas">
+              {QUICK_QUESTIONS.map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  disabled={busy}
+                  className="min-h-11 shrink-0 rounded-full border border-primary/60 bg-primary/10 px-3 text-xs font-semibold text-primary disabled:opacity-50"
+                  onClick={() => void send(label)}
+                >
                   {label}
                 </button>
               ))}
-              <button type="button" className="shrink-0 rounded-full border border-border px-3 py-2 text-xs" onClick={draw}>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {SHORTCUTS.map((label) => (
+                <button key={label} type="button" className="min-h-11 shrink-0 rounded-full border border-border px-3 text-xs" onClick={() => void send(label)}>
+                  {label}
+                </button>
+              ))}
+              <button type="button" className="min-h-11 shrink-0 rounded-full border border-border px-3 text-xs" onClick={draw}>
                 Desenhe isso em SVG
               </button>
-              <button type="button" className="shrink-0 rounded-full border border-border px-3 py-2 text-xs" onClick={testMe}>
+              <button type="button" className="min-h-11 shrink-0 rounded-full border border-border px-3 text-xs" onClick={testMe}>
                 Me teste nisso
               </button>
             </div>
@@ -375,5 +474,6 @@ export function TeacherChat({
         </>
       )}
     </section>
+    </SheetFrame>
   );
 }

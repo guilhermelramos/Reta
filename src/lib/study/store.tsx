@@ -33,6 +33,8 @@ type StudyApi = Snapshot & {
   loadError: string;
   prep: PrepState;
   importDays: (days: PlanDay[]) => Promise<void>;
+  /** Cria ou substitui um dia inteiro (usado pela edição manual do plano). */
+  upsertDay: (day: PlanDay) => Promise<void>;
   saveSettings: (settings: Settings) => Promise<void>;
   rememberNotify: (log: Record<string, string>) => void;
   upsertSession: (session: StudySession) => Promise<void>;
@@ -79,6 +81,17 @@ export function StudyProvider({ children }: { children: ReactNode }) {
   const snapRef = useRef(snap);
   snapRef.current = snap;
 
+  // Pede ao navegador para não despejar o IndexedDB por inatividade (iOS e
+  // Android). Silencioso quando a API não existe ou o navegador nega.
+  useEffect(() => {
+    try {
+      const request = navigator.storage?.persist?.();
+      if (request) void request.catch(() => undefined);
+    } catch {
+      // Storage API indisponível: o backup manual continua sendo a proteção.
+    }
+  }, []);
+
   useEffect(() => {
     let live = true;
     loadSnapshot()
@@ -115,6 +128,18 @@ export function StudyProvider({ children }: { children: ReactNode }) {
   const importDays = useCallback(async (days: PlanDay[]) => {
     await saveDays(days);
     setSnap((s) => ({ ...s, days, seeded: false }));
+  }, []);
+
+  /**
+   * Cria ou substitui um dia do plano (edição manual no celular).
+   * Mantém a lista ordenada por data e grava tudo em `days`.
+   */
+  const upsertDay = useCallback(async (day: PlanDay) => {
+    const next = [...snapRef.current.days.filter((item) => item.date !== day.date), day].sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+    await saveDays(next);
+    setSnap((s) => ({ ...s, days: next, seeded: false }));
   }, []);
 
   const saveSettings = useCallback(async (settings: Settings) => {
@@ -263,6 +288,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       loadError,
       prep,
       importDays,
+      upsertDay,
       saveSettings,
       rememberNotify,
       upsertSession,
@@ -275,7 +301,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       startPrep,
       cancelPrep,
     }),
-    [snap, ready, loadError, prep, importDays, saveSettings, rememberNotify, upsertSession, addMistake, reviewMistake, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep],
+    [snap, ready, loadError, prep, importDays, upsertDay, saveSettings, rememberNotify, upsertSession, addMistake, reviewMistake, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

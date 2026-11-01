@@ -1,0 +1,53 @@
+{
+  "id": "/",
+  "name": "Reta — estudo para o vestibular",
+  "short_name": "Reta",
+  "description": "O que estudar agora, com timer, pacote visual e uma questão por vez. Seus dados ficam só neste aparelho.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "theme_color": "#10130f",
+  "background_color": "#10130f",
+  "categories": ["education", "productivity"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/__grok/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Estudar agora",
+      "short_name": "Estudar",
+      "description": "Abrir a sessão de estudo do dia.",
+      "url": "/sessao",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Plano",
+      "short_name": "Plano",
+      "description": "Ver e ajustar o plano de estudos.",
+      "url": "/plano",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ]
+}
