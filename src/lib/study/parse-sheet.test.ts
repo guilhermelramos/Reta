@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { applyMap, guessMap } from "./parse-sheet.ts";
+import { applyManualMap, applyMap, buildTemplateWorkbook, emptyMap, guessMap, manualHeaderRow, manualHeaders, pickSheet, readWorkbook } from "./parse-sheet.ts";
 
 const HEADERS = [
   "Dia / fase",
@@ -104,5 +104,63 @@ describe("parse-sheet: datas repetidas", () => {
       warnings.some((w) => /repetida/.test(w.message)),
       false,
     );
+  });
+});
+
+describe("parse-sheet: mapeamento manual", () => {
+  const headers = ["Data", "Matéria", "Tempo", "Matéria 2", "Tempo 2", "Revisão"];
+
+  function sheet(matrix: string[][]) {
+    // headerRow -1 simula a detecção automática que falhou.
+    return { name: "Plano", headers: [], headerRow: -1, matrix };
+  }
+
+  it("usa a linha logo acima do primeiro dia como cabeçalho", () => {
+    const table = sheet([
+      ["Meu cronograma", "", "", "", "", ""],
+      headers,
+      ["01/04/2026", "Matemática: Log", "30", "Física: Óptica", "20", "Revisão: 5 questões"],
+    ]);
+    assert.equal(manualHeaderRow(table), 1);
+    assert.deepEqual(manualHeaders(table), headers);
+
+    const map = { ...emptyMap(), date: 0, contentA: 1, minA: 2, contentB: 3, minB: 4, contentR: 5 };
+    const { days, warnings } = applyManualMap(table, map);
+    assert.equal(days.length, 1);
+    assert.equal(days[0]!.date, "2026-04-01");
+    assert.deepEqual(days[0]!.blocks.map((b) => [b.kind, b.content, b.plannedMin]), [
+      ["A", "Matemática: Log", 30],
+      ["B", "Física: Óptica", 20],
+      ["R", "Revisão: 5 questões", 0],
+    ]);
+    assert.deepEqual(warnings, []);
+  });
+
+  it("não descarta o primeiro dia quando a planilha já começa nos dados", () => {
+    const table = sheet([
+      ["02/04/2026", "Química: pH", "25", "", "", ""],
+      ["03/04/2026", "Biologia: Ecologia", "40", "", "", ""],
+    ]);
+    assert.equal(manualHeaderRow(table), -1);
+    assert.deepEqual(manualHeaders(table), ["Coluna 1", "Coluna 2", "Coluna 3", "Coluna 4", "Coluna 5", "Coluna 6"]);
+
+    const map = { ...emptyMap(), date: 0, contentA: 1, minA: 2 };
+    const { days } = applyManualMap(table, map);
+    assert.deepEqual(days.map((d) => d.date), ["2026-04-02", "2026-04-03"]);
+  });
+});
+
+describe("parse-sheet: planilha modelo", () => {
+  it("gera um .xlsx que o próprio parser reconhece", () => {
+    const tables = readWorkbook(buildTemplateWorkbook());
+    const best = pickSheet(tables);
+    assert.ok(best, "a planilha modelo precisa ser detectada automaticamente");
+    assert.equal(best.name, "Plano");
+    assert.deepEqual(best.headers, ["Data", "Bloco A", "Min A", "Bloco B", "Min B", "Revisão"]);
+
+    const { days } = applyMap(best.matrix, best.headerRow, guessMap(best.headers));
+    assert.equal(days.length, 3);
+    assert.equal(days[0]!.date, "2026-03-02");
+    assert.deepEqual(days[0]!.blocks.map((b) => b.kind), ["A", "B", "R"]);
   });
 });

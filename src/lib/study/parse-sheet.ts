@@ -278,6 +278,64 @@ function readBlock(
   return { kind, content: content || "Sem descrição", plannedMin };
 }
 
+/**
+ * Linha usada como cabeçalho no mapeamento manual.
+ * - Cabeçalho detectado: usa a linha encontrada.
+ * - Sem detecção: procura a primeira linha com data; a linha logo acima dela é
+ *   o cabeçalho. Se a própria primeira linha já é um dia, não há cabeçalho (-1).
+ */
+export function manualHeaderRow(sheet: SheetTable): number {
+  if (sheet.headerRow >= 0) return sheet.headerRow;
+  const limit = Math.min(sheet.matrix.length, 40);
+  for (let index = 0; index < limit; index++) {
+    const row = sheet.matrix[index] ?? [];
+    if (row.some((cell) => Boolean(parseDateKey(cell)))) {
+      return index === 0 ? -1 : index - 1;
+    }
+  }
+  const first = sheet.matrix.findIndex((row) => row.some((cell) => cell.trim()));
+  return first;
+}
+
+/** Rótulos das colunas para os selects do mapeamento manual. */
+export function manualHeaders(sheet: SheetTable): string[] {
+  const headerRow = manualHeaderRow(sheet);
+  const width = sheet.matrix.reduce((max, row) => Math.max(max, row.length), 0);
+  return Array.from({ length: width }, (_, index) => {
+    const label = (sheet.matrix[headerRow]?.[index] ?? "").trim();
+    return label || `Coluna ${index + 1}`;
+  });
+}
+
+/**
+ * Aplica um mapeamento escolhido à mão. Funciona mesmo sem cabeçalho
+ * reconhecido: nesse caso, a primeira linha preenchida serve de referência.
+ */
+export function applyManualMap(
+  sheet: SheetTable,
+  map: ColumnMap,
+): { days: PlanDay[]; warnings: RowWarning[] } {
+  return applyMap(sheet.matrix, manualHeaderRow(sheet), map);
+}
+
+const TEMPLATE_HEADERS = ["Data", "Bloco A", "Min A", "Bloco B", "Min B", "Revisão"];
+
+const TEMPLATE_ROWS: (string | number)[][] = [
+  TEMPLATE_HEADERS,
+  ["02/03/2026", "Matemática: Funções", 60, "Física: Leis de Ohm", 40, "Revisão: 10 questões de funções"],
+  ["03/03/2026", "Biologia: Citologia", 50, "Química: Estequiometria", 45, "Revisão: mapa mental de citologia"],
+  ["04/03/2026", "História: República Velha", 45, "", "", "Revisão: flashcards de história"],
+];
+
+/** Planilha modelo (.xlsx) montada no cliente, com as colunas que o Reta reconhece. */
+export function buildTemplateWorkbook(): ArrayBuffer {
+  const worksheet = XLSXImport.utils.aoa_to_sheet(TEMPLATE_ROWS);
+  worksheet["!cols"] = [{ wch: 12 }, { wch: 38 }, { wch: 10 }, { wch: 38 }, { wch: 10 }, { wch: 42 }];
+  const book = XLSXImport.utils.book_new();
+  XLSXImport.utils.book_append_sheet(book, worksheet, "Plano");
+  return XLSXImport.write(book, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+}
+
 export const COLUMN_FIELDS: { key: ColumnKey; label: string; required: boolean }[] = [
   { key: "date", label: "Data", required: true },
   { key: "phase", label: "Dia / fase (opcional)", required: false },
