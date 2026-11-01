@@ -11,6 +11,7 @@ import {
   type ErrorCopy,
   type FeedbackAction,
 } from "@/lib/feedback/error-copy";
+import { saveAndShare } from "@/lib/native/files";
 import {
   applyManualMap,
   applyMap,
@@ -23,7 +24,6 @@ import {
   readWorkbook,
 } from "@/lib/study/parse-sheet";
 import { useStudy } from "@/lib/study/store";
-import { deliverFile } from "@/lib/native/files";
 import { formatMin, formatShortDate } from "@/lib/study/time";
 import type { ColumnKey, ColumnMap, PlanDay, RowWarning, SheetTable } from "@/lib/study/types";
 
@@ -160,12 +160,9 @@ function ImportPage() {
   async function downloadTemplate() {
     try {
       const bytes = buildTemplateWorkbook();
-      await deliverFile({
-        name: "reta-planilha-modelo.xlsx",
-        bytes,
-        mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        title: "Planilha modelo do Reta",
-      });
+      const mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      const blob = new Blob([bytes], { type: mime });
+      await saveAndShare("reta-planilha-modelo.xlsx", mime, blob);
     } catch {
       setFileError({
         ...describeError("Não consegui gerar a planilha modelo. Tente de novo."),

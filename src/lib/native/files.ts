@@ -1,13 +1,165 @@
 import { Capacitor } from "@capacitor/core";
-import { Directory, Filesystem } from "@capacitor/filesystem";
+import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 
 /**
- * Entrega um arquivo gerado no aparelho.
+ * Salvar e compartilhar arquivos no Reta.
  *
- * No Android o `<a download>` do WebView não baixa nada: o arquivo é gravado
- * no cache do app e entregue pelo share sheet nativo. Na web continua o
- * download normal do navegador.
+ * No Android (Capacitor/WebView) `navigator.share` e `<a download>` não
+ * funcionam como no navegador: o arquivo é gravado no sistema de arquivos do
+ * app (`Directory.Cache`) e compartilhado pelo plugin Share. Na web o
+ * comportamento antigo continua: Web Share com arquivo quando disponível e
+ * `<a download>` como fallback.
+ */
+
+export type SaveMode =
+  /** Abriu a folha de compartilhamento do sistema. */
+  | "shared"
+  /** Baixou pela web ou gravou em Documents no aparelho. */
+  | "downloaded"
+  /** Usuário fechou a folha de compartilhamento sem escolher destino. */
+  | "canceled";
+
+export type SaveResult = {
+  mode: SaveMode;
+  fileName: string;
+  /** URI `file://` do arquivo gravado no aparelho (só no nativo). */
+  uri?: string;
+};
+
+/** Nome seguro para o sistema de arquivos (sem barras nem `..`). */
+export function safeFileName(name: string): string {
+  const withoutControls = Array.from(name)
+    .filter((ch) => ch.charCodeAt(0) > 31 && ch.charCodeAt(0) !== 127)
+    .join("");
+  const cleaned = withoutControls
+    .replace(/[\\/]+/g, "-")
+    .replace(/^\.+/, "")
+    .trim();
+  return cleaned || "reta-arquivo";
+}
+
+export function isNativePlatform(): boolean {
+  return Capacitor.isNativePlatform();
+}
+
+/** Blob → base64 (o Filesystem exige base64 para dados binários). */
+export async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function isCanceled(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError"
+    ? true
+    : /cancel/i.test(err instanceof Error ? err.message : String(err));
+}
+
+/**
+ * Grava no aparelho e abre o compartilhamento. Se a folha não abrir, tenta
+ * deixar o arquivo em Documents para o usuário encontrar pelo gerenciador.
+ */
+async function saveAndShareNative(
+  fileName: string,
+  data: Blob | string,
+): Promise<SaveResult> {
+  const payload =
+    typeof data === "string"
+      ? { data, encoding: Encoding.UTF8 }
+      : { data: await blobToBase64(data), encoding: undefined };
+
+  const written = await Filesystem.writeFile({
+    path: fileName,
+    data: payload.data,
+    directory: Directory.Cache,
+    encoding: payload.encoding,
+    recursive: true,
+  });
+
+  try {
+    await Share.share({
+      title: fileName,
+      url: written.uri,
+      dialogTitle: "Salvar ou compartilhar",
+    });
+    return { mode: "shared", fileName, uri: written.uri };
+  } catch (err) {
+    if (isCanceled(err)) return { mode: "canceled", fileName, uri: written.uri };
+    // Sem app de compartilhamento: tenta um destino que o usuário alcança.
+    try {
+      const saved = await Filesystem.writeFile({
+        path: fileName,
+        data: payload.data,
+        directory: Directory.Documents,
+        encoding: payload.encoding,
+        recursive: true,
+      });
+      return { mode: "downloaded", fileName, uri: saved.uri };
+    } catch {
+      return { mode: "downloaded", fileName, uri: written.uri };
+    }
+  }
+}
+
+function downloadOnWeb(fileName: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+async function saveAndShareWeb(
+  fileName: string,
+  mime: string,
+  data: Blob | string,
+): Promise<SaveResult> {
+  const blob = typeof data === "string" ? new Blob([data], { type: mime }) : data;
+  const file = new File([blob], fileName, { type: mime || blob.type });
+
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function" && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: fileName });
+      return { mode: "shared", fileName };
+    } catch (err) {
+      if (isCanceled(err)) return { mode: "canceled", fileName };
+      // Web Share recusado na prática: cai para o download abaixo.
+    }
+  }
+
+  downloadOnWeb(fileName, blob);
+  return { mode: "downloaded", fileName };
+}
+
+/**
+ * Grava e compartilha um arquivo. No Capacitor usa Filesystem + Share; na web
+ * mantém Web Share / `<a download>`.
+ */
+export async function saveAndShare(
+  nome: string,
+  mime: string,
+  data: Blob | string,
+): Promise<SaveResult> {
+  const fileName = safeFileName(nome);
+  if (isNativePlatform()) return saveAndShareNative(fileName, data);
+  return saveAndShareWeb(fileName, mime, data);
+}
+
+/**
+ * Entrega um arquivo já em memória.
+ *
+ * Mantido para os fluxos que trabalham com `ArrayBuffer` (planilha modelo):
+ * no aparelho grava no cache e abre o share sheet; na web baixa pelo
+ * navegador. Internamente é o mesmo caminho de `saveAndShare`.
  */
 export async function deliverFile(input: {
   name: string;
@@ -15,10 +167,12 @@ export async function deliverFile(input: {
   mime: string;
   title: string;
 }): Promise<void> {
-  if (Capacitor.isNativePlatform()) {
+  const blob = new Blob([input.bytes], { type: input.mime });
+  if (isNativePlatform()) {
+    const fileName = safeFileName(input.name);
     const written = await Filesystem.writeFile({
-      path: `reta/${input.name}`,
-      data: base64(input.bytes),
+      path: `reta/${fileName}`,
+      data: await blobToBase64(blob),
       directory: Directory.Cache,
       recursive: true,
     });
@@ -29,28 +183,5 @@ export async function deliverFile(input: {
     });
     return;
   }
-  downloadInBrowser(input);
-}
-
-function base64(bytes: ArrayBuffer): string {
-  const view = new Uint8Array(bytes);
-  let binary = "";
-  const chunk = 0x8000;
-  for (let index = 0; index < view.length; index += chunk) {
-    binary += String.fromCharCode(...view.subarray(index, index + chunk));
-  }
-  return btoa(binary);
-}
-
-function downloadInBrowser(input: { name: string; bytes: ArrayBuffer; mime: string }): void {
-  const blob = new Blob([input.bytes], { type: input.mime });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = input.name;
-  link.rel = "noopener";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  downloadOnWeb(input.name, blob);
 }

@@ -1,5 +1,4 @@
-import { z } from "zod";
-import { withoutKeys } from "@/lib/secure/redact";
+import { buildBackupFile, type BackupFile, type FullBackup } from "@/lib/study/backup";
 import { clampStage } from "@/lib/study/srs";
 import type { Doubt, Mistake, PlanDay, Settings, StudyPackage, StudySession } from "@/lib/study/types";
 import type { BlockKind, SessionMode } from "@/lib/study/types";
@@ -337,94 +336,12 @@ export async function clearActiveSession(): Promise<void> {
  * notifyLog, seeded, activeSession e qualquer chave futura.
  * ------------------------------------------------------------------ */
 
-const backupBlockKindSchema = z.enum(["A", "B", "R", "L"]);
-
-const backupPlanBlockSchema = z.looseObject({
-  kind: backupBlockKindSchema,
-  content: z.string(),
-  plannedMin: z.number(),
-});
-
-const backupPlanDaySchema = z.looseObject({
-  date: z.string().min(1),
-  phase: z.string(),
-  blocks: z.array(backupPlanBlockSchema),
-});
-
-const backupSettingsSchema = z.looseObject({
-  studyHour: z.number().optional(),
-  studyMinute: z.number().optional(),
-  alerts: z
-    .looseObject({
-      start: z.boolean().optional(),
-      review: z.boolean().optional(),
-      questions: z.boolean().optional(),
-      pending: z.boolean().optional(),
-    })
-    .optional(),
-  quiet: z.boolean().optional(),
-  researcher: z.enum(["grok", "perplexity", "gemini", "claude"]).optional(),
-  webSearch: z.boolean().optional(),
-});
-
-const backupPackageSchema = z.looseObject({
-  id: z.string().min(1),
-  date: z.string().min(1),
-  kind: backupBlockKindSchema,
-});
-
-const backupSessionSchema = z.looseObject({
-  id: z.string().min(1),
-  date: z.string().min(1),
-  kind: backupBlockKindSchema,
-});
-
-const backupMistakeSchema = z.looseObject({
-  id: z.string().min(1),
-});
-
-const backupDoubtSchema = z.looseObject({
-  id: z.string().min(1),
-});
-
 /**
- * Esquema do arquivo `.json` gerado por `exportAll()`. Campos desconhecidos
- * dentro de cada registro são preservados (`looseObject`), então versões
- * antigas e novas do app continuam compatíveis.
+ * O esquema/validação/serialização ficam em `backup.ts` (puro, testável);
+ * este módulo só lê e grava as stores do IndexedDB.
  */
-export const backupSchema = z.object({
-  app: z.literal("reta").optional(),
-  formatVersion: z.number().optional(),
-  exportedAt: z.string().optional(),
-  days: z.array(backupPlanDaySchema),
-  packages: z.array(backupPackageSchema),
-  sessions: z.array(backupSessionSchema),
-  mistakes: z.array(backupMistakeSchema),
-  settings: backupSettingsSchema.optional(),
-  doubts: z.array(backupDoubtSchema).optional(),
-  meta: z.record(z.string(), z.unknown()).optional(),
-});
-
-export type BackupFile = z.infer<typeof backupSchema>;
-
-export type FullBackup = {
-  app: "reta";
-  formatVersion: number;
-  exportedAt: string;
-  days: PlanDay[];
-  packages: StudyPackage[];
-  sessions: StudySession[];
-  mistakes: Mistake[];
-  settings: Settings;
-  doubts: Doubt[];
-  /** Todas as chaves da store `meta`, inclusive settings/doubts/activeSession. */
-  meta: Record<string, unknown>;
-};
-
-/** Valida o JSON lido do arquivo. Lança `ZodError` quando o formato não bate. */
-export function parseBackup(raw: unknown): BackupFile {
-  return backupSchema.parse(raw);
-}
+export { backupSchema, parseBackup, parseBackupText } from "@/lib/study/backup";
+export type { BackupFile, FullBackup } from "@/lib/study/backup";
 
 function mergeSettings(raw: unknown): Settings {
   const source: Partial<Settings> & { keys?: unknown } =
@@ -482,22 +399,17 @@ export async function exportAll(): Promise<FullBackup> {
       readMetaAll(tx.objectStore("meta")),
     ]);
     days.sort((a, b) => a.date.localeCompare(b.date));
-    // O backup nunca leva chaves de API: `settings.keys` é removido tanto do
-    // topo quanto da cópia da store `meta`.
-    const safeMeta: Record<string, unknown> = { ...meta };
-    if ("settings" in safeMeta) safeMeta.settings = withoutKeys(mergeSettings(safeMeta.settings));
-    return {
-      app: "reta",
-      formatVersion: 1,
-      exportedAt: new Date().toISOString(),
+    // O backup nunca leva chaves de API: `buildBackupFile` remove o campo
+    // `keys` do topo e da cópia de `settings` dentro de `meta`.
+    return buildBackupFile({
       days,
       packages,
       sessions,
       mistakes,
-      settings: withoutKeys(mergeSettings(meta.settings)),
+      settings: mergeSettings(meta.settings),
       doubts: Array.isArray(meta.doubts) ? (meta.doubts as Doubt[]) : [],
-      meta: safeMeta,
-    };
+      meta,
+    });
   } finally {
     db.close();
   }
