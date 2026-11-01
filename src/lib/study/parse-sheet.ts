@@ -7,18 +7,7 @@ import type {
   RowWarning,
   SheetTable,
 } from "./types.ts";
-import { parseDateKey, parseDuration, utcKeyFromDate } from "./time.ts";
-import * as XLSXImport from "xlsx";
-
-type WorkBook = { SheetNames: string[]; Sheets: Record<string, unknown> };
-
-function xlsx(): {
-  read: (data: ArrayBuffer | string, opts: object) => WorkBook;
-  utils: { sheet_to_json: (sheet: unknown, opts: object) => unknown[][] };
-} {
-  const mod = XLSXImport as unknown as { default?: typeof XLSXImport };
-  return (mod.default ?? XLSXImport) as ReturnType<typeof xlsx>;
-}
+import { parseDateKey, parseDuration } from "./time.ts";
 
 function norm(value: string): string {
   return value
@@ -27,19 +16,6 @@ function norm(value: string): string {
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function cellText(value: unknown): string {
-  if (value == null) return "";
-  if (value instanceof Date) return utcKeyFromDate(value);
-  if (typeof value === "number") {
-    if (value > 20000 && value < 80000) {
-      const ms = Date.UTC(1899, 11, 30) + Math.round(value) * 86400000;
-      return utcKeyFromDate(new Date(ms));
-    }
-    return String(value);
-  }
-  return String(value).trim();
 }
 
 const MATCH: Record<ColumnKey, (h: string) => boolean> = {
@@ -51,9 +27,26 @@ const MATCH: Record<ColumnKey, (h: string) => boolean> = {
   minB: (h) => h === "min b" || h === "tempo b" || h === "minutos b",
   contentR: (h) => /revis/.test(h) && !/min|tempo|real/.test(h),
   minR: (h) => /min/.test(h) && /rev/.test(h),
-  contentL: (h) => /(leitura|escrita)/.test(h) && !/^min/.test(h),
-  minL: (h) => /^min/.test(h) && /(l\/e|leitura|escrita|\bl\b)/.test(h),
 };
+
+/**
+ * Colunas que precisam estar mapeadas para importar um plano.
+ * Leitura/escrita ficou de fora de propósito: essas colunas são ignoradas.
+ */
+export const REQUIRED_COLUMNS: ColumnKey[] = [
+  "date",
+  "contentA",
+  "minA",
+  "contentB",
+  "minB",
+  "contentR",
+  "minR",
+];
+
+/** Colunas obrigatórias que ainda não têm uma coluna escolhida. */
+export function missingRequiredColumns(map: ColumnMap): ColumnKey[] {
+  return REQUIRED_COLUMNS.filter((key) => map[key] == null);
+}
 
 export function guessMap(headers: string[]): ColumnMap {
   const used = new Set<number>();
@@ -79,12 +72,10 @@ export function emptyMap(): ColumnMap {
     minB: null,
     contentR: null,
     minR: null,
-    contentL: null,
-    minL: null,
   };
 }
 
-function findHeader(matrix: string[][]): number {
+export function findHeader(matrix: string[][]): number {
   const limit = Math.min(matrix.length, 40);
   for (let i = 0; i < limit; i++) {
     const headers = matrix[i].map(norm);
@@ -93,22 +84,6 @@ function findHeader(matrix: string[][]): number {
     if (hasDate && hasA) return i;
   }
   return -1;
-}
-
-export function readWorkbook(data: ArrayBuffer): SheetTable[] {
-  const book = xlsx().read(data, { type: "array", cellDates: true });
-  return book.SheetNames.map((name) => {
-    const rows = xlsx().utils.sheet_to_json(book.Sheets[name], {
-      header: 1,
-      raw: true,
-      defval: "",
-      blankrows: false,
-    });
-    const matrix = rows.map((row) => (Array.isArray(row) ? row : []).map(cellText));
-    const headerRow = findHeader(matrix);
-    const headers = headerRow >= 0 ? matrix[headerRow] : [];
-    return { name, headers, headerRow, matrix };
-  }).filter((sheet) => sheet.matrix.length > 0);
 }
 
 export function pickSheet(sheets: SheetTable[]): SheetTable | null {
@@ -173,7 +148,7 @@ function sortBlocks(blocks: PlanBlock[]): PlanBlock[] {
  * Mescla uma linha repetida da planilha no dia já existente, em vez de descartá-la.
  * - Conteúdo novo de Bloco A vai para o Bloco B quando ele está livre.
  * - Sem espaço no B, concatena "Tópico 1 + Tópico 2" e soma os minutos.
- * - Revisões e leituras são preservadas (concatenadas quando diferentes).
+ * - Revisões são preservadas (concatenadas quando diferentes).
  */
 function mergeDay(base: PlanDay, next: PlanDay): PlanDay {
   const blocks = base.blocks.map((b) => ({ ...b }));
@@ -226,7 +201,6 @@ export function applyMap(
       readBlock(row, "A", map.contentA, map.minA, i + 1, warnings),
       readBlock(row, "B", map.contentB, map.minB, i + 1, warnings),
       readBlock(row, "R", map.contentR, map.minR, i + 1, warnings),
-      readBlock(row, "L", map.contentL, map.minL, i + 1, warnings),
     ].filter((b): b is NonNullable<typeof b> => Boolean(b));
     if (!blocks.length) {
       warnings.push({ row: i + 1, message: `${date}: sem conteúdo A, B ou revisão.` });
@@ -254,7 +228,7 @@ export function applyMap(
 
 function readBlock(
   row: string[],
-  kind: "A" | "B" | "R" | "L",
+  kind: "A" | "B" | "R",
   contentIdx: number | null,
   minIdx: number | null,
   rowNumber: number,
@@ -318,24 +292,6 @@ export function applyManualMap(
   return applyMap(sheet.matrix, manualHeaderRow(sheet), map);
 }
 
-const TEMPLATE_HEADERS = ["Data", "Bloco A", "Min A", "Bloco B", "Min B", "Revisão"];
-
-const TEMPLATE_ROWS: (string | number)[][] = [
-  TEMPLATE_HEADERS,
-  ["02/03/2026", "Matemática: Funções", 60, "Física: Leis de Ohm", 40, "Revisão: 10 questões de funções"],
-  ["03/03/2026", "Biologia: Citologia", 50, "Química: Estequiometria", 45, "Revisão: mapa mental de citologia"],
-  ["04/03/2026", "História: República Velha", 45, "", "", "Revisão: flashcards de história"],
-];
-
-/** Planilha modelo (.xlsx) montada no cliente, com as colunas que o Reta reconhece. */
-export function buildTemplateWorkbook(): ArrayBuffer {
-  const worksheet = XLSXImport.utils.aoa_to_sheet(TEMPLATE_ROWS);
-  worksheet["!cols"] = [{ wch: 12 }, { wch: 38 }, { wch: 10 }, { wch: 38 }, { wch: 10 }, { wch: 42 }];
-  const book = XLSXImport.utils.book_new();
-  XLSXImport.utils.book_append_sheet(book, worksheet, "Plano");
-  return XLSXImport.write(book, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
-}
-
 export const COLUMN_FIELDS: { key: ColumnKey; label: string; required: boolean }[] = [
   { key: "date", label: "Data", required: true },
   { key: "phase", label: "Dia / fase (opcional)", required: false },
@@ -345,6 +301,4 @@ export const COLUMN_FIELDS: { key: ColumnKey; label: string; required: boolean }
   { key: "minB", label: "Tempo do B", required: true },
   { key: "contentR", label: "Revisão", required: true },
   { key: "minR", label: "Tempo da revisão", required: true },
-  { key: "contentL", label: "Leitura (opcional)", required: false },
-  { key: "minL", label: "Tempo da leitura", required: false },
 ];

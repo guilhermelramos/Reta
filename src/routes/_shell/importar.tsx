@@ -5,16 +5,20 @@ import { Button } from "@/components/ui/button";
 import {
   applyManualMap,
   applyMap,
-  buildTemplateWorkbook,
   COLUMN_FIELDS,
   guessMap,
   manualHeaders,
+  missingRequiredColumns,
   pickSheet,
-  readWorkbook,
 } from "@/lib/study/parse-sheet";
+import { readWorkbookOffThread, SheetReadError } from "@/lib/study/parse-sheet-client";
 import { useStudy } from "@/lib/study/store";
 import { formatMin, formatShortDate } from "@/lib/study/time";
 import type { ColumnKey, ColumnMap, PlanDay, RowWarning, SheetTable } from "@/lib/study/types";
+
+const EMPTY_FILE_MESSAGE = "O arquivo está vazio. Escolha uma planilha .xlsx ou .csv com os dias do plano.";
+const CORRUPTED_FILE_MESSAGE =
+  "Não consegui ler este arquivo. Ele pode estar corrompido ou não ser uma planilha .xlsx/.csv válida. Baixe a planilha modelo e tente de novo.";
 
 export const Route = createFileRoute("/_shell/importar")({
   head: () => ({ meta: [{ title: "Planilha · Reta" }] }),
@@ -31,6 +35,7 @@ const MANUAL_FIELDS: ColumnField[] = [
   { key: "contentB", label: "Bloco B (Conteúdo)", required: true },
   { key: "minB", label: "Bloco B (Minutos)", required: true },
   { key: "contentR", label: "Revisão", required: true },
+  { key: "minR", label: "Revisão (Minutos)", required: true },
 ];
 
 const OPTIONAL_FIELDS: ColumnField[] = COLUMN_FIELDS.filter(
@@ -45,6 +50,7 @@ function ImportPage() {
   const [manual, setManual] = useState(false);
   const [fileError, setFileError] = useState("");
   const [saved, setSaved] = useState<PlanDay[] | null>(null);
+  const [reading, setReading] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const sheet = sheets.find((s) => s.name === sheetName) ?? null;
@@ -55,35 +61,50 @@ function ImportPage() {
     if (sheet.headerRow < 0) return null;
     return applyMap(sheet.matrix, sheet.headerRow, map);
   }, [sheet, map, manual]);
+  const missingColumns = map ? missingRequiredColumns(map) : [];
+  const missingLabels = missingColumns.map(
+    (key) => COLUMN_FIELDS.find((field) => field.key === key)?.label ?? key,
+  );
 
   async function onFile(file: File) {
     setFileError("");
     setSaved(null);
+    setSheets([]);
+    setSheetName("");
+    setMap(null);
+    setManual(false);
+    if (file.size === 0) {
+      setFileError(EMPTY_FILE_MESSAGE);
+      return;
+    }
     if (file.size > 5_000_000) {
       setFileError("Arquivo grande demais (máximo 5 MB).");
       return;
     }
+    setReading(true);
     try {
-      const tables = readWorkbook(await file.arrayBuffer());
+      const tables = await readWorkbookOffThread(await file.arrayBuffer());
       const usable = tables.filter((t) => t.matrix.length > 0);
       if (!usable.length) {
-        setSheets([]);
-        setSheetName("");
-        setMap(null);
-        setManual(false);
-        setFileError("Não achei nenhuma aba com dados. Confira o arquivo.");
+        setFileError("A planilha está vazia: nenhuma aba tem dados. Confira o arquivo ou baixe o modelo.");
         return;
       }
       const best = pickSheet(usable);
       const target = best ?? usable[0]!;
       const autoMap = best ? guessMap(best.headers) : null;
-      const needsManual = !autoMap || autoMap.date == null || autoMap.contentA == null;
+      const needsManual = !autoMap || missingRequiredColumns(autoMap).length > 0;
       setSheets(usable);
       setSheetName(target.name);
       setManual(needsManual);
       setMap(needsManual ? guessMap(manualHeaders(target)) : autoMap);
-    } catch {
-      setFileError("Não consegui ler essa planilha. Use .xlsx ou .csv.");
+    } catch (error) {
+      setFileError(
+        error instanceof SheetReadError && error.code === "empty"
+          ? EMPTY_FILE_MESSAGE
+          : CORRUPTED_FILE_MESSAGE,
+      );
+    } finally {
+      setReading(false);
     }
   }
 
@@ -100,8 +121,11 @@ function ImportPage() {
     }
   }
 
-  function downloadTemplate() {
+  async function downloadTemplate() {
     try {
+      // Carrega o gerador do .xlsx só ao clicar: o `xlsx` não entra no bundle
+      // inicial da tela (a leitura da planilha do usuário roda no Worker).
+      const { buildTemplateWorkbook } = await import("@/lib/study/parse-sheet-workbook");
       const bytes = buildTemplateWorkbook();
       const blob = new Blob([bytes], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -125,32 +149,37 @@ function ImportPage() {
       <header>
         <h1 className="text-4xl">Planilha</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted">
-          Entram só data, conteúdo A, B e revisão, com o tempo de cada um. Leitura entra se a coluna existir — dá para tirar no mapeamento. Reimportar troca o plano e mantém o histórico de estudo.
+          Entram só data, conteúdo A, B e revisão, com o tempo de cada um. Reimportar troca o plano e mantém o histórico de estudo.
         </p>
         <p className="mt-2 text-xs text-muted">{days.length} dias no plano atual.</p>
       </header>
 
       <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-4 text-center">
-        <span className="font-semibold">Escolher .xlsx ou .csv</span>
+        <span className="font-semibold">{reading ? "Lendo a planilha…" : "Escolher .xlsx ou .csv"}</span>
         <span className="mt-1 text-xs text-muted">Datas em dd/mm/aaaa, aaaa-mm-dd ou nativas do Excel. Tempos como 40min, 1h30, 90 ou 01:30.</span>
         <input
           className="sr-only"
           type="file"
+          disabled={reading}
           accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void onFile(file);
+            e.target.value = "";
           }}
         />
       </label>
-      {fileError ? <p className="text-sm text-clay-text">{fileError}</p> : null}
+      {reading ? (
+        <p className="text-sm text-muted" aria-live="polite">Lendo a planilha fora da thread principal…</p>
+      ) : null}
+      {fileError ? <p className="text-sm text-clay-text" role="alert">{fileError}</p> : null}
 
       <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
         <p className="text-sm font-semibold">Primeira vez? Comece pelo modelo.</p>
         <p className="text-xs leading-relaxed text-muted">
-          A planilha modelo já vem com as colunas que o Reta reconhece: Data, Bloco A, Min A, Bloco B, Min B e Revisão.
+          A planilha modelo já vem com as colunas que o Reta importa: Data, Bloco A, Min A, Bloco B, Min B, Revisão e Min Rev.
         </p>
-        <Button className="self-start" variant="surface" onClick={downloadTemplate}>
+        <Button className="self-start" variant="surface" onClick={() => void downloadTemplate()}>
           <Download aria-hidden className="size-4" />
           Baixar Planilha Modelo (.xlsx)
         </Button>
@@ -177,6 +206,12 @@ function ImportPage() {
           {manual ? (
             <div className="rounded-xl border border-clay/40 bg-clay/10 px-3 py-2.5 text-sm leading-relaxed text-clay-text">
               Não reconheci os cabeçalhos desta planilha. Escolha abaixo qual coluna é cada coisa — a prévia atualiza na hora.
+            </div>
+          ) : null}
+
+          {missingColumns.length ? (
+            <div className="rounded-xl border border-clay/40 bg-clay/10 px-3 py-2.5 text-sm leading-relaxed text-clay-text" role="alert">
+              Faltam as colunas obrigatórias: {missingLabels.join(", ")}. Escolha no mapeamento abaixo.
             </div>
           ) : null}
 
@@ -210,7 +245,10 @@ function ImportPage() {
           ) : null}
 
           <Preview days={preview?.days ?? []} warnings={preview?.warnings ?? []} />
-          <Button onClick={() => void confirm()} disabled={busy || !preview?.days.length}>
+          <Button
+            onClick={() => void confirm()}
+            disabled={busy || reading || missingColumns.length > 0 || !preview?.days.length}
+          >
             {busy ? "Salvando…" : `Importar ${preview?.days.length ?? 0} dias`}
           </Button>
         </section>
@@ -257,9 +295,20 @@ function FieldSelect({
 }
 
 function Preview({ days, warnings }: { days: PlanDay[]; warnings: RowWarning[] }) {
+  const invalidDates = warnings.filter((w) => w.message.startsWith("Data inválida"));
   return (
     <div className="flex flex-col gap-3">
       <h2 className="text-xl">Prévia</h2>
+      {!days.length ? (
+        <p className="rounded-xl border border-clay/40 bg-clay/10 px-3 py-2.5 text-sm text-clay-text">
+          Nenhum dia válido encontrado. Confira as datas (dd/mm/aaaa ou aaaa-mm-dd) e as colunas escolhidas.
+        </p>
+      ) : null}
+      {invalidDates.length ? (
+        <p className="text-sm text-clay-text">
+          {invalidDates.length} {invalidDates.length === 1 ? "linha tem data inválida" : "linhas têm data inválida"} — corrija para dd/mm/aaaa ou aaaa-mm-dd.
+        </p>
+      ) : null}
       <ul className="flex flex-col gap-2 text-sm">
         {days.slice(0, 6).map((day) => (
           <li key={day.date} className="rounded-xl bg-surface-2 px-3 py-2">

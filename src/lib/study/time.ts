@@ -131,6 +131,16 @@ export function utcKeyFromDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function validYmd(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 export function parseDateKey(raw: string): string | null {
   const text = raw.trim();
   if (!text) return null;
@@ -139,7 +149,7 @@ export function parseDateKey(raw: string): string | null {
     const y = Number(iso[1]);
     const m = Number(iso[2]);
     const d = Number(iso[3]);
-    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+    if (!validYmd(y, m, d)) return null;
     return `${iso[1]}-${iso[2]}-${iso[3]}`;
   }
   const br = text.match(/^(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})/);
@@ -148,7 +158,7 @@ export function parseDateKey(raw: string): string | null {
     const m = Number(br[2]);
     let y = Number(br[3]);
     if (y < 100) y += 2000;
-    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+    if (!validYmd(y, m, d)) return null;
     return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
   const serial = Number(text);

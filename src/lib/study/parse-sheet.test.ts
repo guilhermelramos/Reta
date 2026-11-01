@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { applyManualMap, applyMap, buildTemplateWorkbook, emptyMap, guessMap, manualHeaderRow, manualHeaders, pickSheet, readWorkbook } from "./parse-sheet.ts";
+import { applyManualMap, applyMap, emptyMap, guessMap, manualHeaderRow, manualHeaders, pickSheet } from "./parse-sheet.ts";
+import { buildTemplateWorkbook, readWorkbook } from "./parse-sheet-workbook.ts";
 
 const HEADERS = [
   "Dia / fase",
@@ -151,16 +152,46 @@ describe("parse-sheet: mapeamento manual", () => {
 });
 
 describe("parse-sheet: planilha modelo", () => {
-  it("gera um .xlsx que o próprio parser reconhece", () => {
+  it("gera um .xlsx que o próprio parser reconhece, só com as colunas pedidas", () => {
     const tables = readWorkbook(buildTemplateWorkbook());
     const best = pickSheet(tables);
     assert.ok(best, "a planilha modelo precisa ser detectada automaticamente");
     assert.equal(best.name, "Plano");
-    assert.deepEqual(best.headers, ["Data", "Bloco A", "Min A", "Bloco B", "Min B", "Revisão"]);
+    assert.deepEqual(best.headers, ["Data", "Bloco A", "Min A", "Bloco B", "Min B", "Revisão", "Min Rev"]);
 
     const { days } = applyMap(best.matrix, best.headerRow, guessMap(best.headers));
     assert.equal(days.length, 3);
     assert.equal(days[0]!.date, "2026-03-02");
+    assert.deepEqual(days[0]!.blocks.map((b) => b.kind), ["A", "B", "R"]);
+    assert.equal(days[0]!.blocks.find((b) => b.kind === "R")?.plannedMin, 20);
+  });
+});
+
+describe("parse-sheet: colunas de leitura", () => {
+  it("ignora Leitura/escrita e não cria bloco L na importação", () => {
+    const headers = [
+      "Data",
+      "Bloco A",
+      "Min A",
+      "Bloco B",
+      "Min B",
+      "Revisão",
+      "Min Rev",
+      "Leitura",
+      "Min L/E",
+    ];
+    const map = guessMap(headers);
+    assert.equal("contentL" in map, false);
+    assert.equal("minL" in map, false);
+
+    const { days } = applyMap(
+      [
+        headers,
+        ["05/03/2026", "Matemática", "30", "Física", "20", "Revisão", "10", "Ler um capítulo", "15"],
+      ],
+      0,
+      map,
+    );
     assert.deepEqual(days[0]!.blocks.map((b) => b.kind), ["A", "B", "R"]);
   });
 });
