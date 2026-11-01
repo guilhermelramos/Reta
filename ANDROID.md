@@ -49,6 +49,36 @@ APK gerado em: `android/app/build/outputs/apk/debug/app-debug.apk`.
 
 ## IA no APK (cliente xAI)
 
+## Botão/gesto voltar (Android)
+
+Implementado com `@capacitor/app` **8.1.2** (compatível com Capacitor 8).
+O handler fica em [`src/components/android-back.tsx`](./src/components/android-back.tsx),
+montado no layout do app ([`src/routes/_shell.tsx`](./src/routes/_shell.tsx)), e
+só registra o listener no Android nativo — na web o navegador continua cuidando
+do voltar.
+
+Ordem de decisão (função pura em
+[`src/lib/android/back-navigation.ts`](./src/lib/android/back-navigation.ts)):
+
+1. **Overlay aberto** (gaveta do professor, gaveta "Anotar erro externo",
+   imagem ampliada) → fecha o mais recente. A pilha fica em
+   [`src/lib/android/back-overlays.ts`](./src/lib/android/back-overlays.ts) e
+   cada overlay se registra com `useBackOverlay(open, onClose)`.
+2. **Histórico do roteador** tem entrada anterior (`router.history.canGoBack()`)
+   → volta uma entrada.
+3. **Hoje sem histórico** → `App.minimizeApp()` em vez de fechar o app.
+4. **Outra rota aberta sem histórico** (deep link) → vai para Hoje.
+
+O cronômetro não é afetado por voltar/minimizar: a sessão ativa e o horário
+real de início já estão no IndexedDB (`activeSession` + `runStartedAt`), e a
+tela de sessão recalcula o tempo decorrido e retoma de onde parou.
+
+Testes: `src/lib/android/back-navigation.test.ts`,
+`src/lib/android/back-overlays.test.ts` e
+`src/lib/study/time-timer.test.ts` (fazem parte de `npm test`).
+
+
+
 O APK é 100% estático: não existe servidor Node, Nitro, banco de dados nem
 rotas de API. Os fluxos de IA têm dois caminhos, escolhidos em
 [`src/lib/ai/xai-client.ts`](./src/lib/ai/xai-client.ts):
@@ -114,11 +144,11 @@ do navegador. A permissão de notificação é lida em
 `src/lib/native/notifications.ts` (hoje a API web `Notification`; o WebView do
 Android a reporta como indisponível).
 
-A ação **Baixar modelo** grava o `.xlsx` no cache do app
-(`@capacitor/filesystem` 8.1.5) e abre o share sheet
-(`@capacitor/share` 8.0.3) no APK; na web continua sendo o download normal do
-navegador (`src/lib/native/files.ts`). O backup `.json` de Ajustes ainda usa o
-caminho antigo — fica para a correção de backup nativo.
+A ação **Baixar modelo** e o **backup `.json`** de Ajustes gravam o arquivo no
+cache do app (`@capacitor/filesystem` 8.1.5) e abrem o share sheet
+(`@capacitor/share` 8.0.3) no APK; na web continua o Web Share / download do
+navegador (`src/lib/native/files.ts`). Restaurar backup lê o `.json` pelo
+seletor de arquivos do próprio WebView.
 
 Para validar no aparelho: a tela de detalhes do app realmente abre, a permissão
 de notificação corresponde ao estado do sistema e a contagem do 429 reinicia o

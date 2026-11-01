@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Drawer } from "vaul";
+import { useBackOverlay } from "@/lib/android/use-back-overlay";
 import { ErrorReasonPicker } from "@/components/mistake-reason";
 import { TeacherChat } from "@/components/teacher-chat";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,10 @@ function ErrorsPage() {
   const [externalOpen, setExternalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState("");
+
+  // Gaveta "Anotar erro externo": o voltar do Android fecha a gaveta antes
+  // de considerar o histórico do roteador.
+  useBackOverlay(externalOpen, () => setExternalOpen(false));
 
   const due = study.mistakes.filter((m) => isDueToday(m, today));
   const pending = study.mistakes.filter((m) => !isMastered(m));
