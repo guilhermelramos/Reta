@@ -217,6 +217,11 @@ export type Settings = {
   webSearch: boolean;
 };
 
+/**
+ * Colunas que o Reta importa: apenas data, conteúdo A, conteúdo B e revisão,
+ * cada um com o seu tempo. Blocos de leitura ("L") de planos antigos continuam
+ * válidos no IndexedDB, mas não são mais criados pela importação.
+ */
 export type ColumnKey =
   | "date"
   | "phase"
@@ -225,9 +230,7 @@ export type ColumnKey =
   | "contentB"
   | "minB"
   | "contentR"
-  | "minR"
-  | "contentL"
-  | "minL";
+  | "minR";
 
 export type ColumnMap = Record<ColumnKey, number | null>;
 
