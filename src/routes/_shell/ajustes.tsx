@@ -3,6 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { ZodError } from "zod";
 import { Button } from "@/components/ui/button";
 import { pingAi } from "@/lib/ai/study.functions";
+import {
+  isNativeNotificationService,
+  requestNativeNotifications,
+  syncNativeNotifications,
+} from "@/lib/native/notifications";
 import { exportAll, importAll, parseBackup } from "@/lib/study/db";
 import { useStudy } from "@/lib/study/store";
 import type { ResearcherId, Settings } from "@/lib/study/types";
@@ -20,7 +25,7 @@ const PROVIDERS: { id: ResearcherId; label: string }[] = [
 ];
 
 function SettingsPage() {
-  const { settings, saveSettings } = useStudy();
+  const { settings, saveSettings, days, sessions, notifyLog } = useStudy();
   const [draft, setDraft] = useState<Settings>(settings);
   const [note, setNote] = useState("");
   const [testing, setTesting] = useState(false);
@@ -64,6 +69,24 @@ function SettingsPage() {
   }
 
   async function allowNotes() {
+    if (isNativeNotificationService()) {
+      const status = await requestNativeNotifications({ askExact: true });
+      if (status.permission === "granted") {
+        setNote(
+          status.exactAlarms === "denied"
+            ? "Notificações ligadas. Alarmes exatos estão desligados no Android: os avisos podem atrasar alguns minutos."
+            : "Notificações ligadas.",
+        );
+      } else {
+        setNote(
+          status.error
+            ? `Não consegui ligar as notificações: ${status.error}`
+            : "Permissão negada. O lembrete continua dentro do app.",
+        );
+      }
+      await syncNativeNotifications({ settings, days, sessions, log: notifyLog });
+      return;
+    }
     if (typeof Notification === "undefined") {
       setNote("Este navegador não mostra notificação.");
       return;
@@ -188,7 +211,9 @@ function SettingsPage() {
         <Check label="Modo silencioso" on={draft.quiet} set={(quiet) => patch({ quiet })} />
         <Button variant="surface" onClick={() => void allowNotes()}>Permitir notificações</Button>
         <p className="text-xs leading-relaxed text-muted">
-          No Android, no iPhone e no Windows o lembrete sai com o app aberto ou instalado enquanto o navegador segue ativo. Fechado de verdade, o alarme local não dispara: iOS só entrega push de servidor, e Chrome ou Edge não guardam o timer depois que o processo morre.
+          {isNativeNotificationService()
+            ? "No app Android os lembretes são agendados no próprio aparelho e chegam mesmo com o app fechado. Se o Android negar alarmes exatos, o aviso pode atrasar alguns minutos."
+            : "No Android, no iPhone e no Windows o lembrete sai com o app aberto ou instalado enquanto o navegador segue ativo. Fechado de verdade, o alarme local não dispara: iOS só entrega push de servidor, e Chrome ou Edge não guardam o timer depois que o processo morre."}
         </p>
       </section>
 
