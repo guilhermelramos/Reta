@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { buildBackupFile, type BackupFile, type FullBackup } from "@/lib/study/backup";
 import { clampStage } from "@/lib/study/srs";
 import type { Doubt, Mistake, PlanDay, Settings, StudyPackage, StudySession } from "@/lib/study/types";
 import type { BlockKind, SessionMode } from "@/lib/study/types";
@@ -223,108 +223,17 @@ export async function clearActiveSession(): Promise<void> {
  * vão como arrays; `settings` e `doubts` aparecem no topo (são chaves da
  * store `meta`) e `meta` guarda o restante das chaves existentes, incluindo
  * notifyLog, seeded, activeSession e qualquer chave futura.
+ *
+ * O esquema/validação/serialização ficam em `backup.ts` (puro, testável).
+ * Chaves de API nunca são exportadas e nunca são restauradas: são segredo
+ * deste aparelho, não dado de estudo.
  * ------------------------------------------------------------------ */
 
-const backupBlockKindSchema = z.enum(["A", "B", "R", "L"]);
-
-const backupPlanBlockSchema = z.looseObject({
-  kind: backupBlockKindSchema,
-  content: z.string(),
-  plannedMin: z.number(),
-});
-
-const backupPlanDaySchema = z.looseObject({
-  date: z.string().min(1),
-  phase: z.string(),
-  blocks: z.array(backupPlanBlockSchema),
-});
-
-const backupSettingsSchema = z.looseObject({
-  studyHour: z.number().optional(),
-  studyMinute: z.number().optional(),
-  alerts: z
-    .looseObject({
-      start: z.boolean().optional(),
-      review: z.boolean().optional(),
-      questions: z.boolean().optional(),
-      pending: z.boolean().optional(),
-    })
-    .optional(),
-  quiet: z.boolean().optional(),
-  researcher: z.enum(["grok", "perplexity", "gemini", "claude"]).optional(),
-  keys: z
-    .looseObject({
-      xai: z.string().optional(),
-      perplexity: z.string().optional(),
-      gemini: z.string().optional(),
-      claude: z.string().optional(),
-    })
-    .optional(),
-  webSearch: z.boolean().optional(),
-});
-
-const backupPackageSchema = z.looseObject({
-  id: z.string().min(1),
-  date: z.string().min(1),
-  kind: backupBlockKindSchema,
-});
-
-const backupSessionSchema = z.looseObject({
-  id: z.string().min(1),
-  date: z.string().min(1),
-  kind: backupBlockKindSchema,
-});
-
-const backupMistakeSchema = z.looseObject({
-  id: z.string().min(1),
-});
-
-const backupDoubtSchema = z.looseObject({
-  id: z.string().min(1),
-});
-
-/**
- * Esquema do arquivo `.json` gerado por `exportAll()`. Campos desconhecidos
- * dentro de cada registro são preservados (`looseObject`), então versões
- * antigas e novas do app continuam compatíveis.
- */
-export const backupSchema = z.object({
-  app: z.literal("reta").optional(),
-  formatVersion: z.number().optional(),
-  exportedAt: z.string().optional(),
-  days: z.array(backupPlanDaySchema),
-  packages: z.array(backupPackageSchema),
-  sessions: z.array(backupSessionSchema),
-  mistakes: z.array(backupMistakeSchema),
-  settings: backupSettingsSchema.optional(),
-  doubts: z.array(backupDoubtSchema).optional(),
-  meta: z.record(z.string(), z.unknown()).optional(),
-});
-
-export type BackupFile = z.infer<typeof backupSchema>;
-
-export type FullBackup = {
-  app: "reta";
-  formatVersion: number;
-  exportedAt: string;
-  days: PlanDay[];
-  packages: StudyPackage[];
-  sessions: StudySession[];
-  mistakes: Mistake[];
-  settings: Settings;
-  doubts: Doubt[];
-  /** Todas as chaves da store `meta`, inclusive settings/doubts/activeSession. */
-  meta: Record<string, unknown>;
-};
-
-/** Valida o JSON lido do arquivo. Lança `ZodError` quando o formato não bate. */
-export function parseBackup(raw: unknown): BackupFile {
-  return backupSchema.parse(raw);
-}
+export { backupSchema, parseBackup, parseBackupText } from "@/lib/study/backup";
+export type { BackupFile, FullBackup } from "@/lib/study/backup";
 
 function mergeSettings(raw: unknown): Settings {
   const source = raw && typeof raw === "object" ? (raw as Partial<Settings>) : {};
-  const keys = source.keys && typeof source.keys === "object" ? source.keys : {};
   const alerts = source.alerts && typeof source.alerts === "object" ? source.alerts : {};
   const researcher =
     source.researcher === "grok" ||
@@ -337,7 +246,8 @@ function mergeSettings(raw: unknown): Settings {
     ...EMPTY_SETTINGS,
     ...source,
     researcher,
-    keys: { ...EMPTY_SETTINGS.keys, ...keys },
+    // Chave de API não vem de arquivo; quem restaura mantém a do aparelho.
+    keys: { ...EMPTY_SETTINGS.keys },
     alerts: { ...EMPTY_SETTINGS.alerts, ...alerts },
   };
 }
@@ -363,6 +273,7 @@ function readMetaAll(store: IDBObjectStore): Promise<Record<string, unknown>> {
 /**
  * Monta o backup completo de todas as stores do IndexedDB do Reta.
  * A leitura é feita numa transação só, para o retrato ser consistente.
+ * `buildBackupFile` remove as chaves de API do arquivo.
  */
 export async function exportAll(): Promise<FullBackup> {
   const db = await openDb();
@@ -376,10 +287,7 @@ export async function exportAll(): Promise<FullBackup> {
       readMetaAll(tx.objectStore("meta")),
     ]);
     days.sort((a, b) => a.date.localeCompare(b.date));
-    return {
-      app: "reta",
-      formatVersion: 1,
-      exportedAt: new Date().toISOString(),
+    return buildBackupFile({
       days,
       packages,
       sessions,
@@ -387,7 +295,7 @@ export async function exportAll(): Promise<FullBackup> {
       settings: mergeSettings(meta.settings),
       doubts: Array.isArray(meta.doubts) ? (meta.doubts as Doubt[]) : [],
       meta,
-    };
+    });
   } finally {
     db.close();
   }
@@ -396,12 +304,14 @@ export async function exportAll(): Promise<FullBackup> {
 /**
  * Substitui todo o conteúdo local pelo backup validado. A transação é única:
  * se algo falhar no meio, o IndexedDB anterior continua intacto.
+ * As chaves de API do aparelho são preservadas (o arquivo não as traz).
  */
 export async function importAll(backup: BackupFile): Promise<void> {
+  const localKeys = (await loadSnapshot()).settings.keys;
   const db = await openDb();
   try {
     const meta = backup.meta ?? {};
-    const settings = mergeSettings(backup.settings ?? meta.settings);
+    const settings = { ...mergeSettings(backup.settings ?? meta.settings), keys: localKeys };
     const doubts = backup.doubts ?? (Array.isArray(meta.doubts) ? (meta.doubts as Doubt[]) : []);
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(["days", "packages", "sessions", "mistakes", "meta"], "readwrite");
