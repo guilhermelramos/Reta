@@ -1,13 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Download } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ButtonSpinner } from "@/components/feedback/button-spinner";
+import { ErrorState } from "@/components/feedback/error-state";
+import {
+  describeError,
+  sheetErrorCopy,
+  sheetProblemFromWarning,
+  type ErrorCopy,
+  type FeedbackAction,
+} from "@/lib/feedback/error-copy";
 import {
   applyManualMap,
   applyMap,
   buildTemplateWorkbook,
   COLUMN_FIELDS,
   guessMap,
+  manualHeaderRow,
   manualHeaders,
   pickSheet,
   readWorkbook,
@@ -37,15 +47,35 @@ const OPTIONAL_FIELDS: ColumnField[] = COLUMN_FIELDS.filter(
   (field) => !MANUAL_FIELDS.some((manual) => manual.key === field.key),
 ).map((field) => ({ ...field, required: false }));
 
+/** As quatro colunas citadas no texto padrão do erro de planilha. */
+const KEY_COLUMNS: { key: ColumnKey; label: string }[] = [
+  { key: "date", label: "Data" },
+  { key: "contentA", label: "Bloco A" },
+  { key: "contentB", label: "Bloco B" },
+  { key: "contentR", label: "Revisão" },
+];
+
+function fileCopy(title: string, message: string): ErrorCopy {
+  return {
+    ...describeError(message),
+    title,
+    message,
+    detail: undefined,
+    action: { id: "choose-file", label: "Escolher outro arquivo" },
+    secondaryAction: { id: "download-template", label: "Baixar modelo" },
+  };
+}
+
 function ImportPage() {
   const { importDays, days, startPrep } = useStudy();
   const [sheets, setSheets] = useState<SheetTable[]>([]);
   const [sheetName, setSheetName] = useState("");
   const [map, setMap] = useState<ColumnMap | null>(null);
   const [manual, setManual] = useState(false);
-  const [fileError, setFileError] = useState("");
+  const [fileError, setFileError] = useState<ErrorCopy | null>(null);
   const [saved, setSaved] = useState<PlanDay[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const sheet = sheets.find((s) => s.name === sheetName) ?? null;
   const labels = sheet ? (manual ? manualHeaders(sheet) : sheet.headers) : [];
@@ -56,11 +86,34 @@ function ImportPage() {
     return applyMap(sheet.matrix, sheet.headerRow, map);
   }, [sheet, map, manual]);
 
+  const missingColumns = useMemo(() => {
+    if (!map || !manual) return [];
+    return KEY_COLUMNS.filter((column) => map[column.key] == null).map((column) => column.label);
+  }, [map, manual]);
+
+  const mappingError = useMemo(() => {
+    if (!sheet || !map || !missingColumns.length) return null;
+    const headerRow = manualHeaderRow(sheet);
+    return sheetErrorCopy({
+      missingColumns,
+      ...(headerRow >= 0 ? { row: headerRow + 1 } : {}),
+    });
+  }, [sheet, map, missingColumns]);
+
+  const emptySheetError = useMemo(() => {
+    if (fileError || mappingError || !sheet || !map || !preview) return null;
+    if (preview.days.length > 0) return null;
+    const warning = preview.warnings[0];
+    return sheetErrorCopy(warning ? sheetProblemFromWarning(warning) : {});
+  }, [fileError, mappingError, sheet, map, preview]);
+
+  const shownError = fileError ?? mappingError ?? emptySheetError;
+
   async function onFile(file: File) {
-    setFileError("");
+    setFileError(null);
     setSaved(null);
     if (file.size > 5_000_000) {
-      setFileError("Arquivo grande demais (máximo 5 MB).");
+      setFileError(fileCopy("Arquivo grande demais", "O limite é 5 MB. Escolha um arquivo menor."));
       return;
     }
     try {
@@ -71,7 +124,7 @@ function ImportPage() {
         setSheetName("");
         setMap(null);
         setManual(false);
-        setFileError("Não achei nenhuma aba com dados. Confira o arquivo.");
+        setFileError(sheetErrorCopy({ reason: "Nenhuma aba com dados." }));
         return;
       }
       const best = pickSheet(usable);
@@ -83,18 +136,21 @@ function ImportPage() {
       setManual(needsManual);
       setMap(needsManual ? guessMap(manualHeaders(target)) : autoMap);
     } catch {
-      setFileError("Não consegui ler essa planilha. Use .xlsx ou .csv.");
+      setFileError(
+        fileCopy("Não consegui ler essa planilha", "Use um arquivo .xlsx ou .csv."),
+      );
     }
   }
 
   async function confirm() {
     if (!preview?.days.length) return;
     setBusy(true);
+    setFileError(null);
     try {
       await importDays(preview.days);
       setSaved(preview.days);
     } catch {
-      setFileError("A planilha foi lida, mas não salvei no aparelho.");
+      setFileError(describeError("A planilha foi lida, mas não salvei no aparelho."));
     } finally {
       setBusy(false);
     }
@@ -116,8 +172,17 @@ function ImportPage() {
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 2000);
     } catch {
-      setFileError("Não consegui gerar a planilha modelo. Tente de novo.");
+      setFileError({
+        ...describeError("Não consegui gerar a planilha modelo. Tente de novo."),
+        action: { id: "download-template", label: "Baixar modelo" },
+      });
     }
+  }
+
+  function handleErrorAction(action: FeedbackAction) {
+    if (action.id === "choose-file") fileInput.current?.click();
+    else if (action.id === "download-template") downloadTemplate();
+    else if (action.id === "retry") void confirm();
   }
 
   return (
@@ -134,16 +199,18 @@ function ImportPage() {
         <span className="font-semibold">Escolher .xlsx ou .csv</span>
         <span className="mt-1 text-xs text-muted">Datas em dd/mm/aaaa, aaaa-mm-dd ou nativas do Excel. Tempos como 40min, 1h30, 90 ou 01:30.</span>
         <input
+          ref={fileInput}
           className="sr-only"
           type="file"
           accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(e) => {
-            const file = e.target.files?.[0];
+            const file = e.currentTarget.files?.[0];
+            e.currentTarget.value = "";
             if (file) void onFile(file);
           }}
         />
       </label>
-      {fileError ? <p className="text-sm text-clay-text">{fileError}</p> : null}
+      {shownError ? <ErrorState copy={shownError} onAction={handleErrorAction} /> : null}
 
       <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
         <p className="text-sm font-semibold">Primeira vez? Comece pelo modelo.</p>
@@ -211,7 +278,14 @@ function ImportPage() {
 
           <Preview days={preview?.days ?? []} warnings={preview?.warnings ?? []} />
           <Button onClick={() => void confirm()} disabled={busy || !preview?.days.length}>
-            {busy ? "Salvando…" : `Importar ${preview?.days.length ?? 0} dias`}
+            {busy ? (
+              <>
+                <ButtonSpinner />
+                Salvando…
+              </>
+            ) : (
+              `Importar ${preview?.days.length ?? 0} dias`
+            )}
           </Button>
         </section>
       ) : null}
