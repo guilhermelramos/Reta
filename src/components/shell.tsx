@@ -87,12 +87,18 @@ function Frame() {
         </aside>
         <div className="min-w-0 flex-1">
           {loadError ? <p className="px-5 pt-4 text-sm text-clay-text">{loadError}</p> : null}
-          <main id="conteudo" className="px-4 py-6 pb-36 md:px-8 md:py-8 md:pb-20">
+          <main
+            id="conteudo"
+            className="px-4 py-6 pb-[calc(8.5rem_+_env(safe-area-inset-bottom))] md:px-8 md:py-8 md:pb-20"
+          >
             <Outlet />
           </main>
         </div>
       </div>
-      <nav className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-border bg-bg/95 pb-12 backdrop-blur md:hidden" aria-label="Seções">
+      <nav
+        className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-border bg-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+        aria-label="Seções"
+      >
         <ul className="grid grid-cols-5">
           {NAV.map((item) => {
             const active = item.to === "/" ? path === "/" : path.startsWith(item.to);
@@ -101,8 +107,9 @@ function Frame() {
               <li key={item.to}>
                 <Link
                   to={item.to}
+                  aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex min-h-14 flex-col items-center justify-center gap-1 text-xs",
+                    "flex min-h-14 min-w-11 flex-col items-center justify-center gap-1 px-1 text-xs",
                     active ? "text-primary" : "text-muted",
                   )}
                 >

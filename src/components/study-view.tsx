@@ -7,6 +7,9 @@ import { cn } from "@/lib/cn";
 export function PackageView({ pkg, compact }: { pkg: StudyPackage; compact?: boolean }) {
   const [cards, setCards] = useState(false);
   const [flipped, setFlipped] = useState<number | null>(null);
+  const [marks, setMarks] = useState<Record<number, "again" | "known">>({});
+  const known = Object.values(marks).filter((mark) => mark === "known").length;
+  const again = Object.values(marks).filter((mark) => mark === "again").length;
   const map = conceptMapSvg(pkg.concepts);
   const diagram = sanitizeSvg(pkg.diagramSvg);
 
@@ -93,23 +96,65 @@ export function PackageView({ pkg, compact }: { pkg: StudyPackage; compact?: boo
       ) : null}
       {pkg.flashcards.length ? (
         <div>
-          <Button variant="surface" onClick={() => setCards((v) => !v)}>
-            {cards ? "Esconder cartões" : `Cartões (${pkg.flashcards.length})`}
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="surface" onClick={() => setCards((v) => !v)}>
+              {cards ? "Esconder cartões" : `Cartões (${pkg.flashcards.length})`}
+            </Button>
+            {cards && (known || again) ? (
+              <p className="text-xs text-muted" aria-live="polite">
+                Lembrei: {known} · Não lembrei: {again}
+              </p>
+            ) : null}
+          </div>
           {cards ? (
             <ul className="mt-3 grid gap-3 sm:grid-cols-2">
-              {pkg.flashcards.map((card, i) => (
-                <li key={card.front}>
-                  <button
-                    type="button"
-                    className="min-h-24 w-full rounded-xl border border-border bg-surface-2 p-4 text-left"
-                    onClick={() => setFlipped(flipped === i ? null : i)}
-                  >
-                    <span className="text-xs text-muted">{flipped === i ? "Verso" : "Frente"}</span>
-                    <span className="mt-1 block">{flipped === i ? card.back : card.front}</span>
-                  </button>
-                </li>
-              ))}
+              {pkg.flashcards.map((card, i) => {
+                const mark = marks[i];
+                return (
+                  <li key={card.front} className="flex flex-col">
+                    <button
+                      type="button"
+                      className={cn(
+                        "min-h-24 w-full rounded-xl border bg-surface-2 p-4 text-left",
+                        mark === "known" && "border-primary/60",
+                        mark === "again" && "border-clay/60",
+                        !mark && "border-border",
+                      )}
+                      onClick={() => setFlipped(flipped === i ? null : i)}
+                    >
+                      <span className="text-xs text-muted">
+                        {flipped === i ? "Verso" : "Frente"}
+                        {mark ? ` · ${mark === "known" ? "lembrei" : "revisar"}` : ""}
+                      </span>
+                      <span className="mt-1 block">{flipped === i ? card.back : card.front}</span>
+                    </button>
+                    {flipped === i ? (
+                      <div className="mt-2 grid grid-cols-2 gap-2" role="group" aria-label="Como foi este cartão?">
+                        <button
+                          type="button"
+                          className="min-h-14 rounded-xl border border-clay/50 bg-clay/10 px-3 text-base font-semibold text-clay-text"
+                          onClick={() => {
+                            setMarks((prev) => ({ ...prev, [i]: "again" }));
+                            setFlipped(i + 1 < pkg.flashcards.length ? i + 1 : null);
+                          }}
+                        >
+                          Não lembrei
+                        </button>
+                        <button
+                          type="button"
+                          className="min-h-14 rounded-xl bg-primary px-3 text-base font-semibold text-primary-fg"
+                          onClick={() => {
+                            setMarks((prev) => ({ ...prev, [i]: "known" }));
+                            setFlipped(i + 1 < pkg.flashcards.length ? i + 1 : null);
+                          }}
+                        >
+                          Lembrei
+                        </button>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
         </div>
