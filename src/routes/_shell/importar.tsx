@@ -23,6 +23,7 @@ import {
   readWorkbook,
 } from "@/lib/study/parse-sheet";
 import { useStudy } from "@/lib/study/store";
+import { deliverFile } from "@/lib/native/files";
 import { formatMin, formatShortDate } from "@/lib/study/time";
 import type { ColumnKey, ColumnMap, PlanDay, RowWarning, SheetTable } from "@/lib/study/types";
 
@@ -156,21 +157,15 @@ function ImportPage() {
     }
   }
 
-  function downloadTemplate() {
+  async function downloadTemplate() {
     try {
       const bytes = buildTemplateWorkbook();
-      const blob = new Blob([bytes], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      await deliverFile({
+        name: "reta-planilha-modelo.xlsx",
+        bytes,
+        mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        title: "Planilha modelo do Reta",
       });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "reta-planilha-modelo.xlsx";
-      link.rel = "noopener";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
     } catch {
       setFileError({
         ...describeError("Não consegui gerar a planilha modelo. Tente de novo."),
@@ -181,7 +176,7 @@ function ImportPage() {
 
   function handleErrorAction(action: FeedbackAction) {
     if (action.id === "choose-file") fileInput.current?.click();
-    else if (action.id === "download-template") downloadTemplate();
+    else if (action.id === "download-template") void downloadTemplate();
     else if (action.id === "retry") void confirm();
   }
 
@@ -217,7 +212,7 @@ function ImportPage() {
         <p className="text-xs leading-relaxed text-muted">
           A planilha modelo já vem com as colunas que o Reta reconhece: Data, Bloco A, Min A, Bloco B, Min B e Revisão.
         </p>
-        <Button className="self-start" variant="surface" onClick={downloadTemplate}>
+        <Button className="self-start" variant="surface" onClick={() => void downloadTemplate()}>
           <Download aria-hidden className="size-4" />
           Baixar Planilha Modelo (.xlsx)
         </Button>
