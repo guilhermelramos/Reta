@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
+import { describeError } from "@/lib/feedback/error-copy";
 import { useStudy } from "@/lib/study/store";
 import { dayLoad, daysBetween, examDate, formatLongDate, formatMin, saoPauloParts, saoPauloToday, topicLine } from "@/lib/study/time";
 import type { BlockKind, PlanBlock, StudySession } from "@/lib/study/types";
@@ -159,7 +160,9 @@ function PrepRow({ from }: { from: string }) {
         {prep.running ? (
           <Button variant="ghost" onClick={cancelPrep}>Parar</Button>
         ) : (
-          <Button variant="surface" onClick={() => startPrep(from)}>Preparar semana</Button>
+          <Button variant="surface" onClick={() => startPrep(from)}>
+            {prep.failures.length ? "Tentar de novo" : "Preparar semana"}
+          </Button>
         )}
       </div>
       {prep.running || prep.current ? (
@@ -172,7 +175,9 @@ function PrepRow({ from }: { from: string }) {
       ) : null}
       {prep.failures.length ? (
         <ul className="mt-2 text-xs text-clay-text">
-          {prep.failures.map((f) => <li key={f.label}>{f.label}: {f.error}</li>)}
+          {prep.failures.map((f) => (
+            <li key={f.label}>{f.label}: {describeError(f.error).message}</li>
+          ))}
         </ul>
       ) : null}
     </section>

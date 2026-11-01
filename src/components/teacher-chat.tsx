@@ -5,8 +5,11 @@ import { Drawer } from "vaul";
 import { QuestionCard } from "@/components/study-view";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
+import { ButtonSpinner } from "@/components/feedback/button-spinner";
+import { InlineError } from "@/components/feedback/inline-error";
 import { askProfessor } from "@/lib/ai/professor-client";
 import { researchAddClient } from "@/lib/ai/xai-client";
+import { describeError, type ErrorCopy } from "@/lib/feedback/error-copy";
 import { validateDiagram } from "@/lib/study/diagrams";
 import { mergeAddition } from "@/lib/study/outline";
 import { sanitizeSvg } from "@/lib/study/svg";
@@ -18,6 +21,15 @@ type SpeechCtor = new () => {
   onerror: (() => void) | null;
   start: () => void;
 };
+
+function online(): boolean {
+  return typeof navigator === "undefined" || navigator.onLine !== false;
+}
+
+/** Erro local (sem rede envolvida): sem ação de retry enganosa. */
+function notice(message: string): ErrorCopy {
+  return { ...describeError(message), action: undefined };
+}
 
 function visibleAnswer(raw: string): string {
   const cut = raw.search(/<svg\b/i);
@@ -164,7 +176,9 @@ export function TeacherChat({
   const [draft, setDraft] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [busyKind, setBusyKind] = useState<"chat" | "research" | null>(null);
+  const [error, setError] = useState<ErrorCopy | null>(null);
+  const retry = useRef<(() => void) | null>(null);
   const [tab, setTab] = useState<"chat" | "caderno">("chat");
   const [test, setTest] = useState<QuizItem | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
@@ -202,6 +216,16 @@ export function TeacherChat({
 
   if (!open) return null;
 
+  function showError(copy: ErrorCopy, onRetry?: () => void) {
+    setError(copy);
+    retry.current = onRetry ?? null;
+  }
+
+  function clearError() {
+    setError(null);
+    retry.current = null;
+  }
+
   function ensureDoubt(first: string): Doubt {
     if (active) return active;
     const created: Doubt = {
@@ -217,21 +241,16 @@ export function TeacherChat({
     return created;
   }
 
-  async function send(text: string) {
-    const content = text.trim();
-    if (!content || busy) return;
-    setError("");
-    setDraft("");
-    const base = ensureDoubt(content);
-    const userMsg: ChatMsg = { role: "user", text: content };
-    const history = [...base.messages, userMsg];
-    const next: Doubt = { ...base, messages: history, updatedAt: Date.now(), title: base.title || content.slice(0, 80) };
-    onSaveDoubt(next);
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      setError("Sem internet. Dá para seguir a sessão; o professor volta quando a rede voltar.");
+  /** Pergunta a partir da conversa já salva — o retry não duplica a mensagem. */
+  async function answer(doubt: Doubt) {
+    if (busy) return;
+    const history = doubt.messages;
+    if (!online()) {
+      showError(describeError(null, { online: false }), () => void answer(doubt));
       return;
     }
     setBusy(true);
+    setBusyKind("chat");
     try {
       await askProfessor(
         {
@@ -247,18 +266,37 @@ export function TeacherChat({
         (raw) => {
           const view = present(raw);
           const streaming: Doubt = {
-            ...next,
+            ...doubt,
             updatedAt: Date.now(),
             messages: [...history, { role: "professor", text: view.text || "…", outside: view.outside, cite: view.cite, svg: view.svg || undefined }],
           };
           onSaveDoubt(streaming);
         },
       );
+      clearError();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao falar com o professor.");
+      showError(describeError(err, { online: online() }), () => void answer(doubt));
     } finally {
       setBusy(false);
+      setBusyKind(null);
     }
+  }
+
+  async function send(text: string) {
+    const content = text.trim();
+    if (!content || busy) return;
+    clearError();
+    setDraft("");
+    const base = ensureDoubt(content);
+    const userMsg: ChatMsg = { role: "user", text: content };
+    const next: Doubt = {
+      ...base,
+      messages: [...base.messages, userMsg],
+      updatedAt: Date.now(),
+      title: base.title || content.slice(0, 80),
+    };
+    onSaveDoubt(next);
+    await answer(next);
   }
 
   function draw() {
@@ -273,26 +311,31 @@ export function TeacherChat({
   function testMe() {
     const item = makeTest();
     if (!item) {
-      setError("As questões deste subtópico já foram usadas.");
+      showError(notice("As questões deste subtópico já foram usadas."));
       return;
     }
     setTest(item);
     setPicked(null);
     setConfirmed(false);
     setHint(false);
-    setError("");
+    clearError();
   }
 
   async function research() {
     if (!pkg || busy) return;
     const last = [...(active?.messages ?? [])].reverse().find((item) => item.role === "user");
     if (!last) return;
+    clearError();
+    if (!online()) {
+      showError(describeError(null, { online: false }), () => void research());
+      return;
+    }
     setBusy(true);
-    setError("");
+    setBusyKind("research");
     try {
       const res = await researchAddClient({ question: last.text, topic: title, userKey });
       if (!res.ok) {
-        setError(res.error);
+        showError(describeError(res.failure ?? res.error, { online: online() }), () => void research());
         return;
       }
       onSavePackage(mergeAddition(pkg, pkg.subtopics?.find((item) => item.title === subtopic)?.id || pkg.subtopics?.[0]?.id || "", res.data));
@@ -304,9 +347,10 @@ export function TeacherChat({
         });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha na pesquisa.");
+      showError(describeError(err, { online: online() }), () => void research());
     } finally {
       setBusy(false);
+      setBusyKind(null);
     }
   }
 
@@ -320,7 +364,7 @@ export function TeacherChat({
       const said = event.results?.[0]?.[0]?.transcript ?? "";
       if (said) setDraft((prev) => `${prev} ${said}`.trim());
     };
-    rec.onerror = () => setError("Não ouvi. Digite a dúvida.");
+    rec.onerror = () => showError(notice("Não ouvi. Digite a dúvida."));
     rec.start();
   }
 
@@ -405,10 +449,19 @@ export function TeacherChat({
                 ) : null}
               </div>
             ) : null}
-            {error ? <p className="text-sm text-clay-text">{error}</p> : null}
+            {error ? (
+              <InlineError copy={error} onAction={() => retry.current?.()} />
+            ) : null}
             {active?.messages.some((msg) => msg.outside) ? (
               <Button variant="surface" disabled={busy} onClick={() => void research()}>
-                Pesquisar e adicionar ao pacote
+                {busy && busyKind === "research" ? (
+                  <>
+                    <ButtonSpinner />
+                    Pesquisando…
+                  </>
+                ) : (
+                  "Pesquisar e adicionar ao pacote"
+                )}
               </Button>
             ) : null}
           </div>
@@ -465,7 +518,14 @@ export function TeacherChat({
                 className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-bg px-3 text-sm"
               />
               <Button type="submit" disabled={busy || !draft.trim()}>
-                {busy ? "…" : "Enviar"}
+                {busy && busyKind === "chat" ? (
+                  <>
+                    <ButtonSpinner />
+                    Enviando…
+                  </>
+                ) : (
+                  "Enviar"
+                )}
               </Button>
             </form>
           </div>

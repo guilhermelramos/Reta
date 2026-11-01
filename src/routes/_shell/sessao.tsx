@@ -5,8 +5,12 @@ import { LessonView } from "@/components/lesson-view";
 import { ErrorReasonPicker } from "@/components/mistake-reason";
 import { QuestionCard } from "@/components/study-view";
 import { TeacherChat } from "@/components/teacher-chat";
+import { ButtonSpinner } from "@/components/feedback/button-spinner";
+import { ErrorState } from "@/components/feedback/error-state";
+import { InlineError } from "@/components/feedback/inline-error";
 import { Button } from "@/components/ui/button";
 import { isRichPackage } from "@/lib/ai/package.functions";
+import { blockMissingCopy, describeError, type ErrorCopy } from "@/lib/feedback/error-copy";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
 import {
   clearActiveSession,
@@ -52,6 +56,10 @@ const SECTIONS = [
   ["visuais", "Visuais"],
   ["pegadinhas", "Pegadinhas"],
 ] as const;
+
+function online(): boolean {
+  return typeof navigator === "undefined" || navigator.onLine !== false;
+}
 
 function liveSeconds(session: StudySession, now: number): number {
   return timerElapsedMs(timerFromSession(session), now) / 1000;
@@ -174,7 +182,7 @@ function SessionPage() {
   const [sid, setSid] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [building, setBuilding] = useState(false);
-  const [buildError, setBuildError] = useState("");
+  const [buildError, setBuildError] = useState<ErrorCopy | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [showHint, setShowHint] = useState(false);
@@ -291,7 +299,7 @@ function SessionPage() {
       if (tried.current) return;
       tried.current = true;
       void study.buildOne(search.dia, search.bloco).then((error) => {
-        if (error) setBuildError(error);
+        if (error) setBuildError(describeError(error, { online: online() }));
       });
       return;
     }
@@ -379,12 +387,23 @@ function SessionPage() {
   if (!day || !block) {
     return (
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-3xl">Bloco não encontrado</h1>
-        <Button className="mt-4" asChild>
-          <Link to="/">Voltar para hoje</Link>
-        </Button>
+        <ErrorState copy={blockMissingCopy()} />
       </div>
     );
+  }
+
+  async function buildLesson() {
+    if (building) return;
+    setBuilding(true);
+    setBuildError(null);
+    try {
+      const error = await study.buildOne(search.dia, search.bloco);
+      if (error) setBuildError(describeError(error, { online: online() }));
+    } catch (err) {
+      setBuildError(describeError(err, { online: online() }));
+    } finally {
+      setBuilding(false);
+    }
   }
 
   async function save(next: StudySession) {
@@ -649,20 +668,21 @@ function SessionPage() {
       {!pkg ? (
         <section className="rounded-xl border border-border bg-surface p-4">
           <h2 className="text-2xl">A aula deste bloco ainda não está neste aparelho</h2>
-          <Button
-            className="mt-4"
-            disabled={building}
-            onClick={() => {
-              setBuilding(true);
-              void study.buildOne(search.dia, search.bloco).then((error) => {
-                setBuildError(error ?? "");
-                setBuilding(false);
-              });
-            }}
-          >
-            {building ? "Montando…" : "Montar esta aula"}
+          <Button className="mt-4" disabled={building} onClick={() => void buildLesson()}>
+            {building ? (
+              <>
+                <ButtonSpinner />
+                Montando…
+              </>
+            ) : buildError ? (
+              "Tentar de novo"
+            ) : (
+              "Montar esta aula"
+            )}
           </Button>
-          {buildError ? <p className="mt-3 text-sm text-clay-text">{buildError}</p> : null}
+          {buildError ? (
+            <InlineError className="mt-3" copy={buildError} onAction={() => void buildLesson()} />
+          ) : null}
         </section>
       ) : null}
 

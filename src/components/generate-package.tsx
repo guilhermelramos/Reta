@@ -1,10 +1,17 @@
 import { useState } from "react";
 import { Layers, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ButtonSpinner } from "@/components/feedback/button-spinner";
+import { InlineError } from "@/components/feedback/inline-error";
 import { generateBlockPackageClient } from "@/lib/ai/xai-client";
 import { toStudyPackage } from "@/lib/ai/package.functions";
+import { describeError, type ErrorCopy } from "@/lib/feedback/error-copy";
 import { useStudy } from "@/lib/study/store";
 import type { BlockKind, Flashcard } from "@/lib/study/types";
+
+function online(): boolean {
+  return typeof navigator === "undefined" || navigator.onLine !== false;
+}
 
 /**
  * Botão "Gerar Aula, Flashcards e Questões com IA" para blocos que ainda não
@@ -23,29 +30,32 @@ export function GeneratePackage({
   minutes: number;
 }) {
   const study = useStudy();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [error, setError] = useState<ErrorCopy | null>(null);
+  const busy = state === "loading";
 
   async function generate() {
     if (busy) return;
-    setError("");
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      setError("Sem internet agora. O pacote já gerado fica salvo no aparelho; para gerar um novo, conecte-se.");
+    setError(null);
+    if (!online()) {
+      setState("error");
+      setError(describeError(null, { online: false }));
       return;
     }
-    setBusy(true);
+    setState("loading");
     try {
       const res = await generateBlockPackageClient({ topic, minutes, userKey: study.keys.xai });
       if (!res.ok) {
-        setError(res.error);
+        setState("error");
+        setError(describeError(res.failure ?? res.error, { online: online() }));
         return;
       }
       const pkg = toStudyPackage(res.data, { date, kind, topic, minutes });
       await study.saveBuilt(pkg);
+      setState("success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao gerar o pacote.");
-    } finally {
-      setBusy(false);
+      setState("error");
+      setError(describeError(err, { online: online() }));
     }
   }
 
@@ -58,13 +68,20 @@ export function GeneratePackage({
         gabarito comentado. Fica salvo no aparelho e abre offline nas próximas vezes.
       </p>
       <Button className="mt-4" disabled={busy} onClick={() => void generate()}>
-        <Sparkles className="size-4" />
-        {busy ? "Gerando…" : "Gerar Aula, Flashcards e Questões com IA"}
+        {busy ? <ButtonSpinner /> : <Sparkles className="size-4" />}
+        {busy ? "Gerando…" : state === "error" ? "Tentar de novo" : "Gerar Aula, Flashcards e Questões com IA"}
       </Button>
       <p className="mt-2 text-xs text-muted" aria-live="polite">
         {busy ? "Pode levar até um minuto. Não feche esta tela." : "Consome a IA uma única vez por bloco."}
       </p>
-      {error ? <p className="mt-3 text-sm text-clay-text" role="alert">{error}</p> : null}
+      {state === "success" ? (
+        <p className="mt-3 text-sm text-primary" role="status">
+          Pacote gerado e salvo no aparelho.
+        </p>
+      ) : null}
+      {error ? (
+        <InlineError className="mt-3" copy={error} onAction={() => void generate()} />
+      ) : null}
     </section>
   );
 }
