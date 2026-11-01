@@ -94,6 +94,34 @@ fora do escopo desta etapa, que só empacota.
 - Entrega real em Doze, telas de permissão, reboot e otimização de bateria só
   podem ser validadas num aparelho.
 
+## Timer com tela bloqueada
+
+- O tempo continua derivado de `startedAt` + acumulado (`src/lib/study/time.ts`);
+  o `setInterval` de `sessao.tsx` só redesenha. Nada de contar segundos em JS.
+- Ao iniciar/retomar, `src/lib/study/timer-plan.ts` calcula o fim previsto
+  (`endsAt`) e a sessão grava esse instante no IndexedDB. Pausar zera `endsAt`;
+  encerrar/concluir também.
+- `syncTimerNotifications` (em `src/lib/native/notifications.ts`) agenda o
+  alarme do fim com `allowWhileIdle` no canal `timer` (título "Tempo do bloco
+  acabou"). Se o Android negou alarmes exatos, o plugin agenda como **inexato**
+  e o fallback fica registrado no console; `isExactNotification` só é `true`
+  quando `checkExactNotificationSetting()` autorizou.
+- Ao reabrir o app, o `endsAt` gravado é preservado se ainda estiver no futuro
+  (o alarme é reagendado). Registros antigos sem `endsAt` derivam o fim de
+  `startedAt` + acumulado. Se o fim já passou, nada é reagendado.
+- A notificação persistente usa `ongoing: true` / `autoCancel: false` do
+  `@capacitor/local-notifications` (campos documentados do plugin), no canal
+  silencioso `timer-progresso`. Ela mostra bloco + horário de término quando
+  corre e vira "pausado · restam X" na pausa; é removida ao encerrar. **Não**
+  foi preciso criar um foreground service em Kotlin: uma notificação
+  `setOngoing(true)` é uma notificação normal, então as regras de
+  `FOREGROUND_SERVICE_SPECIAL_USE`/`SHORT_SERVICE` do Android 14 não se aplicam.
+  O processo pode ser morto pelo sistema, mas o alarme exato continua no
+  `AlarmManager` e o tempo é recalculado na reabertura.
+- Alarme entregue com tela bloqueada, pausa/retomada com o app morto e
+  comportamento em Doze só podem ser validados num aparelho.
+
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**
