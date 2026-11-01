@@ -2,7 +2,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { ZodError } from "zod";
 import { Button } from "@/components/ui/button";
+import { ButtonSpinner } from "@/components/feedback/button-spinner";
+import { InlineError } from "@/components/feedback/inline-error";
 import { pingAiClient } from "@/lib/ai/xai-client";
+import { describeError, notificationsDeniedCopy, type ErrorCopy } from "@/lib/feedback/error-copy";
+import {
+  notificationPermission,
+  requestNotificationPermission,
+} from "@/lib/native/notifications";
+import { openAppSettings } from "@/lib/native/settings";
 import type { KeyValues } from "@/lib/secure/keys";
 import { exportAll, importAll, parseBackup } from "@/lib/study/db";
 import { useStudy } from "@/lib/study/store";
@@ -26,6 +34,9 @@ function SettingsPage() {
   const [keyDraft, setKeyDraft] = useState<KeyValues>(keys);
   const [note, setNote] = useState("");
   const [testing, setTesting] = useState(false);
+  const [testState, setTestState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [testError, setTestError] = useState<ErrorCopy | null>(null);
+  const [notificationError, setNotificationError] = useState<ErrorCopy | null>(null);
   const [storage, setStorage] = useState<StorageState>({
     supported: false,
     persisted: null,
@@ -54,6 +65,13 @@ function SettingsPage() {
     setKeyDraft(keys);
   }, [settings, keys]);
 
+  // Permissão já negada aparece sem precisar tocar no botão de novo.
+  useEffect(() => {
+    if (notificationPermission() === "denied") {
+      setNotificationError(notificationsDeniedCopy());
+    }
+  }, []);
+
   function patch(partial: Partial<Settings>) {
     setDraft({ ...draft, ...partial });
   }
@@ -67,30 +85,78 @@ function SettingsPage() {
     }
   }
 
+  function online(): boolean {
+    return typeof navigator === "undefined" || navigator.onLine !== false;
+  }
+
+  /** Na própria Ajustes, "Atualizar chave" foca o campo em vez de navegar. */
+  function localCopy(copy: ErrorCopy): ErrorCopy {
+    if (copy.action?.id !== "update-key") return copy;
+    return { ...copy, action: { ...copy.action, href: undefined } };
+  }
+
   async function test() {
     if (testing) return;
     setTesting(true);
+    setTestState("loading");
+    setTestError(null);
     setNote("");
     try {
       const key = draft.researcher === "grok" ? keyDraft.xai : draft.researcher === "perplexity" ? keyDraft.perplexity : draft.researcher === "gemini" ? keyDraft.gemini : keyDraft.claude;
       const res = await pingAiClient({ provider: draft.researcher, userKey: key });
-      setNote(res.ok ? "Conexão ok." : res.error);
+      if (res.ok) {
+        setTestState("success");
+        setNote("Conexão ok.");
+      } else {
+        setTestState("error");
+        setTestError(localCopy(describeError(res.failure ?? res.error, { online: online() })));
+      }
     } catch (err) {
       // A chamada pode falhar antes de virar resposta (sem rede, rota ausente
       // no APK antigo, timeout): o botão sempre sai de "Testando…".
-      setNote(err instanceof Error ? err.message : "Falha no teste de conexão. Tente de novo.");
+      setTestState("error");
+      setTestError(localCopy(describeError(err, { online: online() })));
     } finally {
       setTesting(false);
     }
   }
 
-  async function allowNotes() {
-    if (typeof Notification === "undefined") {
-      setNote("Este navegador não mostra notificação.");
+  function testAction(action: ErrorCopy["action"]) {
+    if (!action) return;
+    if (action.id === "retry") {
+      void test();
       return;
     }
-    const perm = await Notification.requestPermission();
-    setNote(perm === "granted" ? "Notificações ligadas." : "Permissão negada. O lembrete continua dentro do app.");
+    if (action.id === "update-key") {
+      const input = document.getElementById("xai-key");
+      input?.scrollIntoView({ behavior: "smooth", block: "center" });
+      input?.focus();
+    }
+  }
+
+  async function allowNotes() {
+    setNotificationError(null);
+    setNote("");
+    const current = notificationPermission();
+    if (current === "granted") {
+      setNote("Notificações ligadas.");
+      return;
+    }
+    const permission = await requestNotificationPermission();
+    if (permission === "granted") {
+      setNote("Notificações ligadas.");
+      return;
+    }
+    setNotificationError(notificationsDeniedCopy());
+  }
+
+  async function notificationAction() {
+    const opened = await openAppSettings();
+    setNote(
+      opened
+        ? "Configurações do app abertas."
+        : "No navegador, libere as notificações nas configurações do site.",
+    );
   }
 
   async function requestPersist() {
@@ -208,6 +274,9 @@ function SettingsPage() {
         <Check label="Aviso se o bloco ainda não começou" on={draft.alerts.pending} set={(pending) => patch({ alerts: { ...draft.alerts, pending } })} />
         <Check label="Modo silencioso" on={draft.quiet} set={(quiet) => patch({ quiet })} />
         <Button variant="surface" onClick={() => void allowNotes()}>Permitir notificações</Button>
+        {notificationError ? (
+          <InlineError copy={notificationError} onAction={() => void notificationAction()} />
+        ) : null}
         <p className="text-xs leading-relaxed text-muted">
           No Android, no iPhone e no Windows o lembrete sai com o app aberto ou instalado enquanto o navegador segue ativo. Fechado de verdade, o alarme local não dispara: iOS só entrega push de servidor, e Chrome ou Edge não guardam o timer depois que o processo morre.
         </p>
@@ -283,15 +352,31 @@ function SettingsPage() {
           </select>
         </label>
         <Check label="Pesquisar na web ao montar o pacote (mais lento, gasta mais)" on={draft.webSearch} set={(webSearch) => patch({ webSearch })} />
-        <Key label="Chave xAI (opcional)" value={keyDraft.xai} set={(xai) => setKeyDraft({ ...keyDraft, xai })} />
+        <Key id="xai-key" label="Chave xAI (opcional)" value={keyDraft.xai} set={(xai) => setKeyDraft({ ...keyDraft, xai })} />
         <Key label="Chave Perplexity" value={keyDraft.perplexity} set={(perplexity) => setKeyDraft({ ...keyDraft, perplexity })} />
         <Key label="Chave Gemini" value={keyDraft.gemini} set={(gemini) => setKeyDraft({ ...keyDraft, gemini })} />
         <Key label="Chave Claude" value={keyDraft.claude} set={(claude) => setKeyDraft({ ...keyDraft, claude })} />
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => void save()}>Salvar</Button>
-          <Button variant="surface" disabled={testing} onClick={() => void test()}>{testing ? "Testando…" : "Testar conexão"}</Button>
+          <Button variant="surface" disabled={testing} onClick={() => void test()}>
+            {testing ? (
+              <>
+                <ButtonSpinner />
+                Testando…
+              </>
+            ) : testState === "error" ? (
+              "Tentar de novo"
+            ) : (
+              "Testar conexão"
+            )}
+          </Button>
         </div>
-        {note ? <p className="text-sm">{note}</p> : null}
+        {testError ? <InlineError copy={testError} onAction={testAction} /> : null}
+        {note ? (
+          <p className="text-sm" role={testState === "success" ? "status" : undefined}>
+            {note}
+          </p>
+        ) : null}
       </section>
 
       <p className="text-sm">
@@ -361,11 +446,11 @@ function Check({ label, on, set }: { label: string; on: boolean; set: (v: boolea
   );
 }
 
-function Key({ label, value, set }: { label: string; value: string; set: (v: string) => void }) {
+function Key({ id, label, value, set }: { id?: string; label: string; value: string; set: (v: string) => void }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
       {label}
-      <input className="min-h-11 rounded-xl border border-border bg-surface-2 px-3" type="password" autoComplete="off" value={value} onChange={(e) => set(e.target.value)} />
+      <input id={id} className="min-h-11 rounded-xl border border-border bg-surface-2 px-3" type="password" autoComplete="off" value={value} onChange={(e) => set(e.target.value)} />
     </label>
   );
 }
