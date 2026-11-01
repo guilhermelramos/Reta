@@ -38,4 +38,11 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Notificações locais: POST_NOTIFICATIONS é pedida no Android 13+. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Lembretes de estudo com horário exato; se negado, o app agenda
+         alarme inexato (sem USE_EXACT_ALARM, que exigiria justificar uso). -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- O plugin reagenda os alarmes depois de reiniciar o aparelho. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>

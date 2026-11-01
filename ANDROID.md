@@ -162,6 +162,56 @@ No aparelho ainda é preciso validar o Keystore de verdade (criar/ler/apagar a
 chave e a migração de uma instalação antiga). O emulador deste ambiente não
 sobe, então o WebView foi exercitado com o mesmo bundle do APK.
 
+## Notificações locais
+
+- `src/lib/study/notification-schedule.ts` calcula, de forma pura, os avisos
+  dos próximos 7 dias com a mesma lógica/texto de `src/lib/study/notify.ts`
+  (início, questões, revisão e bloco não iniciado).
+- `src/lib/native/notifications.ts` entrega essa lista ao
+  `@capacitor/local-notifications` (canais `estudo`, `questoes` e `timer`,
+  `allowWhileIdle`, alarme exato quando autorizado e inexato como fallback).
+  Na web o serviço é inerte: o comportamento antigo (Notification API +
+  service worker) continua igual.
+- O shell reagenda ao abrir/voltar ao app e quando o plano ou os ajustes
+  mudam; o modo silencioso cancela os lembretes agendados.
+- O botão “Permitir notificações” dos Ajustes pede `POST_NOTIFICATIONS` e,
+  se preciso, abre a tela de alarmes exatos do Android.
+- `BatteryOptimizationPlugin.java` expõe `isIgnoringBatteryOptimizations()` e
+  `openBatteryOptimizationSettings()` (sem pedir
+  `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
+- Permissões no manifesto: `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM` e
+  `RECEIVE_BOOT_COMPLETED` (esta última restaura os alarmes após reiniciar).
+- Entrega real em Doze, telas de permissão, reboot e otimização de bateria só
+  podem ser validadas num aparelho.
+
+## Timer com tela bloqueada
+
+- O tempo continua derivado de `startedAt` + acumulado (`src/lib/study/time.ts`);
+  o `setInterval` de `sessao.tsx` só redesenha. Nada de contar segundos em JS.
+- Ao iniciar/retomar, `src/lib/study/timer-plan.ts` calcula o fim previsto
+  (`endsAt`) e a sessão grava esse instante no IndexedDB. Pausar zera `endsAt`;
+  encerrar/concluir também.
+- `syncTimerNotifications` (em `src/lib/native/notifications.ts`) agenda o
+  alarme do fim com `allowWhileIdle` no canal `timer` (título "Tempo do bloco
+  acabou"). Se o Android negou alarmes exatos, o plugin agenda como **inexato**
+  e o fallback fica registrado no console; `isExactNotification` só é `true`
+  quando `checkExactNotificationSetting()` autorizou.
+- Ao reabrir o app, o `endsAt` gravado é preservado se ainda estiver no futuro
+  (o alarme é reagendado). Registros antigos sem `endsAt` derivam o fim de
+  `startedAt` + acumulado. Se o fim já passou, nada é reagendado.
+- A notificação persistente usa `ongoing: true` / `autoCancel: false` do
+  `@capacitor/local-notifications` (campos documentados do plugin), no canal
+  silencioso `timer-progresso`. Ela mostra bloco + horário de término quando
+  corre e vira "pausado · restam X" na pausa; é removida ao encerrar. **Não**
+  foi preciso criar um foreground service em Kotlin: uma notificação
+  `setOngoing(true)` é uma notificação normal, então as regras de
+  `FOREGROUND_SERVICE_SPECIAL_USE`/`SHORT_SERVICE` do Android 14 não se aplicam.
+  O processo pode ser morto pelo sistema, mas o alarme exato continua no
+  `AlarmManager` e o tempo é recalculado na reabertura.
+- Alarme entregue com tela bloqueada, pausa/retomada com o app morto e
+  comportamento em Doze só podem ser validados num aparelho.
+
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**

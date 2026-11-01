@@ -1,12 +1,53 @@
-import type { PlanDay, Settings, StudySession } from "@/lib/study/types";
-import type { BlockKind, SessionMode } from "@/lib/study/types";
-import { KIND_LABEL } from "@/lib/study/types";
-import { formatMin, saoPauloParts, topicLine } from "@/lib/study/time";
+import type { PlanDay, Settings, StudySession } from "./types.ts";
+import type { BlockKind, SessionMode } from "./types.ts";
+import { KIND_LABEL } from "./types.ts";
+import { formatMin, saoPauloParts, topicLine } from "./time.ts";
+
+export type NoticeTag = "start" | "questions" | "review" | "pending";
 
 export type Notice = { title: string; body: string; tag: string };
 
 function inWindow(nowMin: number, at: number): boolean {
   return nowMin >= at && nowMin < at + 20;
+}
+
+/**
+ * Texto do aviso de um bloco do dia. É a única fonte dos títulos/corpos:
+ * o lembrete dentro do app (`dueNotices`) e o agendamento nativo usam esta
+ * mesma função, então os dois nunca divergem.
+ */
+export function noticeForTag(tag: NoticeTag, day: PlanDay): Notice | null {
+  const first = day.blocks.find((b) => b.plannedMin > 0);
+  if (!first) return null;
+  switch (tag) {
+    case "start":
+      return {
+        tag,
+        title: "Hora de estudar",
+        body: `Hoje: A – ${topicLine(first.content, 70)} · ${formatMin(first.plannedMin)}`,
+      };
+    case "questions":
+      return {
+        tag,
+        title: "Hora das questões",
+        body: `Resolva uma de cada vez: ${topicLine(first.content, 80)}`,
+      };
+    case "review": {
+      const review = day.blocks.find((b) => b.kind === "R" && b.plannedMin > 0);
+      if (!review) return null;
+      return {
+        tag,
+        title: "Hora da revisão",
+        body: `${KIND_LABEL.R}: ${topicLine(review.content, 80)} · ${formatMin(review.plannedMin)}`,
+      };
+    }
+    case "pending":
+      return {
+        tag,
+        title: "Bloco de hoje ainda não iniciado",
+        body: `${KIND_LABEL[first.kind]} continua te esperando · ${formatMin(first.plannedMin)}`,
+      };
+  }
 }
 
 export function dueNotices(input: {
@@ -21,41 +62,21 @@ export function dueNotices(input: {
   const parts = saoPauloParts(input.now ?? new Date());
   const nowMin = parts.hour * 60 + parts.minute;
   const start = settings.studyHour * 60 + settings.studyMinute;
-  const studyBlocks = today.blocks.filter((b) => b.plannedMin > 0);
-  const first = studyBlocks[0];
-  if (!first) return [];
+  if (!today.blocks.some((b) => b.plannedMin > 0)) return [];
   const started = sessions.some((s) => s.date === parts.date && (s.running || s.elapsedSec > 0 || s.status === "done"));
-  const out: Notice[] = [];
-  const push = (tag: string, title: string, body: string, when: boolean) => {
-    if (!when || log[tag] === parts.date) return;
-    out.push({ tag, title, body });
-  };
-  push(
-    "start",
-    "Hora de estudar",
-    `Hoje: A – ${topicLine(first.content, 70)} · ${formatMin(first.plannedMin)}`,
-    settings.alerts.start && inWindow(nowMin, start),
-  );
-  push(
-    "questions",
-    "Hora das questões",
-    `Resolva uma de cada vez: ${topicLine(first.content, 80)}`,
-    settings.alerts.questions && inWindow(nowMin, start + 20),
-  );
-  const review = today.blocks.find((b) => b.kind === "R" && b.plannedMin > 0);
   const reviewAt = start + (today.blocks.find((b) => b.kind === "A")?.plannedMin ?? 40);
-  push(
-    "review",
-    "Hora da revisão",
-    review ? `${KIND_LABEL.R}: ${topicLine(review.content, 80)} · ${formatMin(review.plannedMin)}` : "Revisão do dia",
-    settings.alerts.review && Boolean(review) && inWindow(nowMin, reviewAt),
-  );
-  push(
-    "pending",
-    "Bloco de hoje ainda não iniciado",
-    `${KIND_LABEL[first.kind]} continua te esperando · ${formatMin(first.plannedMin)}`,
-    settings.alerts.pending && !started && inWindow(nowMin, start + 45),
-  );
+  const when: Record<NoticeTag, boolean> = {
+    start: settings.alerts.start && inWindow(nowMin, start),
+    questions: settings.alerts.questions && inWindow(nowMin, start + 20),
+    review: settings.alerts.review && inWindow(nowMin, reviewAt),
+    pending: settings.alerts.pending && !started && inWindow(nowMin, start + 45),
+  };
+  const out: Notice[] = [];
+  for (const tag of ["start", "questions", "review", "pending"] as const) {
+    if (!when[tag] || log[tag] === parts.date) continue;
+    const notice = noticeForTag(tag, today);
+    if (notice) out.push(notice);
+  }
   return out;
 }
 

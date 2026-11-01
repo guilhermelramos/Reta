@@ -2,6 +2,7 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { BookOpen, CalendarDays, ChartNoAxesColumn, NotebookPen, Settings } from "lucide-react";
 import { useEffect } from "react";
 import { cn } from "@/lib/cn";
+import { syncNativeNotifications } from "@/lib/native/notifications";
 import { dueNotices, registerWorker, showNotice } from "@/lib/study/notify";
 import { StudyProvider, useStudy } from "@/lib/study/store";
 
@@ -38,6 +39,22 @@ function Frame() {
     const id = window.setInterval(tick, 30000);
     return () => window.clearInterval(id);
   }, [ready, settings, days, sessions, notifyLog, rememberNotify]);
+
+  // No app nativo os avisos são alarmes do próprio Android: reagenda ao abrir
+  // (e ao voltar do segundo plano) e sempre que o plano ou os ajustes mudam.
+  // Na web a chamada é inerte e o tick acima continua sendo o comportamento.
+  useEffect(() => {
+    if (!ready) return;
+    const sync = () => {
+      void syncNativeNotifications({ settings, days, sessions, log: notifyLog });
+    };
+    sync();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") sync();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [ready, settings, days, sessions, notifyLog]);
 
   if (!ready) {
     return (

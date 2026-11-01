@@ -7,8 +7,12 @@ import { InlineError } from "@/components/feedback/inline-error";
 import { pingAiClient } from "@/lib/ai/xai-client";
 import { describeError, notificationsDeniedCopy, type ErrorCopy } from "@/lib/feedback/error-copy";
 import {
+  getNotificationPermissionState,
+  isNativeNotificationService,
   notificationPermission,
+  requestNativeNotifications,
   requestNotificationPermission,
+  syncNativeNotifications,
 } from "@/lib/native/notifications";
 import { openAppSettings } from "@/lib/native/settings";
 import type { KeyValues } from "@/lib/secure/keys";
@@ -29,7 +33,7 @@ const PROVIDERS: { id: ResearcherId; label: string }[] = [
 ];
 
 function SettingsPage() {
-  const { settings, keys, saveSettings } = useStudy();
+  const { settings, keys, saveSettings, days, sessions, notifyLog } = useStudy();
   const [draft, setDraft] = useState<Settings>(settings);
   const [keyDraft, setKeyDraft] = useState<KeyValues>(keys);
   const [note, setNote] = useState("");
@@ -65,11 +69,16 @@ function SettingsPage() {
     setKeyDraft(keys);
   }, [settings, keys]);
 
-  // Permissão já negada aparece sem precisar tocar no botão de novo.
+  // Permissão já negada aparece sem precisar tocar no botão de novo. No APK o
+  // estado vem do plugin nativo, por isso a leitura é assíncrona.
   useEffect(() => {
-    if (notificationPermission() === "denied") {
-      setNotificationError(notificationsDeniedCopy());
-    }
+    let live = true;
+    void getNotificationPermissionState().then((state) => {
+      if (live && state === "denied") setNotificationError(notificationsDeniedCopy());
+    });
+    return () => {
+      live = false;
+    };
   }, []);
 
   function patch(partial: Partial<Settings>) {
@@ -137,9 +146,29 @@ function SettingsPage() {
   async function allowNotes() {
     setNotificationError(null);
     setNote("");
+    if (isNativeNotificationService()) {
+      const status = await requestNativeNotifications({ askExact: true });
+      if (status.permission === "granted") {
+        setNote(
+          status.exactAlarms === "denied"
+            ? "Notificações ligadas. Alarmes exatos estão desligados no Android: os avisos podem atrasar alguns minutos."
+            : "Notificações ligadas.",
+        );
+      } else if (status.error) {
+        setNote(`Não consegui ligar as notificações: ${status.error}`);
+      } else {
+        setNote("Permissão negada. O lembrete continua dentro do app.");
+      }
+      await syncNativeNotifications({ settings, days, sessions, log: notifyLog });
+      return;
+    }
     const current = notificationPermission();
     if (current === "granted") {
       setNote("Notificações ligadas.");
+      return;
+    }
+    if (typeof Notification === "undefined") {
+      setNote("Este navegador não mostra notificação.");
       return;
     }
     const permission = await requestNotificationPermission();
@@ -278,7 +307,9 @@ function SettingsPage() {
           <InlineError copy={notificationError} onAction={() => void notificationAction()} />
         ) : null}
         <p className="text-xs leading-relaxed text-muted">
-          No Android, no iPhone e no Windows o lembrete sai com o app aberto ou instalado enquanto o navegador segue ativo. Fechado de verdade, o alarme local não dispara: iOS só entrega push de servidor, e Chrome ou Edge não guardam o timer depois que o processo morre.
+          {isNativeNotificationService()
+            ? "No app Android os lembretes são agendados no próprio aparelho e chegam mesmo com o app fechado. Se o Android negar alarmes exatos, o aviso pode atrasar alguns minutos."
+            : "No Android, no iPhone e no Windows o lembrete sai com o app aberto ou instalado enquanto o navegador segue ativo. Fechado de verdade, o alarme local não dispara: iOS só entrega push de servidor, e Chrome ou Edge não guardam o timer depois que o processo morre."}
         </p>
       </section>
 
