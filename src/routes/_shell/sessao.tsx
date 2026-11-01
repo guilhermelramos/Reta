@@ -1,9 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { FlashcardDeck, GeneratePackage } from "@/components/generate-package";
 import { LessonView } from "@/components/lesson-view";
+import { ErrorReasonPicker } from "@/components/mistake-reason";
 import { QuestionCard } from "@/components/study-view";
 import { TeacherChat } from "@/components/teacher-chat";
 import { Button } from "@/components/ui/button";
+import { isRichPackage } from "@/lib/ai/package.functions";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
 import {
   clearActiveSession,
@@ -15,10 +18,12 @@ import { bumpLevel, emptyFlow, pickPractice, questionFor } from "@/lib/study/flo
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
 import { notifyBlockDone } from "@/lib/study/notify";
 import { blockHeading } from "@/lib/study/outline";
+import { newMistakeSrs } from "@/lib/study/srs";
 import { useStudy } from "@/lib/study/store";
 import {
   formatClock,
   formatMin,
+  saoPauloToday,
   timerElapsedMs,
   timerExpired,
   timerFromSession,
@@ -27,7 +32,7 @@ import {
   timerStart,
   timerToSession,
 } from "@/lib/study/time";
-import type { BlockKind, QuizItem, SessionMode, StudyPackage, StudySession, Subtopic } from "@/lib/study/types";
+import type { BlockKind, ErrorReason, QuizItem, SessionMode, StudyPackage, StudySession, Subtopic } from "@/lib/study/types";
 
 export const Route = createFileRoute("/_shell/sessao")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -180,6 +185,8 @@ function SessionPage() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [barOpen, setBarOpen] = useState(false);
   const [restored, setRestored] = useState(false);
+  const [wrongMistakeId, setWrongMistakeId] = useState<string | null>(null);
+  const [errorReason, setErrorReason] = useState<ErrorReason | null>(null);
   const tried = useRef(false);
   const restoredRef = useRef(false);
   const alertedRef = useRef("");
@@ -354,6 +361,8 @@ function SessionPage() {
     setSelected(null);
     setConfirmed(false);
     setShowHint(false);
+    setWrongMistakeId(null);
+    setErrorReason(null);
   }, [current?.id]);
 
   useEffect(() => {
@@ -361,7 +370,7 @@ function SessionPage() {
       if (!current || confirmed) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-      if (event.key >= "1" && event.key <= "4") setSelected(Number(event.key) - 1);
+      if (event.key >= "1" && Number(event.key) <= current.choices.length) setSelected(Number(event.key) - 1);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -409,6 +418,8 @@ function SessionPage() {
   async function grade() {
     if (!session || !current || !sub || selected == null || confirmed) return;
     setConfirmed(true);
+    setWrongMistakeId(null);
+    setErrorReason(null);
     const ok = selected === current.correctIndex;
     let nextFlow = { ...(session.flow ?? emptyFlow()) };
     if (!trap && nextFlow.phase === "diag" && !ok) nextFlow = { ...nextFlow, diagMiss: true, practiceLevel: "facil" };
@@ -428,8 +439,10 @@ function SessionPage() {
       missed: ok || session.missed.includes(current.id) ? session.missed : [...session.missed, current.id],
     });
     if (!ok) {
+      const today = saoPauloToday();
+      const mistakeId = crypto.randomUUID();
       await study.addMistake({
-        id: crypto.randomUUID(),
+        id: mistakeId,
         sessionId: session.id,
         date: session.date,
         kind: session.kind,
@@ -440,8 +453,11 @@ function SessionPage() {
         userIndex: selected,
         explanation: current.explanation,
         createdAt: Date.now(),
+        ...newMistakeSrs(today),
         reviewed: false,
+        source: "sessao",
       });
+      setWrongMistakeId(mistakeId);
     }
   }
 
@@ -531,6 +547,10 @@ function SessionPage() {
           ))}
         </ul>
       </header>
+
+      {!isRichPackage(pkg) && !isModernaBlock(block.content) && block.plannedMin > 0 ? (
+        <GeneratePackage date={search.dia} kind={search.bloco} topic={block.content} minutes={block.plannedMin} />
+      ) : null}
 
       {session && session.status === "active" ? (
         <div className="sticky top-0 z-20 -mx-4 border-b border-border bg-bg/95 px-4 backdrop-blur">
@@ -679,6 +699,24 @@ function SessionPage() {
         </section>
       ) : null}
 
+      {confirmed && wrongMistakeId ? (
+        <section className="rounded-xl border border-clay/40 bg-surface p-4">
+          <p className="text-xs text-clay-text">Erro guardado no caderno</p>
+          <ErrorReasonPicker
+            className="mt-2"
+            label="Classifique rápido a causa (opcional)"
+            value={errorReason ?? undefined}
+            onChange={(reason) => {
+              setErrorReason(reason);
+              void study.setMistakeErrorReason(wrongMistakeId, reason);
+            }}
+          />
+          <p className="mt-2 text-xs text-muted">A revisão espaçada já deixou este erro para hoje.</p>
+        </section>
+      ) : null}
+
+      {pkg && pkg.flashcards.length && flow.phase === "aula" && !trap ? <FlashcardDeck cards={pkg.flashcards} /> : null}
+
       {pkg && session && sub && session.status === "active" && flow.phase === "aula" && !trap ? (
         <LessonView sub={sub} onTrain={(item) => { setTrap(item); setConfirmed(false); setSelected(null); setShowHint(false); }} />
       ) : null}
@@ -755,6 +793,7 @@ function SessionPage() {
         makeTest={() => sub?.practice.find((item) => !(session?.flow?.practiceAsked ?? []).includes(item.id)) ?? sub?.mastery ?? null}
         quote={quote}
         onQuoteUsed={() => setQuote(null)}
+        questionId={asking && current ? current.id : undefined}
       />
     </div>
   );
