@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { ZodError } from "zod";
 import { Button } from "@/components/ui/button";
-import { pingAi } from "@/lib/ai/study.functions";
+import { pingAiClient } from "@/lib/ai/xai-client";
 import type { KeyValues } from "@/lib/secure/keys";
 import { exportAll, importAll, parseBackup } from "@/lib/study/db";
 import { useStudy } from "@/lib/study/store";
@@ -68,12 +68,20 @@ function SettingsPage() {
   }
 
   async function test() {
+    if (testing) return;
     setTesting(true);
     setNote("");
-    const key = draft.researcher === "grok" ? keyDraft.xai : draft.researcher === "perplexity" ? keyDraft.perplexity : draft.researcher === "gemini" ? keyDraft.gemini : keyDraft.claude;
-    const res = await pingAi({ data: { provider: draft.researcher, userKey: key } });
-    setNote(res.ok ? "Conexão ok." : res.error);
-    setTesting(false);
+    try {
+      const key = draft.researcher === "grok" ? keyDraft.xai : draft.researcher === "perplexity" ? keyDraft.perplexity : draft.researcher === "gemini" ? keyDraft.gemini : keyDraft.claude;
+      const res = await pingAiClient({ provider: draft.researcher, userKey: key });
+      setNote(res.ok ? "Conexão ok." : res.error);
+    } catch (err) {
+      // A chamada pode falhar antes de virar resposta (sem rede, rota ausente
+      // no APK antigo, timeout): o botão sempre sai de "Testando…".
+      setNote(err instanceof Error ? err.message : "Falha no teste de conexão. Tente de novo.");
+    } finally {
+      setTesting(false);
+    }
   }
 
   async function allowNotes() {
