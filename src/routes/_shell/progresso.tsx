@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ProgressInsights } from "@/components/progress/progress-insights";
 import { useStudy } from "@/lib/study/store";
-import { addDays, dayLoad, formatMin, formatShortDate, saoPauloToday } from "@/lib/study/time";
-import type { BlockKind, PlanDay, StudySession } from "@/lib/study/types";
+import { currentStreak, studiedDates } from "@/lib/study/progress-metrics";
+import { dayLoad, formatMin, formatShortDate, saoPauloToday } from "@/lib/study/time";
+import type { BlockKind } from "@/lib/study/types";
 import { KIND_LABEL } from "@/lib/study/types";
 import { cn } from "@/lib/cn";
 
@@ -12,32 +14,10 @@ export const Route = createFileRoute("/_shell/progresso")({
 
 const KINDS: BlockKind[] = ["A", "B", "R", "L"];
 
-function studiedDates(sessions: StudySession[]): Set<string> {
-  return new Set(sessions.filter((s) => s.status === "done" || s.status === "active" || s.elapsedSec >= 60).map((s) => s.date));
-}
-
-function streakCount(days: PlanDay[], sessions: StudySession[], today: string): number {
-  const hit = studiedDates(sessions);
-  let cursor = hit.has(today) ? today : addDays(today, -1);
-  let count = 0;
-  for (let i = 0; i < 80; i += 1) {
-    const day = days.find((d) => d.date === cursor);
-    if (!day) break;
-    if (dayLoad(day) <= 0) {
-      cursor = addDays(cursor, -1);
-      continue;
-    }
-    if (!hit.has(cursor)) break;
-    count += 1;
-    cursor = addDays(cursor, -1);
-  }
-  return count;
-}
-
 function ProgressPage() {
   const { days, sessions } = useStudy();
   const today = saoPauloToday();
-  const streak = streakCount(days, sessions, today);
+  const streak = currentStreak(days, sessions, today);
   const hit = studiedDates(sessions);
   const questions = sessions.reduce((sum, s) => sum + s.correct + s.wrong, 0);
   const right = sessions.reduce((sum, s) => sum + s.correct, 0);
@@ -54,6 +34,7 @@ function ProgressPage() {
         <Stat k="Questões" v={String(questions)} />
         <Stat k="Acertos" v={questions ? `${rate}%` : "—"} />
       </dl>
+      <ProgressInsights />
       <section>
         <h2 className="text-xl">Dias do plano</h2>
         <ul className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6">
