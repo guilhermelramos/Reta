@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Download } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { saveAndShare } from "@/lib/native/files";
 import {
   applyManualMap,
   applyMap,
@@ -100,21 +101,12 @@ function ImportPage() {
     }
   }
 
-  function downloadTemplate() {
+  async function downloadTemplate() {
     try {
       const bytes = buildTemplateWorkbook();
-      const blob = new Blob([bytes], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "reta-planilha-modelo.xlsx";
-      link.rel = "noopener";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+      const mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      const blob = new Blob([bytes], { type: mime });
+      await saveAndShare("reta-planilha-modelo.xlsx", mime, blob);
     } catch {
       setFileError("Não consegui gerar a planilha modelo. Tente de novo.");
     }

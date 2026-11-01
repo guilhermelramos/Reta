@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { ZodError } from "zod";
 import { Button } from "@/components/ui/button";
 import { pingAi } from "@/lib/ai/study.functions";
-import { exportAll, importAll, parseBackup } from "@/lib/study/db";
+import { saveAndShare } from "@/lib/native/files";
+import { exportAll, importAll, parseBackupText } from "@/lib/study/db";
 import { useStudy } from "@/lib/study/store";
 import type { ResearcherId, Settings } from "@/lib/study/types";
 
@@ -80,9 +81,17 @@ function SettingsPage() {
     setStorageBusy(true);
     setBackupNote("");
     try {
-      const granted = await navigator.storage.persist();
-      setStorage(await readStorageState());
-      setBackupNote(granted ? "Armazenamento persistente concedido." : "O navegador não concedeu. O backup manual continua valendo.");
+      await navigator.storage.persist();
+      // Mostra o estado que o navegador/WebView realmente reporta depois do pedido.
+      const next = await readStorageState();
+      setStorage(next);
+      if (next.persisted === true) {
+        setBackupNote("Armazenamento persistente concedido.");
+      } else if (next.persisted === false) {
+        setBackupNote("O navegador não concedeu. O backup manual continua valendo.");
+      } else {
+        setBackupNote("O navegador não informou o resultado. O backup manual continua valendo.");
+      }
     } catch {
       setBackupNote("Não consegui pedir armazenamento persistente.");
     } finally {
@@ -97,36 +106,16 @@ function SettingsPage() {
       const backup = await exportAll();
       const json = JSON.stringify(backup, null, 2);
       const name = `reta-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      const file = new File([json], name, { type: "application/json" });
+      const resumo = `${backup.days.length} dias, ${backup.sessions.length} sessões`;
+      const result = await saveAndShare(name, "application/json", json);
 
-      if (typeof navigator !== "undefined" && typeof navigator.share === "function" && navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: "Backup do Reta",
-            text: "Backup completo dos dados do Reta.",
-          });
-          setBackupNote("Backup compartilhado.");
-          return;
-        } catch (err) {
-          if (err instanceof DOMException && err.name === "AbortError") {
-            setBackupNote("Compartilhamento cancelado.");
-            return;
-          }
-          // Sem share disponível na prática: cai para o download abaixo.
-        }
+      if (result.mode === "canceled") {
+        setBackupNote("Compartilhamento cancelado.");
+      } else if (result.mode === "shared") {
+        setBackupNote(`Backup compartilhado (${resumo}).`);
+      } else {
+        setBackupNote(`Backup salvo (${resumo}).`);
       }
-
-      const url = URL.createObjectURL(file);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = name;
-      link.rel = "noopener";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
-      setBackupNote(`Backup gerado (${backup.days.length} dias, ${backup.sessions.length} sessões).`);
     } catch {
       setBackupNote("Não consegui gerar o backup. Tente de novo.");
     } finally {
@@ -138,9 +127,10 @@ function SettingsPage() {
     setBackupBusy(true);
     setBackupNote("");
     try {
+      if (file.size === 0) throw new Error("O arquivo está vazio.");
       if (file.size > 100_000_000) throw new Error("Arquivo grande demais (máximo 100 MB).");
-      const raw: unknown = JSON.parse(await file.text());
-      const backup = parseBackup(raw);
+      const text = await file.text();
+      const backup = parseBackupText(text);
       await importAll(backup);
       setBackupNote(`Backup restaurado (${backup.days.length} dias). Recarregando…`);
       window.setTimeout(() => window.location.reload(), 900);
@@ -236,7 +226,7 @@ function SettingsPage() {
             ref={restoreInput}
             className="sr-only"
             type="file"
-            accept=".json,application/json"
+            accept=".json,application/json,text/plain,application/octet-stream"
             onChange={(e) => {
               const file = e.currentTarget.files?.[0];
               e.currentTarget.value = "";
@@ -244,7 +234,7 @@ function SettingsPage() {
             }}
           />
           <p className="text-xs leading-relaxed text-muted">
-            O backup inclui plano, pacotes, sessões, erros, ajustes, avisos e dúvidas. Restaurar substitui todos os dados deste aparelho.
+            O backup inclui plano, pacotes, sessões, erros, ajustes, avisos e dúvidas. Restaurar substitui todos os dados deste aparelho. As chaves de API ficam só neste aparelho e não entram no arquivo.
           </p>
           {backupNote ? <p className="text-sm" role="status">{backupNote}</p> : null}
         </div>
