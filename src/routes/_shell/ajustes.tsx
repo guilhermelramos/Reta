@@ -400,8 +400,9 @@ function SettingsPage() {
         ) : null}
       </section>
 
-      <p className="text-sm">
+      <p className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
         <Link to="/importar" className="inline-flex min-h-12 items-center underline">Importar outra planilha</Link>
+        <Link to="/boas-vindas" className="inline-flex min-h-12 items-center underline">Rever introdução</Link>
       </p>
     </div>
   );

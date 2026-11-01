@@ -1,9 +1,10 @@
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { BookOpen, CalendarDays, ChartNoAxesColumn, NotebookPen, Settings } from "lucide-react";
 import { useEffect } from "react";
 import { cn } from "@/lib/cn";
 import { syncNativeNotifications } from "@/lib/native/notifications";
 import { dueNotices, registerWorker, showNotice } from "@/lib/study/notify";
+import { hasImportedPlan, shouldShowOnboarding } from "@/lib/study/onboarding";
 import { StudyProvider, useStudy } from "@/lib/study/store";
 
 const NAV = [
@@ -15,10 +16,26 @@ const NAV = [
 ] as const;
 
 function Frame() {
-  const { ready, loadError, settings, days, sessions, notifyLog, rememberNotify } = useStudy();
+  const { ready, loadError, settings, days, sessions, notifyLog, keys, seeded, onboardingDone, rememberNotify } = useStudy();
+  const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
   // Modo foco: a sessão de estudo esconde a navegação inferior.
   const focusMode = path === "/sessao";
+
+  // Primeira abertura (ou revisão pendente): a introdução mora fora da barra
+  // de navegação. Chave salva ou planilha importada contam como "já feito".
+  const showOnboarding =
+    ready &&
+    shouldShowOnboarding({
+      onboardingDone,
+      hasXaiKey: Boolean(keys.xai.trim()),
+      hasImportedPlan: hasImportedPlan(seeded, days.length),
+    });
+
+  useEffect(() => {
+    if (!showOnboarding) return;
+    void navigate({ to: "/boas-vindas", replace: true });
+  }, [showOnboarding, navigate]);
 
   useEffect(() => {
     registerWorker();
@@ -58,16 +75,8 @@ function Frame() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [ready, settings, days, sessions, notifyLog]);
 
-  if (!ready) {
-    return (
-      <main className="flex min-h-screen flex-col justify-end bg-bg px-6 py-16">
-        <p className="font-display text-5xl text-fg">Reta</p>
-        <p className="mt-2 text-muted">Abrindo o plano…</p>
-        <div className="mt-8 h-1 w-40 overflow-hidden rounded-full bg-surface-2">
-          <div className="reta-bar h-full w-full bg-primary" />
-        </div>
-      </main>
-    );
+  if (!ready || showOnboarding) {
+    return <Splash label={showOnboarding ? "Vamos começar…" : "Abrindo o plano…"} />;
   }
 
   return (
@@ -159,5 +168,18 @@ export function ShellLayout() {
     <StudyProvider>
       <Frame />
     </StudyProvider>
+  );
+}
+
+/** Tela de espera curta (carregando ou saindo para a introdução). */
+function Splash({ label }: { label: string }) {
+  return (
+    <main className="flex min-h-screen flex-col justify-end bg-bg px-6 py-16">
+      <p className="font-display text-5xl text-fg">Reta</p>
+      <p className="mt-2 text-muted">{label}</p>
+      <div className="mt-8 h-1 w-40 overflow-hidden rounded-full bg-surface-2">
+        <div className="reta-bar h-full w-full bg-primary" />
+      </div>
+    </main>
   );
 }
