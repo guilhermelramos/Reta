@@ -72,6 +72,32 @@ app mostra mensagem de erro/espera em vez de quebrar. Para ter IA no app nativo
 seria preciso chamar a API da xAI direto do cliente (ou embarcar um backend) —
 fora do escopo desta etapa, que só empacota.
 
+## Chaves de API (armazenamento seguro)
+
+As chaves dos pesquisadores (xAI, Perplexity, Gemini e Claude) **não** ficam
+mais em texto puro no IndexedDB no Android. O serviço
+[`src/lib/secure/keys.ts`](./src/lib/secure/keys.ts) concentra get/set/remove:
+
+| Plataforma | Onde a chave fica |
+| --- | --- |
+| Android (`Capacitor.isNativePlatform()`) | `@aparajita/capacitor-secure-storage` 8.x: AES-GCM com chave do **Android Keystore**, guardada em SharedPreferences do app |
+| Web / Vercel | fallback documentado: `settings.keys` no IndexedDB, como antes (o navegador não tem um Keystore equivalente) |
+
+Na primeira abertura de uma versão nova no Android, `loadKeys()` migra
+`settings.keys` do IndexedDB para o Keystore e apaga a cópia antiga. A migração
+é idempotente: se a chave já estiver no cofre, o valor seguro é preservado e só
+a cópia antiga sai. Se o plugin nativo falhar, as chaves antigas são mantidas
+nesta execução e a migração tenta de novo na próxima abertura (nenhuma chave é
+perdida).
+
+O backup `.json` (`exportAll`) **nunca inclui chaves**: o campo `keys` é
+removido dos ajustes e da cópia da store `meta`. Restaurar um backup também
+ignora qualquer `keys` que exista em arquivos antigos.
+
+No aparelho ainda é preciso validar o Keystore de verdade (criar/ler/apagar a
+chave e a migração de uma instalação antiga). O emulador deste ambiente não
+sobe, então o WebView foi exercitado com o mesmo bundle do APK.
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**
