@@ -241,6 +241,47 @@ sobe, então o WebView foi exercitado com o mesmo bundle do APK.
 - Alarme entregue com tela bloqueada, pausa/retomada com o app morto e
   comportamento em Doze só podem ser validados num aparelho.
 
+## Redesign da sessão de estudo (Material 3)
+
+A tela `/sessao` virou modo foco: a navegação inferior some para o cronômetro
+ocupar o topo. No desktop a barra lateral continua disponível.
+
+| Elemento | Comportamento |
+| --- | --- |
+| App bar | 64dp fixa: bloco em title-small, tempo em mono/tabular de 32sp e barra de progresso de 4dp logo abaixo |
+| Pausar/Retomar | pílula de 56dp à direita (`h-14`, `rounded-full`) |
+| Encerrar | botão de texto na linha de status; abre diálogo M3 (`role=dialog`, foco preso pelo Radix) com “Encerrar e salvar N min?” e **Cancelar / Encerrar** |
+| Voltar do Android | diálogos e folha do professor entram na pilha de overlays (`useBackOverlay`): o voltar fecha só o overlay mais recente |
+| Professor | FAB estendido de 56dp (ícone + “Professor”, `aria-label="Perguntar ao professor"`); abre folha inferior de 90% da altura com alça, chip `⏱ hh:mm` no topo e texto de 16px. Gesto de arraste e voltar fecham sem pausar o timer |
+| Conclusão | háptico (`navigator.vibrate`, permissão normal `VIBRATE`) e snackbar “Bloco concluído · N min” com **Desfazer**, que devolve a sessão ativa com o tempo já salvo |
+| Bloco ausente | `<ErrorState>` com “Esse bloco não existe mais no seu plano (talvez a planilha tenha mudado).” e ação **Ver plano de hoje** |
+
+A fonte de verdade do tempo continua sendo `startedAt` + acumulado e o
+`endsAt` gravado; o `setInterval` de um segundo só repinta a barra
+(`src/lib/study/session-timer.ts`, pura e testada em `session-timer.test.ts`).
+O texto do diálogo e do snackbar também sai dessa lógica pura.
+
+**Alarme exato contextual:** na primeira vez que o timer começa a correr, se o
+Android liberou notificações mas negou alarmes exatos, aparece um diálogo M3 com
+a frase “Para o aviso tocar no minuto certo com a tela bloqueada, permita
+alarmes exatos” e as opções **Permitir / Agora não**. *Permitir* chama
+`requestNativeNotifications({ askExact: true })` (tela de alarmes do sistema) e
+reagenda o alarme; *Agora não* mantém o alarme inexato que já estava agendado.
+A pergunta acontece uma única vez (`reta:exactAlarmAsked` no `localStorage`,
+flag de UI). A decisão é pura em `src/lib/study/exact-alarm.ts` e testada em
+`exact-alarm.test.ts`.
+
+A notificação persistente continua sendo só a notificação local agendada
+(`ongoing: true`, canal `timer-progresso`), sem foreground service: o título
+mostra o bloco e o tempo restante (`Bloco A · 23:14 restantes`). Ações
+Pausar/Encerrar na própria notificação não foram adicionadas — exigiriam
+`actionTypeId` + listener de ação e não são necessárias para a fonte de verdade.
+
+Para validar no aparelho: criar/ler o alarme exato, o diálogo ao tocar
+*Permitir* (abre a tela do Android), a entrega exata/inexata com tela bloqueada,
+a vibração no fim do bloco e o snackbar **Desfazer** depois de matar/reabrir o
+app. No WebView (mesmo bundle do APK) os fluxos de UI, a folha, o foco do
+diálogo e o layout de 320px foram exercitados.
 
 ## Ambiente Android
 
