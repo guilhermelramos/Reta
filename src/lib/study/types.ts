@@ -4,6 +4,11 @@ export type PlanBlock = {
   kind: BlockKind;
   content: string;
   plannedMin: number;
+  /**
+   * Origem de um bloco criado pelo "Recalcular atrasados", no formato
+   * `YYYY-MM-DD:Bloco`. Serve para não reagendar o mesmo atraso duas vezes.
+   */
+  rescheduledFrom?: string;
 };
 
 export type PlanDay = {

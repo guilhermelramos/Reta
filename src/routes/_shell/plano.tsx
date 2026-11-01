@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { recalculateSchedule } from "@/lib/study/flow";
+import type { RecalculateResult, ScheduleMoveMode } from "@/lib/study/flow";
 import { useStudy } from "@/lib/study/store";
 import { dayLoad, formatLongDate, formatMin, formatShortDate, formatWeekday, parseDuration, saoPauloToday, topicLine } from "@/lib/study/time";
 import { KIND_LABEL } from "@/lib/study/types";
@@ -14,6 +16,12 @@ export const Route = createFileRoute("/_shell/plano")({
 });
 
 const KINDS: BlockKind[] = ["A", "B", "R", "L"];
+
+const MOVE_LABEL: Record<ScheduleMoveMode, string> = {
+  "bloco-b": "Bloco B livre",
+  revisao: "Dia de revisão",
+  fila: "Fila empurrada",
+};
 
 type DraftBlock = { key: string; kind: BlockKind; content: string; minutes: string };
 
@@ -36,19 +44,23 @@ function emptyBlock(kind: BlockKind): DraftBlock {
 }
 
 function PlanPage() {
-  const { days, sessions, upsertDay } = useStudy();
+  const { days, sessions, importDays, upsertDay } = useStudy();
   const today = saoPauloToday();
   const [open, setOpen] = useState(today);
   const [draft, setDraft] = useState<DayDraft | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<RecalculateResult | null>(null);
+  const [applying, setApplying] = useState(false);
   const selected = days.find((d) => d.date === open) ?? days.find((d) => d.date >= today) ?? days[0];
   const dateTaken = draft?.mode === "new" && days.some((d) => d.date === draft.date);
+  const lastPlanned = days.reduce<string | null>((max, day) => (max && max > day.date ? max : day.date), null);
 
   function startNew() {
     setError("");
     setNotice("");
+    setPreview(null);
     setDraft({
       mode: "new",
       date: today,
@@ -60,6 +72,7 @@ function PlanPage() {
   function startEdit(day: PlanDay) {
     setError("");
     setNotice("");
+    setPreview(null);
     setOpen(day.date);
     setDraft({
       mode: "edit",
@@ -79,6 +92,44 @@ function PlanPage() {
   function cancel() {
     setDraft(null);
     setError("");
+  }
+
+  /** Monta o novo plano em memória e mostra o resumo; nada é gravado ainda. */
+  function startRecalculate() {
+    setError("");
+    setNotice("");
+    const result = recalculateSchedule(days, today, sessions);
+    if (!result.moves.length) {
+      setPreview(null);
+      setNotice(
+        result.summary.overdue === 0
+          ? "Nenhum bloco atrasado: a Reta está em dia."
+          : "Os atrasados já tinham sido reagendados. Nada novo para mover.",
+      );
+      return;
+    }
+    setPreview(result);
+  }
+
+  async function applyRecalculate() {
+    if (!preview) return;
+    setApplying(true);
+    setError("");
+    try {
+      const moved = preview.moves.length;
+      const minutes = formatMin(preview.summary.minutes);
+      await importDays(preview.days);
+      setPreview(null);
+      setNotice(
+        moved === 1
+          ? `1 bloco reagendado (${minutes}). A Reta foi atualizada.`
+          : `${moved} blocos reagendados (${minutes}). A Reta foi atualizada.`,
+      );
+    } catch {
+      setError("Não consegui salvar o novo plano neste aparelho. Tente de novo.");
+    } finally {
+      setApplying(false);
+    }
   }
 
   async function save() {
@@ -131,12 +182,74 @@ function PlanPage() {
           <h1 className="text-4xl">Plano</h1>
           <p className="mt-2 text-sm text-muted">{days.length} dias. A revisão é a da planilha — o app não inventa outra agenda.</p>
         </div>
-        <Button variant="surface" onClick={startNew} disabled={Boolean(draft) || busy}>
-          <Plus className="size-4" aria-hidden /> Novo dia
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="surface"
+            onClick={startRecalculate}
+            disabled={Boolean(draft) || busy || applying || !days.length}
+            title="Distribui os blocos atrasados nos dias futuros, com resumo antes de aplicar"
+          >
+            <RefreshCw className="size-4" aria-hidden /> Recalcular Atrasados
+          </Button>
+          <Button variant="surface" onClick={startNew} disabled={Boolean(draft) || busy}>
+            <Plus className="size-4" aria-hidden /> Novo dia
+          </Button>
+        </div>
       </header>
 
       {notice ? <p className="text-sm text-primary">{notice}</p> : null}
+
+      {preview ? (
+        <section className="rounded-xl border border-primary/40 bg-surface p-4" aria-live="polite">
+          <h2 className="text-xl">Recalcular atrasados</h2>
+          <p className="mt-1 text-sm text-muted">
+            {preview.summary.overdue} {preview.summary.overdue === 1 ? "bloco atrasado" : "blocos atrasados"} ·{" "}
+            {formatMin(preview.summary.minutes)} para encaixar · {preview.summary.daysTouched}{" "}
+            {preview.summary.daysTouched === 1 ? "dia recebe" : "dias recebem"} conteúdo.{" "}
+            {preview.summary.lastDate ? `A reta vai até ${formatShortDate(preview.summary.lastDate)} ` : ""}
+            Nada muda até você confirmar.
+          </p>
+          <ul className="mt-3 flex max-h-72 flex-col gap-2 overflow-auto pr-1">
+            {preview.moves.map((move, index) => (
+              <li
+                key={`${move.fromDate}:${move.fromKind}:${index}`}
+                className="rounded-lg border border-border bg-surface-2/50 p-3 text-sm"
+              >
+                <p className="text-xs text-primary">{MOVE_LABEL[move.mode]}</p>
+                <p className="mt-1">
+                  {KIND_LABEL[move.fromKind]} de {formatShortDate(move.fromDate)} → {KIND_LABEL[move.toKind]} em{" "}
+                  {formatShortDate(move.toDate)}
+                </p>
+                <p className="mt-1 text-xs text-muted">{topicLine(move.content, 120)} · {formatMin(move.minutes)}</p>
+              </li>
+            ))}
+          </ul>
+          {preview.summary.lastDate && lastPlanned && preview.summary.lastDate > lastPlanned ? (
+            <p className="mt-3 rounded-lg bg-clay/10 px-3 py-2 text-xs text-clay-text">
+              A reta esticou até {formatShortDate(preview.summary.lastDate)} para caber os atrasados. Confira os dias
+              que ficaram depois da prova.
+            </p>
+          ) : null}
+          {preview.summary.skipped > 0 ? (
+            <p className="mt-3 text-xs text-muted">
+              {preview.summary.skipped} {preview.summary.skipped === 1 ? "atrasado já tinha" : "atrasados já tinham"}{" "}
+              sido reagendado antes e não entram de novo.
+            </p>
+          ) : null}
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setPreview(null)} disabled={applying}>
+              Cancelar
+            </Button>
+            <Button onClick={() => void applyRecalculate()} disabled={applying}>
+              {applying ? "Aplicando…" : "Aplicar mudanças"}
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
+      {error && !draft ? (
+        <p role="alert" className="rounded-xl bg-clay/10 px-3 py-2 text-sm text-clay-text">{error}</p>
+      ) : null}
 
       {draft ? (
         <DayForm
