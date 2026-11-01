@@ -47,30 +47,54 @@ APK gerado em: `android/app/build/outputs/apk/debug/app-debug.apk`.
   o CSS que o build do cliente realmente emitiu (os hashes do ambiente SSR e do
   cliente divergem) e falha se algum asset referenciado não existir.
 
-## O que depende de servidor (não funciona no APK)
+## IA no APK (cliente xAI)
 
 O APK é 100% estático: não existe servidor Node, Nitro, banco de dados nem
-rotas de API. Tudo que passa por `createServerFn` ou por `/api/*` fica sem
-resposta no app nativo. **Só os fluxos de IA/connector abaixo são afetados**;
-o resto do app (plano, sessões, timer, erros, progresso, ajustes, IndexedDB)
-funciona offline.
+rotas de API. Os fluxos de IA têm dois caminhos, escolhidos em
+[`src/lib/ai/xai-client.ts`](./src/lib/ai/xai-client.ts):
+
+| Ambiente | Transporte |
+| --- | --- |
+| Web/Vercel | server functions (`/lib/ai/*.functions.ts`) e `POST /api/professor` |
+| Android (`Capacitor.isNativePlatform()`) | xAI direto pelo `CapacitorHttp`, com a chave do cofre seguro |
+
+O prompt, o parse/validação zod e a sanitização de SVG são os mesmos nos dois
+caminhos (`src/lib/ai/prompts.ts`, `parse.ts`, `block-package.ts`, `study/svg.ts`
+e `core.ts`). Assim o pacote gerado no APK não diverge do gerado na web.
+
+O `CapacitorHttp` está ligado em [`capacitor.config.ts`](./capacitor.config.ts).
+No APK a chave vem de [`src/lib/secure/keys.ts`](./src/lib/secure/keys.ts)
+(Keystore); `XAI_API_KEY` do ambiente só existe no servidor da web. Sem chave
+no aparelho, a IA responde com uma mensagem pedindo para preencher Ajustes — o
+resto do app continua funcionando.
+
+**Chat do professor sem stream no APK:** `CapacitorHttp` não entrega SSE. No
+nativo a chamada usa `stream: false` e a resposta completa chega de uma vez; a
+UI aplica o mesmo `present()` (status DENTRO/FORA, citação e SVG). Na web o
+streaming continua igual. O tempo de espera é o mesmo; só não há texto
+aparecendo letra a letra.
+
+Os pesquisadores Perplexity, Gemini e Claude também funcionam no APK pelo
+mesmo `CapacitorHttp` (APIs oficiais já usadas no servidor). Se um provedor
+recusar a chamada, aparece o erro tratado — nunca um crash.
+
+Erros são traduzidos em português em [`src/lib/ai/errors.ts`](./src/lib/ai/errors.ts):
+sem internet (`navigator.onLine === false` ou falha de rede), 401/403 (chave
+recusada), 429 (limite da API, respeitando `Retry-After`), 5xx (indisponível) e
+timeout. O botão **Testar conexão** de Ajustes sempre sai de "Testando…", mesmo
+quando a chamada falha antes de responder.
+
+O que continua dependendo de servidor no APK:
 
 | Fluxo | Onde | Depende de |
 | --- | --- | --- |
-| Professor (chat) | `src/components/teacher-chat.tsx` → `POST /api/professor` | rota de servidor + `XAI_API_KEY` |
-| Pesquisa do professor | `researchAdd` em `src/lib/ai/study.functions.ts` | server function |
-| Gerar pacote/aula com IA | `generatePackage` em `src/lib/ai/study.functions.ts` | server function |
-| Gerar pacote de bloco | `generateBlockPackage` em `src/lib/ai/package.functions.ts` | server function |
-| Testar conexão de IA | `pingAi` em `src/lib/ai/study.functions.ts` | server function |
-| Turno do tutor | `tutorTurn` em `src/lib/ai/study.functions.ts` | server function |
 | Connectors (calendar, mail, etc.) | `getConnectorReadiness` em `src/lib/app-data/readiness.ts` | server function + gate |
 | Login/sessão Better Auth | `/api/auth/*` | rotas de servidor (hoje o app não usa gate de login na UI) |
 | Banco Postgres | `@/lib/db` | servidor (o app nativo usa IndexedDB) |
 
-Comportamento no APK: as telas abrem normalmente; ao acionar um fluxo de IA o
-app mostra mensagem de erro/espera em vez de quebrar. Para ter IA no app nativo
-seria preciso chamar a API da xAI direto do cliente (ou embarcar um backend) —
-fora do escopo desta etapa, que só empacota.
+O resto do app (plano, sessões, timer, erros, progresso, ajustes, IndexedDB)
+funciona offline. Pacotes já gerados ficam salvos no aparelho.
+
 
 ## Chaves de API (armazenamento seguro)
 
