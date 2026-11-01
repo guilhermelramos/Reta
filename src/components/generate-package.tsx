@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Layers, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { generateBlockPackage, toStudyPackage } from "@/lib/ai/package.functions";
+import { generateBlockPackageClient } from "@/lib/ai/xai-client";
+import { toStudyPackage } from "@/lib/ai/package.functions";
 import { useStudy } from "@/lib/study/store";
 import type { BlockKind, Flashcard } from "@/lib/study/types";
 
@@ -34,9 +35,7 @@ export function GeneratePackage({
     }
     setBusy(true);
     try {
-      const res = await generateBlockPackage({
-        data: { topic, minutes, userKey: study.keys.xai },
-      });
+      const res = await generateBlockPackageClient({ topic, minutes, userKey: study.keys.xai });
       if (!res.ok) {
         setError(res.error);
         return;

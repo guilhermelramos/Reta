@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { generatePackage } from "@/lib/ai/study.functions";
+import { generatePackageClient } from "@/lib/ai/xai-client";
 import { EMPTY_KEYS, loadKeys, setKeys, type KeyValues } from "@/lib/secure/keys";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
 import { loadSnapshot, saveDays, saveMeta, saveMistake, savePackage, saveSession } from "@/lib/study/db";
@@ -237,15 +237,13 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     let gaps = "";
     let lastError = "A aula veio incompleta.";
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const res = await generatePackage({
-        data: {
-          topic: block.content,
-          minutes: block.plannedMin,
-          provider: settings.researcher,
-          userKey: researcherKey(settings, keys),
-          webSearch: settings.webSearch,
-          gaps,
-        },
+      const res = await generatePackageClient({
+        topic: block.content,
+        minutes: block.plannedMin,
+        provider: settings.researcher,
+        userKey: researcherKey(settings, keys),
+        webSearch: settings.webSearch,
+        gaps,
       });
       if (!res.ok) return res.error;
       const pkg: StudyPackage = {

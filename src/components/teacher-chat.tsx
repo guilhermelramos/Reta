@@ -5,8 +5,8 @@ import { Drawer } from "vaul";
 import { QuestionCard } from "@/components/study-view";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
-import { researchAdd } from "@/lib/ai/study.functions";
-import { previewPathPrefix } from "@/lib/preview-path-prefix";
+import { askProfessor } from "@/lib/ai/professor-client";
+import { researchAddClient } from "@/lib/ai/xai-client";
 import { validateDiagram } from "@/lib/study/diagrams";
 import { mergeAddition } from "@/lib/study/outline";
 import { sanitizeSvg } from "@/lib/study/svg";
@@ -18,12 +18,6 @@ type SpeechCtor = new () => {
   onerror: (() => void) | null;
   start: () => void;
 };
-
-function apiPath(path: string): string {
-  if (typeof window === "undefined") return path;
-  const prefix = previewPathPrefix(window.location.hostname, window.location.pathname);
-  return `${prefix ?? ""}${path}`;
-}
 
 function visibleAnswer(raw: string): string {
   const cut = raw.search(/<svg\b/i);
@@ -239,10 +233,8 @@ export function TeacherChat({
     }
     setBusy(true);
     try {
-      const res = await fetch(apiPath("/api/professor"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await askProfessor(
+        {
           messages: history.map((item) => ({ role: item.role === "professor" ? "assistant" : "user", content: item.text })),
           brief,
           topic: title,
@@ -251,44 +243,17 @@ export function TeacherChat({
           question,
           mistakes,
           userKey,
-        }),
-      });
-      if (!res.ok || !res.body) {
-        const fail = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(fail?.error || "O professor não respondeu. A sessão continua.");
-        setBusy(false);
-        return;
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let raw = "";
-      let buf = "";
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        buf += decoder.decode(chunk.value, { stream: true });
-        const parts = buf.split("\n\n");
-        buf = parts.pop() ?? "";
-        for (const part of parts) {
-          const line = part
-            .split("\n")
-            .filter((item) => item.startsWith("data:"))
-            .map((item) => item.slice(5).trim())
-            .join("");
-          if (!line || line === "[DONE]") continue;
-          const json = JSON.parse(line) as { t?: string; error?: string };
-          if (json.error) throw new Error(json.error);
-          if (json.t) raw += json.t;
-        }
-        const view = present(raw);
-        const streaming: Doubt = {
-          ...next,
-          updatedAt: Date.now(),
-          messages: [...history, { role: "professor", text: view.text || "…", outside: view.outside, cite: view.cite, svg: view.svg || undefined }],
-        };
-        onSaveDoubt(streaming);
-      }
-      if (!raw.trim()) setError("A resposta veio vazia. Tente de novo. A sessão continua.");
+        },
+        (raw) => {
+          const view = present(raw);
+          const streaming: Doubt = {
+            ...next,
+            updatedAt: Date.now(),
+            messages: [...history, { role: "professor", text: view.text || "…", outside: view.outside, cite: view.cite, svg: view.svg || undefined }],
+          };
+          onSaveDoubt(streaming);
+        },
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao falar com o professor.");
     } finally {
@@ -324,19 +289,24 @@ export function TeacherChat({
     if (!last) return;
     setBusy(true);
     setError("");
-    const res = await researchAdd({ data: { question: last.text, topic: title, userKey } });
-    setBusy(false);
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
-    onSavePackage(mergeAddition(pkg, pkg.subtopics?.find((item) => item.title === subtopic)?.id || pkg.subtopics?.[0]?.id || "", res.data));
-    if (active) {
-      onSaveDoubt({
-        ...active,
-        updatedAt: Date.now(),
-        messages: [...active.messages, { role: "professor", text: "Pesquisei e acrescentei ao pacote, com as fontes que vieram.", cite: "Essência › Acrescentado agora" }],
-      });
+    try {
+      const res = await researchAddClient({ question: last.text, topic: title, userKey });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      onSavePackage(mergeAddition(pkg, pkg.subtopics?.find((item) => item.title === subtopic)?.id || pkg.subtopics?.[0]?.id || "", res.data));
+      if (active) {
+        onSaveDoubt({
+          ...active,
+          updatedAt: Date.now(),
+          messages: [...active.messages, { role: "professor", text: "Pesquisei e acrescentei ao pacote, com as fontes que vieram.", cite: "Essência › Acrescentado agora" }],
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha na pesquisa.");
+    } finally {
+      setBusy(false);
     }
   }
 

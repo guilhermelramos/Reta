@@ -15,6 +15,12 @@ const config: CapacitorConfig = {
     // https://localhost no WebView: origem segura, coerente com o app web.
     androidScheme: "https",
   },
+  plugins: {
+    // Chamadas nativas à xAI (sem CORS e sem servidor) no APK.
+    CapacitorHttp: {
+      enabled: true,
+    },
+  },
 };
 
 export default config;
