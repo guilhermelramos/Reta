@@ -19,3 +19,8 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
+
+# Assinatura de release — keystore e senhas nunca entram no git
+*.jks
+*.keystore
+keystore.properties
