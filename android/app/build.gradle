@@ -1,5 +1,27 @@
 apply plugin: 'com.android.application'
 
+// --- Assinatura de release ---------------------------------------------------
+// Lê RETA_KEYSTORE_PATH, RETA_KEYSTORE_PASSWORD, RETA_KEY_ALIAS e
+// RETA_KEY_PASSWORD do ambiente. Se alguma faltar, usa android/keystore.properties
+// (ignorado pelo git) com storeFile, storePassword, keyAlias e keyPassword.
+// O signingConfig só é aplicado ao release quando as quatro estão definidas e a
+// keystore existe; caso contrário, apenas avisa e o build debug segue normal.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+def releaseStoreFileValue = System.getenv('RETA_KEYSTORE_PATH') ?: keystoreProperties.getProperty('storeFile')
+def releaseStorePassword = System.getenv('RETA_KEYSTORE_PASSWORD') ?: keystoreProperties.getProperty('storePassword')
+def releaseKeyAlias = System.getenv('RETA_KEY_ALIAS') ?: keystoreProperties.getProperty('keyAlias')
+def releaseKeyPassword = System.getenv('RETA_KEY_PASSWORD') ?: keystoreProperties.getProperty('keyPassword')
+
+def releaseStoreFile = releaseStoreFileValue ? rootProject.file(releaseStoreFileValue.trim()) : null
+def releaseSigningReady = releaseStoreFile != null &&
+        releaseStoreFile.exists() &&
+        [releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it != null && !it.trim().isEmpty() }
+
 android {
     namespace = "com.guilhermelramos.reta"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +38,25 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (releaseSigningReady) {
+                storeFile releaseStoreFile
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            } else {
+                logger.warn('Reta: release sem assinatura. Defina RETA_KEYSTORE_PATH, RETA_KEYSTORE_PASSWORD, RETA_KEY_ALIAS e RETA_KEY_PASSWORD (ou android/keystore.properties). O APK debug continua funcionando.')
+            }
         }
     }
 }
