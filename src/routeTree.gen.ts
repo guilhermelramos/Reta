@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShellRouteImport } from './routes/_shell'
+import { Route as BoasVindasRouteImport } from './routes/boas-vindas'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
 import { Route as ShellAjustesRouteImport } from './routes/_shell/ajustes'
 import { Route as ShellErrosRouteImport } from './routes/_shell/erros'
@@ -21,6 +22,11 @@ import { Route as ApiProfessorRouteImport } from './routes/api/professor'
 
 const ShellRoute = ShellRouteImport.update({
   id: '/_shell',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BoasVindasRoute = BoasVindasRouteImport.update({
+  id: '/boas-vindas',
+  path: '/boas-vindas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShellIndexRoute = ShellIndexRouteImport.update({
@@ -66,6 +72,7 @@ const ApiProfessorRoute = ApiProfessorRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
+  '/boas-vindas': typeof BoasVindasRoute
   '/ajustes': typeof ShellAjustesRoute
   '/erros': typeof ShellErrosRoute
   '/importar': typeof ShellImportarRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByFullPath {
   '/api/professor': typeof ApiProfessorRoute
 }
 export interface FileRoutesByTo {
+  '/boas-vindas': typeof BoasVindasRoute
   '/ajustes': typeof ShellAjustesRoute
   '/erros': typeof ShellErrosRoute
   '/importar': typeof ShellImportarRoute
@@ -87,6 +95,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof ShellRouteWithChildren
+  '/boas-vindas': typeof BoasVindasRoute
   '/_shell/ajustes': typeof ShellAjustesRoute
   '/_shell/erros': typeof ShellErrosRoute
   '/_shell/importar': typeof ShellImportarRoute
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/boas-vindas'
     | '/ajustes'
     | '/erros'
     | '/importar'
@@ -109,6 +119,7 @@ export interface FileRouteTypes {
     | '/api/professor'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/boas-vindas'
     | '/ajustes'
     | '/erros'
     | '/importar'
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_shell'
+    | '/boas-vindas'
     | '/_shell/ajustes'
     | '/_shell/erros'
     | '/_shell/importar'
@@ -132,6 +144,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   ShellRoute: typeof ShellRouteWithChildren
+  BoasVindasRoute: typeof BoasVindasRoute
   ApiProfessorRoute: typeof ApiProfessorRoute
 }
 
@@ -142,6 +155,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof ShellRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/boas-vindas': {
+      id: '/boas-vindas'
+      path: '/boas-vindas'
+      fullPath: '/boas-vindas'
+      preLoaderRoute: typeof BoasVindasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_shell/': {
@@ -227,6 +247,7 @@ const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   ShellRoute: ShellRouteWithChildren,
+  BoasVindasRoute: BoasVindasRoute,
   ApiProfessorRoute: ApiProfessorRoute,
 }
 export const routeTree = rootRouteImport
