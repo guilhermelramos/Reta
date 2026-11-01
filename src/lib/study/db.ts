@@ -15,6 +15,8 @@ export type DbSnapshot = {
   settings: Settings;
   notifyLog: Record<string, string>;
   seeded: boolean;
+  /** A introdução (/boas-vindas) já foi concluída ou pulada. */
+  onboardingDone: boolean;
   doubts: Doubt[];
 };
 
@@ -63,7 +65,7 @@ function all<T>(store: IDBObjectStore): Promise<T[]> {
 export async function loadSnapshot(): Promise<DbSnapshot> {
   const db = await openDb();
   const tx = db.transaction(["days", "packages", "sessions", "mistakes", "meta"], "readonly");
-  const [days, packages, sessions, mistakes, settings, notifyLog, seeded, doubts] = await Promise.all([
+  const [days, packages, sessions, mistakes, settings, notifyLog, seeded, doubts, onboardingDone] = await Promise.all([
     all<PlanDay>(tx.objectStore("days")),
     all<StudyPackage>(tx.objectStore("packages")),
     all<StudySession>(tx.objectStore("sessions")),
@@ -72,6 +74,7 @@ export async function loadSnapshot(): Promise<DbSnapshot> {
     reqToPromise(tx.objectStore("meta").get("notifyLog") as IDBRequest<Record<string, string> | undefined>),
     reqToPromise(tx.objectStore("meta").get("seeded") as IDBRequest<boolean | undefined>),
     reqToPromise(tx.objectStore("meta").get("doubts") as IDBRequest<Doubt[] | undefined>),
+    reqToPromise(tx.objectStore("meta").get("onboardingDone") as IDBRequest<boolean | undefined>),
   ]);
   db.close();
   days.sort((a, b) => a.date.localeCompare(b.date));
@@ -83,6 +86,7 @@ export async function loadSnapshot(): Promise<DbSnapshot> {
     settings: mergeSettings(settings),
     notifyLog: notifyLog ?? {},
     seeded: Boolean(seeded),
+    onboardingDone: Boolean(onboardingDone),
     doubts: Array.isArray(doubts) ? doubts : [],
   };
 }
@@ -124,7 +128,7 @@ export function saveMistake(mistake: Mistake): Promise<void> {
   return putAll("mistakes", [mistake]);
 }
 
-export async function saveMeta(key: "settings" | "notifyLog" | "seeded" | "doubts", value: unknown): Promise<void> {
+export async function saveMeta(key: "settings" | "notifyLog" | "seeded" | "doubts" | "onboardingDone", value: unknown): Promise<void> {
   if (key === "settings") {
     // `settings` não carrega mais as chaves (elas têm serviço próprio), mas o
     // fallback web as guarda no mesmo registro. Preservar o campo evita perder

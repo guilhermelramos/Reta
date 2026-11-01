@@ -30,6 +30,8 @@ type Snapshot = {
   keys: KeyValues;
   notifyLog: Record<string, string>;
   seeded: boolean;
+  /** Introdução (/boas-vindas) concluída; vem de `meta.onboardingDone`. */
+  onboardingDone: boolean;
 };
 
 type StudyApi = Snapshot & {
@@ -40,6 +42,8 @@ type StudyApi = Snapshot & {
   /** Cria ou substitui um dia inteiro (usado pela edição manual do plano). */
   upsertDay: (day: PlanDay) => Promise<void>;
   saveSettings: (settings: Settings, keys: KeyValues) => Promise<void>;
+  /** Marca a introdução como concluída/pulada e grava em `meta.onboardingDone`. */
+  completeOnboarding: () => Promise<void>;
   rememberNotify: (log: Record<string, string>) => void;
   upsertSession: (session: StudySession) => Promise<void>;
   addMistake: (mistake: Mistake) => Promise<void>;
@@ -81,6 +85,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     keys: EMPTY_KEYS,
     notifyLog: {},
     seeded: false,
+    onboardingDone: false,
   });
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -125,6 +130,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
           keys,
           notifyLog: loaded.notifyLog,
           seeded: loaded.seeded,
+          onboardingDone: loaded.onboardingDone,
         });
       })
       .catch(() => {
@@ -161,6 +167,12 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     await saveMeta("settings", settings);
     await setKeys(keys);
     setSnap((s) => ({ ...s, settings, keys }));
+  }, []);
+
+  /** Conclui (ou pula) a introdução uma única vez; grava só a flag. */
+  const completeOnboarding = useCallback(async () => {
+    await saveMeta("onboardingDone", true);
+    setSnap((s) => (s.onboardingDone ? s : { ...s, onboardingDone: true }));
   }, []);
 
   const rememberNotify = useCallback((log: Record<string, string>) => {
@@ -320,6 +332,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       importDays,
       upsertDay,
       saveSettings,
+      completeOnboarding,
       rememberNotify,
       upsertSession,
       addMistake,
@@ -333,7 +346,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       startPrep,
       cancelPrep,
     }),
-    [snap, ready, loadError, prep, importDays, upsertDay, saveSettings, rememberNotify, upsertSession, addMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep],
+    [snap, ready, loadError, prep, importDays, upsertDay, saveSettings, completeOnboarding, rememberNotify, upsertSession, addMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
