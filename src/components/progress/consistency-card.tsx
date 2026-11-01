@@ -42,7 +42,7 @@ export function ConsistencyCard({ summary }: { summary: ConsistencySummary }) {
         <p className="flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-sm tabular-nums text-primary">
           <Flame className="size-3.5" aria-hidden />
           {summary.streak}
-          <span className="text-[11px] font-normal">
+          <span className="text-xs font-normal">
             {summary.streak === 1 ? "dia" : "dias"}
           </span>
         </p>
@@ -65,7 +65,7 @@ export function ConsistencyCard({ summary }: { summary: ConsistencySummary }) {
         ))}
       </ul>
 
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] text-muted">
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-xs text-muted">
         {LEGEND.map((item) => (
           <span key={item.state} className="flex items-center gap-1.5">
             <span className={cn("size-2.5 rounded-sm", item.className)} aria-hidden />
@@ -90,7 +90,7 @@ export function ConsistencyCard({ summary }: { summary: ConsistencySummary }) {
 function Mini({ k, v, tone }: { k: string; v: string; tone?: "primary" }) {
   return (
     <div className="rounded-xl border border-border bg-surface-2 px-2 py-2">
-      <dt className="text-[11px] text-muted">{k}</dt>
+      <dt className="text-xs text-muted">{k}</dt>
       <dd className={cn("font-display text-2xl tabular-nums", tone === "primary" && "text-primary")}>{v}</dd>
     </div>
   );

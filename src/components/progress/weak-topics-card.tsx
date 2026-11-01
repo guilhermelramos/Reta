@@ -55,7 +55,7 @@ export function WeakTopicsCard({ topics, reasons, mistakeCount }: Props) {
                     style={{ width: `${Math.max(3, topic.accuracy)}%` }}
                   />
                 </div>
-                <span className="shrink-0 text-[11px] tabular-nums text-muted">
+                <span className="shrink-0 text-xs tabular-nums text-muted">
                   {topic.correct}/{topic.total} certas
                 </span>
               </div>
@@ -86,7 +86,7 @@ export function WeakTopicsCard({ topics, reasons, mistakeCount }: Props) {
                   width={84}
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: "#b7ae9c", fontSize: 11 }}
+                  tick={{ fill: "#b7ae9c", fontSize: 12 }}
                 />
                 <Tooltip
                   cursor={{ fill: "rgba(228, 160, 74, 0.08)" }}
@@ -104,7 +104,7 @@ export function WeakTopicsCard({ topics, reasons, mistakeCount }: Props) {
                   {reasons.map((row) => (
                     <Cell key={row.key} fill={REASON_COLOR[row.key]} />
                   ))}
-                  <LabelList dataKey="count" position="right" fill="#b7ae9c" fontSize={11} />
+                  <LabelList dataKey="count" position="right" fill="#b7ae9c" fontSize={12} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
