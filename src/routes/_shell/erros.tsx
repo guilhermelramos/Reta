@@ -451,7 +451,7 @@ function ErrorsPage() {
             .filter(Boolean)
             .join(" | ")}
           mistakes={[chatItem.prompt]}
-          userKey={study.settings.keys.xai}
+          userKey={study.keys.xai}
           pkg={chatPkg}
           diagramSvg=""
           doubts={study.doubts}

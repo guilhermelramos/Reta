@@ -784,7 +784,7 @@ function SessionPage() {
         holdAnswer={asking}
         question={asking && current ? `${current.prompt} ${current.choices.join(" | ")}` : ""}
         mistakes={recentMistakes}
-        userKey={study.settings.keys.xai}
+        userKey={study.keys.xai}
         pkg={pkg ?? null}
         diagramSvg={sub?.diagramSvg ?? ""}
         doubts={study.doubts}

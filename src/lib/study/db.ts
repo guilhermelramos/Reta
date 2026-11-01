@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { withoutKeys } from "@/lib/secure/redact";
 import { clampStage } from "@/lib/study/srs";
 import type { Doubt, Mistake, PlanDay, Settings, StudyPackage, StudySession } from "@/lib/study/types";
 import type { BlockKind, SessionMode } from "@/lib/study/types";
@@ -80,7 +81,7 @@ export async function loadSnapshot(): Promise<DbSnapshot> {
     packages,
     sessions,
     mistakes: mistakes.map(normalizeMistake),
-    settings: { ...EMPTY_SETTINGS, ...settings, keys: { ...EMPTY_SETTINGS.keys, ...settings?.keys }, alerts: { ...EMPTY_SETTINGS.alerts, ...settings?.alerts } },
+    settings: mergeSettings(settings),
     notifyLog: notifyLog ?? {},
     seeded: Boolean(seeded),
     doubts: Array.isArray(doubts) ? doubts : [],
@@ -125,6 +126,18 @@ export function saveMistake(mistake: Mistake): Promise<void> {
 }
 
 export async function saveMeta(key: "settings" | "notifyLog" | "seeded" | "doubts", value: unknown): Promise<void> {
+  if (key === "settings") {
+    // `settings` não carrega mais as chaves (elas têm serviço próprio), mas o
+    // fallback web as guarda no mesmo registro. Preservar o campo evita perder
+    // a chave se a gravação do serviço falhar depois.
+    await updateStoredSettings((current) => {
+      const keys = storedKeys(current);
+      const next = value && typeof value === "object" ? { ...(value as Record<string, unknown>) } : {};
+      if (Object.keys(keys).length) next.keys = keys;
+      return next;
+    });
+    return;
+  }
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction("meta", "readwrite");
@@ -133,6 +146,105 @@ export async function saveMeta(key: "settings" | "notifyLog" | "seeded" | "doubt
     tx.onerror = () => reject(tx.error ?? new Error("Falha ao salvar ajuste."));
   });
   db.close();
+}
+
+/* ------------------------------------------------------------------ *
+ * Chaves de API (fallback web do serviço de armazenamento seguro)
+ *
+ * No Android o serviço `@/lib/secure/keys` usa o Keystore e estas funções só
+ * servem para a migração/apagar o texto puro. Na web elas continuam sendo o
+ * armazenamento de hoje (`meta.settings.keys`).
+ * ------------------------------------------------------------------ */
+
+function storedKeys(settings: unknown): Record<string, string> {
+  if (!settings || typeof settings !== "object") return {};
+  const raw = (settings as { keys?: unknown }).keys;
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (typeof value === "string") out[name] = value;
+  }
+  return out;
+}
+
+/** Altera apenas `settings` na store `meta`, numa transação (sem tocar no resto). */
+function updateStoredSettings(update: (current: unknown) => unknown): Promise<void> {
+  return openDb().then(
+    (db) =>
+      new Promise<void>((resolve, reject) => {
+        const finish = () => db.close();
+        const tx = db.transaction("meta", "readwrite");
+        const store = tx.objectStore("meta");
+        const req = store.get("settings");
+        req.onsuccess = () => {
+          try {
+            const next = update(req.result);
+            if (next !== undefined) store.put(next, "settings");
+          } catch (err) {
+            tx.abort();
+            finish();
+            reject(err instanceof Error ? err : new Error("Falha ao salvar as chaves."));
+          }
+        };
+        req.onerror = () => {
+          tx.abort();
+          finish();
+          reject(req.error ?? new Error("Falha ao ler as chaves salvas."));
+        };
+        tx.oncomplete = () => {
+          finish();
+          resolve();
+        };
+        tx.onerror = () => {
+          finish();
+          reject(tx.error ?? new Error("Falha ao salvar as chaves."));
+        };
+        tx.onabort = () => {
+          finish();
+          reject(tx.error ?? new Error("Gravação das chaves cancelada."));
+        };
+      }),
+  );
+}
+
+/** Lê `settings.keys` cru do IndexedDB (usado pelo fallback web e migração). */
+export async function readStoredKeys(): Promise<Record<string, string>> {
+  const db = await openDb();
+  try {
+    const settings = await new Promise<unknown>((resolve, reject) => {
+      const tx = db.transaction("meta", "readonly");
+      const req = tx.objectStore("meta").get("settings");
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error ?? new Error("Falha ao ler as chaves salvas."));
+    });
+    return storedKeys(settings);
+  } finally {
+    db.close();
+  }
+}
+
+/** Grava/atualiza chaves no fallback web sem perder as demais. */
+export async function writeStoredKeys(patch: Record<string, string>): Promise<void> {
+  await updateStoredSettings((current) => {
+    const base = current && typeof current === "object" ? (current as Record<string, unknown>) : {};
+    return { ...base, keys: { ...storedKeys(current), ...patch } };
+  });
+}
+
+/**
+ * Apaga as chaves migradas do IndexedDB. Quando não sobra nenhuma, o campo
+ * `keys` sai do objeto de ajustes (nada de texto puro guardado).
+ */
+export async function removeStoredKeys(names: readonly string[]): Promise<void> {
+  await updateStoredSettings((current) => {
+    if (!current || typeof current !== "object") return current;
+    const next = { ...(current as Record<string, unknown>) };
+    const keys = storedKeys(current);
+    for (const name of names) delete keys[name];
+    if (Object.keys(keys).length) next.keys = keys;
+    else delete next.keys;
+    return next;
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -252,14 +364,6 @@ const backupSettingsSchema = z.looseObject({
     .optional(),
   quiet: z.boolean().optional(),
   researcher: z.enum(["grok", "perplexity", "gemini", "claude"]).optional(),
-  keys: z
-    .looseObject({
-      xai: z.string().optional(),
-      perplexity: z.string().optional(),
-      gemini: z.string().optional(),
-      claude: z.string().optional(),
-    })
-    .optional(),
   webSearch: z.boolean().optional(),
 });
 
@@ -323,21 +427,23 @@ export function parseBackup(raw: unknown): BackupFile {
 }
 
 function mergeSettings(raw: unknown): Settings {
-  const source = raw && typeof raw === "object" ? (raw as Partial<Settings>) : {};
-  const keys = source.keys && typeof source.keys === "object" ? source.keys : {};
-  const alerts = source.alerts && typeof source.alerts === "object" ? source.alerts : {};
+  const source: Partial<Settings> & { keys?: unknown } =
+    raw && typeof raw === "object" ? (raw as Partial<Settings> & { keys?: unknown }) : {};
+  // Chaves nunca fazem parte dos ajustes persistidos: quem cuida delas é
+  // `@/lib/secure/keys` (Keystore no Android, IndexedDB na web).
+  const { keys: _legacyKeys, ...rest } = source;
+  const alerts = rest.alerts && typeof rest.alerts === "object" ? rest.alerts : {};
   const researcher =
-    source.researcher === "grok" ||
-    source.researcher === "perplexity" ||
-    source.researcher === "gemini" ||
-    source.researcher === "claude"
-      ? source.researcher
+    rest.researcher === "grok" ||
+    rest.researcher === "perplexity" ||
+    rest.researcher === "gemini" ||
+    rest.researcher === "claude"
+      ? rest.researcher
       : EMPTY_SETTINGS.researcher;
   return {
     ...EMPTY_SETTINGS,
-    ...source,
+    ...rest,
     researcher,
-    keys: { ...EMPTY_SETTINGS.keys, ...keys },
     alerts: { ...EMPTY_SETTINGS.alerts, ...alerts },
   };
 }
@@ -376,6 +482,10 @@ export async function exportAll(): Promise<FullBackup> {
       readMetaAll(tx.objectStore("meta")),
     ]);
     days.sort((a, b) => a.date.localeCompare(b.date));
+    // O backup nunca leva chaves de API: `settings.keys` é removido tanto do
+    // topo quanto da cópia da store `meta`.
+    const safeMeta: Record<string, unknown> = { ...meta };
+    if ("settings" in safeMeta) safeMeta.settings = withoutKeys(mergeSettings(safeMeta.settings));
     return {
       app: "reta",
       formatVersion: 1,
@@ -384,9 +494,9 @@ export async function exportAll(): Promise<FullBackup> {
       packages,
       sessions,
       mistakes,
-      settings: mergeSettings(meta.settings),
+      settings: withoutKeys(mergeSettings(meta.settings)),
       doubts: Array.isArray(meta.doubts) ? (meta.doubts as Doubt[]) : [],
-      meta,
+      meta: safeMeta,
     };
   } finally {
     db.close();

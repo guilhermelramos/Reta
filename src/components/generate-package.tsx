@@ -35,7 +35,7 @@ export function GeneratePackage({
     setBusy(true);
     try {
       const res = await generateBlockPackage({
-        data: { topic, minutes, userKey: study.settings.keys.xai },
+        data: { topic, minutes, userKey: study.keys.xai },
       });
       if (!res.ok) {
         setError(res.error);

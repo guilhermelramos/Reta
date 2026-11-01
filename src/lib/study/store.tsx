@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { generatePackage } from "@/lib/ai/study.functions";
+import { EMPTY_KEYS, loadKeys, setKeys, type KeyValues } from "@/lib/secure/keys";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
 import { loadSnapshot, saveDays, saveMeta, saveMistake, savePackage, saveSession } from "@/lib/study/db";
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
@@ -25,6 +26,8 @@ type Snapshot = {
   mistakes: Mistake[];
   doubts: Doubt[];
   settings: Settings;
+  /** Chaves do serviço de armazenamento seguro (nunca de `settings`). */
+  keys: KeyValues;
   notifyLog: Record<string, string>;
   seeded: boolean;
 };
@@ -36,7 +39,7 @@ type StudyApi = Snapshot & {
   importDays: (days: PlanDay[]) => Promise<void>;
   /** Cria ou substitui um dia inteiro (usado pela edição manual do plano). */
   upsertDay: (day: PlanDay) => Promise<void>;
-  saveSettings: (settings: Settings) => Promise<void>;
+  saveSettings: (settings: Settings, keys: KeyValues) => Promise<void>;
   rememberNotify: (log: Record<string, string>) => void;
   upsertSession: (session: StudySession) => Promise<void>;
   addMistake: (mistake: Mistake) => Promise<void>;
@@ -57,12 +60,12 @@ const IDLE_PREP: PrepState = { running: false, total: 0, done: 0, current: "", f
 
 const Ctx = createContext<StudyApi | null>(null);
 
-function researcherKey(settings: Settings): string {
+function researcherKey(settings: Settings, keys: KeyValues): string {
   const map: Record<ResearcherId, string> = {
-    grok: settings.keys.xai,
-    perplexity: settings.keys.perplexity,
-    gemini: settings.keys.gemini,
-    claude: settings.keys.claude,
+    grok: keys.xai,
+    perplexity: keys.perplexity,
+    gemini: keys.gemini,
+    claude: keys.claude,
   };
   return map[settings.researcher] ?? "";
 }
@@ -75,6 +78,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     mistakes: [],
     doubts: [],
     settings: EMPTY_SETTINGS,
+    keys: EMPTY_KEYS,
     notifyLog: {},
     seeded: false,
   });
@@ -107,6 +111,9 @@ export function StudyProvider({ children }: { children: ReactNode }) {
           loaded.days = SEED_DAYS;
           loaded.seeded = true;
         }
+        // No Android isto migra `settings.keys` para o Keystore e apaga do
+        // IndexedDB; na web lê o mesmo IndexedDB de sempre.
+        const keys = await loadKeys();
         if (!live) return;
         setSnap({
           days: loaded.days,
@@ -115,6 +122,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
           mistakes: loaded.mistakes,
           doubts: loaded.doubts,
           settings: loaded.settings,
+          keys,
           notifyLog: loaded.notifyLog,
           seeded: loaded.seeded,
         });
@@ -147,9 +155,12 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     setSnap((s) => ({ ...s, days: next, seeded: false }));
   }, []);
 
-  const saveSettings = useCallback(async (settings: Settings) => {
+  const saveSettings = useCallback(async (settings: Settings, keys: KeyValues) => {
+    // Ajustes vão sem chaves para o IndexedDB; as chaves passam pelo serviço
+    // (Keystore no Android, `settings.keys` no IndexedDB da web).
     await saveMeta("settings", settings);
-    setSnap((s) => ({ ...s, settings }));
+    await setKeys(keys);
+    setSnap((s) => ({ ...s, settings, keys }));
   }, []);
 
   const rememberNotify = useCallback((log: Record<string, string>) => {
@@ -222,7 +233,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       return null;
     }
     if (typeof navigator !== "undefined" && !navigator.onLine) return "Sem internet. O pacote fica para quando a rede voltar.";
-    const settings = snapRef.current.settings;
+    const { settings, keys } = snapRef.current;
     let gaps = "";
     let lastError = "A aula veio incompleta.";
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -231,7 +242,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
           topic: block.content,
           minutes: block.plannedMin,
           provider: settings.researcher,
-          userKey: researcherKey(settings),
+          userKey: researcherKey(settings, keys),
           webSearch: settings.webSearch,
           gaps,
         },

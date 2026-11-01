@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ZodError } from "zod";
 import { Button } from "@/components/ui/button";
 import { pingAi } from "@/lib/ai/study.functions";
+import type { KeyValues } from "@/lib/secure/keys";
 import { exportAll, importAll, parseBackup } from "@/lib/study/db";
 import { useStudy } from "@/lib/study/store";
 import type { ResearcherId, Settings } from "@/lib/study/types";
@@ -20,8 +21,9 @@ const PROVIDERS: { id: ResearcherId; label: string }[] = [
 ];
 
 function SettingsPage() {
-  const { settings, saveSettings } = useStudy();
+  const { settings, keys, saveSettings } = useStudy();
   const [draft, setDraft] = useState<Settings>(settings);
+  const [keyDraft, setKeyDraft] = useState<KeyValues>(keys);
   const [note, setNote] = useState("");
   const [testing, setTesting] = useState(false);
   const [storage, setStorage] = useState<StorageState>({
@@ -45,19 +47,30 @@ function SettingsPage() {
     };
   }, []);
 
+  // Os ajustes chegam do IndexedDB e as chaves do serviço seguro depois do
+  // primeiro render; sincroniza o formulário quando isso acontece.
+  useEffect(() => {
+    setDraft(settings);
+    setKeyDraft(keys);
+  }, [settings, keys]);
+
   function patch(partial: Partial<Settings>) {
     setDraft({ ...draft, ...partial });
   }
 
   async function save() {
-    await saveSettings(draft);
-    setNote("Guardado só neste aparelho.");
+    try {
+      await saveSettings(draft, keyDraft);
+      setNote("Guardado só neste aparelho.");
+    } catch {
+      setNote("Não consegui guardar as chaves com segurança neste aparelho.");
+    }
   }
 
   async function test() {
     setTesting(true);
     setNote("");
-    const key = draft.researcher === "grok" ? draft.keys.xai : draft.researcher === "perplexity" ? draft.keys.perplexity : draft.researcher === "gemini" ? draft.keys.gemini : draft.keys.claude;
+    const key = draft.researcher === "grok" ? keyDraft.xai : draft.researcher === "perplexity" ? keyDraft.perplexity : draft.researcher === "gemini" ? keyDraft.gemini : keyDraft.claude;
     const res = await pingAi({ data: { provider: draft.researcher, userKey: key } });
     setNote(res.ok ? "Conexão ok." : res.error);
     setTesting(false);
@@ -262,10 +275,10 @@ function SettingsPage() {
           </select>
         </label>
         <Check label="Pesquisar na web ao montar o pacote (mais lento, gasta mais)" on={draft.webSearch} set={(webSearch) => patch({ webSearch })} />
-        <Key label="Chave xAI (opcional)" value={draft.keys.xai} set={(xai) => patch({ keys: { ...draft.keys, xai } })} />
-        <Key label="Chave Perplexity" value={draft.keys.perplexity} set={(perplexity) => patch({ keys: { ...draft.keys, perplexity } })} />
-        <Key label="Chave Gemini" value={draft.keys.gemini} set={(gemini) => patch({ keys: { ...draft.keys, gemini } })} />
-        <Key label="Chave Claude" value={draft.keys.claude} set={(claude) => patch({ keys: { ...draft.keys, claude } })} />
+        <Key label="Chave xAI (opcional)" value={keyDraft.xai} set={(xai) => setKeyDraft({ ...keyDraft, xai })} />
+        <Key label="Chave Perplexity" value={keyDraft.perplexity} set={(perplexity) => setKeyDraft({ ...keyDraft, perplexity })} />
+        <Key label="Chave Gemini" value={keyDraft.gemini} set={(gemini) => setKeyDraft({ ...keyDraft, gemini })} />
+        <Key label="Chave Claude" value={keyDraft.claude} set={(claude) => setKeyDraft({ ...keyDraft, claude })} />
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => void save()}>Salvar</Button>
           <Button variant="surface" disabled={testing} onClick={() => void test()}>{testing ? "Testando…" : "Testar conexão"}</Button>

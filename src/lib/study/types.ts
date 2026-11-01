@@ -208,8 +208,6 @@ export type Settings = {
   };
   quiet: boolean;
   researcher: ResearcherId;
-  /** Chaves só neste aparelho. Vazio em Grok = chave do app, no servidor. */
-  keys: { xai: string; perplexity: string; gemini: string; claude: string };
   webSearch: boolean;
 };
 
@@ -270,6 +268,5 @@ export const EMPTY_SETTINGS: Settings = {
   alerts: { start: true, review: true, questions: true, pending: true },
   quiet: false,
   researcher: "grok",
-  keys: { xai: "", perplexity: "", gemini: "", claude: "" },
   webSearch: false,
 };
