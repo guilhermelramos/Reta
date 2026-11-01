@@ -24,3 +24,29 @@ Regra: prioridade alta ou esforço P = aplicar; resto vai para MELHORIAS.md.
 - **Não aplicado:** notificações locais nativas (problema 3) — o aviso de
   permissão já usa o estado real da API disponível, mas o lembrete nativo fica
   para a correção própria.
+
+## P1 — (a) diagnóstico + (b) redesign — 2026-11-01 (UTC-3)
+Regra: prioridade alta ou esforço P = aplicar; resto → MELHORIAS.md.
+
+| Item do Consultor | Prioridade/esforço | Decisão | Onde |
+|---|---|---|---|
+| Prob. 1 — falhas silenciosas, timeout 15 s, `<ErrorState>`/`<InlineError>` | bloqueante | **Aplicar** | `fix/estados-erro` (sobre `fix/ia-cliente-xai`) |
+| Prob. 2 — backButton (fecha gaveta/diálogo, volta, não encerra timer) | alta | **Aplicar** | `fix/voltar-android`. Na tela Hoje: `minimizeApp()` (mantém o app vivo, comportamento padrão do Android) em vez de `exitApp()`/toast — ambas eram opções aceitas pelo Consultor. |
+| Prob. 3 — alvos ≥ 48dp, checkbox em label 48dp | alta | **Aplicar** | `ui/alvos-navegacao-m3` |
+| Prob. 4 — hierarquia da Hoje (cartão herói, blocos vazios recolhidos, overflow) | alta | **Aplicar** no redesign da tela Hoje (3ª da ordem) | redesign |
+| Prob. 5 — Navigation bar M3 80dp + indicador, esconder na Sessão | alta | **Aplicar** | `ui/alvos-navegacao-m3` |
+| Prob. 6 / Melh. 2 — modo claro seguindo o sistema | média, M | **MELHORIAS.md** (regra). O app segue escuro. | — |
+| Prob. 7 — opacidade de texto ≥ /80, mínimos 12/14/16sp | alta | **Aplicar** (opacidade + mínimos) | `ui/alvos-navegacao-m3` e telas |
+| Prob. 8 / Melh. 5 — estados vazios/erro padronizados | alta, P–M | **Aplicar** | `fix/estados-erro` |
+| Prob. 9 / Melh. 3 — chave no Keystore + onboarding de 4 telas | alta, M | **Aplicar**: serviço em `fix/chave-segura`; onboarding é a 1ª tela do redesign. Alarme exato/bateria pedidos só no momento de valor. | `fix/chave-segura`, redesign |
+| Prob. 10 — notificações/timer nativos | alta | **Aplicar** | `fix/notificacoes-nativas`, `fix/timer-segundo-plano` |
+| Prob. 11 — acessibilidade (skip link 48dp, labels) | alta | **Aplicar**; TalkBack fica pendente de aparelho | `ui/alvos-navegacao-m3` |
+| Melh. 1 — "M3 essencial" mantendo a identidade (tokens de papel, escala tipográfica, formas, estados, Snackbar, bottom sheet) | alta, M | **Aplicar** ao longo do redesign; sem cores dinâmicas (preserva o âmbar) | redesign |
+| Melh. 4 — tela de estudo (app bar 64dp com timer 32–36sp, progresso 4dp, Pausar 56dp, Encerrar com confirmação, chat em bottom sheet 90% com chip do timer) | alta, M | **Aplicar** (2ª tela). Notificação persistente: sem FGS se a notificação agendada bastar (FGS exige justificativa na Play). | redesign Sessão |
+| Melh. 6 — ordem: Onboarding → Sessão → Hoje → Ajustes → Importar → Erros → Plano → Progresso | alta | **Aplicar** | — |
+| Melh. 7 — háptico + Snackbar ao concluir | média, P | **Aplicar** (esforço P) | redesign Sessão |
+| Melh. 8 — largura máx. 600dp, rail ≥ 600dp | baixa, P | **Aplicar** (esforço P) | redesign Hoje/shell |
+| Melh. 9 — Ajustes em seções + switches M3 | média, P | **Aplicar** (esforço P) | redesign Ajustes |
+| Comparação (AnkiDroid/Duolingo/Quizlet) | — | Usada como referência; o Consultor marcou "sem fonte verificada". | — |
+
+> Nota da integração (integracao-fase2): as notificações locais nativas citadas acima como "não aplicado" em fix/estados-erro chegaram por fix/notificacoes-nativas e fix/timer-segundo-plano, já mesclados.
