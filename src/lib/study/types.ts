@@ -159,6 +159,12 @@ export type StudySession = {
   missed: string[];
   startedAt: number;
   endedAt: number | null;
+  /**
+   * Epoch ms previsto para o fim do trecho que está correndo. `null` quando
+   * pausado/encerrado; ausente em registros anteriores a este campo. Serve de
+   * fonte de verdade para reagendar o alarme depois de reabrir o app.
+   */
+  endsAt?: number | null;
   flow?: SessionFlow;
 };
 
