@@ -392,6 +392,28 @@
 }
 
 /*
+ * Detalhe do dia (bottom sheet). O rodapé com as três ações fica fora da
+ * rolagem; em paisagem os botões ocupam uma única linha.
+ */
+.plan-sheet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+@media (orientation: landscape) {
+  .plan-sheet-actions {
+    flex-direction: row;
+    gap: 0.75rem;
+  }
+
+  .plan-sheet-actions > * {
+    flex: 1 1 0%;
+    min-width: 0;
+  }
+}
+
+/*
  * Prévia de importação.
  *
  * Retrato: cabeçalho fixo, corpo rolável e ações sempre acima da dobra. Em

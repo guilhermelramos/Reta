@@ -61,11 +61,12 @@ export function PlanDaySheet({
     >
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-[55] bg-black/60" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-[60] mx-auto flex max-h-[90dvh] w-full max-w-2xl flex-col rounded-t-[28px] border border-border bg-surface">
+        <Drawer.Content className="fixed inset-x-0 bottom-0 z-[60] mx-auto flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-border bg-surface">
           <Drawer.Handle className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-border" />
           {day ? (
             <>
-              <div className="flex items-start justify-between gap-3 px-5 pt-2">
+              {/* Cabeçalho fixo: fica fora da região rolável. */}
+              <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-2">
                 <div className="min-w-0">
                   <Drawer.Title className="text-2xl leading-snug">
                     {formatLongDate(day.date)}
@@ -85,7 +86,8 @@ export function PlanDaySheet({
                 </button>
               </div>
 
-              <div className="mt-4 flex flex-1 flex-col gap-3 overflow-y-auto px-5 pb-[calc(1.5rem_+_env(safe-area-inset-bottom))]">
+              {/* Corpo rolável: só os blocos. */}
+              <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-3">
                 {day.blocks.length ? (
                   <div className="flex flex-col gap-2" role="group" aria-label="Blocos do dia">
                     {day.blocks.map((block) => {
@@ -138,30 +140,31 @@ export function PlanDaySheet({
                     <strong className="font-semibold text-fg">Editar dia</strong> para preencher.
                   </p>
                 )}
+              </div>
 
-                <div className="mt-1 flex flex-col gap-2">
-                  {chosen ? (
-                    <Button asChild className="w-full">
-                      <Link
-                        to="/sessao"
-                        search={{ dia: day.date, bloco: chosen.kind, modo: "cheio", auto: 1 }}
-                      >
-                        Estudar este bloco
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button className="w-full" disabled>
+              {/* Rodapé fixo: as três ações nunca ficam abaixo da dobra. */}
+              <div className="plan-sheet-actions shrink-0 border-t border-border px-5 pb-[calc(1rem_+_env(safe-area-inset-bottom))] pt-3">
+                {chosen ? (
+                  <Button asChild className="w-full">
+                    <Link
+                      to="/sessao"
+                      search={{ dia: day.date, bloco: chosen.kind, modo: "cheio", auto: 1 }}
+                    >
                       Estudar este bloco
-                    </Button>
-                  )}
-                  <Button variant="tonal" className="w-full" onClick={onEdit}>
-                    Editar dia
+                    </Link>
                   </Button>
-                  <Button variant="ghost" className="w-full text-clay-text" onClick={onDelete}>
-                    <Trash2 className="size-5" aria-hidden />
-                    Excluir dia
+                ) : (
+                  <Button className="w-full" disabled>
+                    Estudar este bloco
                   </Button>
-                </div>
+                )}
+                <Button variant="tonal" className="w-full" onClick={onEdit}>
+                  Editar dia
+                </Button>
+                <Button variant="ghost" className="w-full text-clay-text" onClick={onDelete}>
+                  <Trash2 className="size-5" aria-hidden />
+                  Excluir dia
+                </Button>
               </div>
             </>
           ) : null}
