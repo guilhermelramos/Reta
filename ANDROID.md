@@ -676,6 +676,32 @@ com `progress-dashboard.test.ts` em `npm test`. O `ErrorState` ganhou o kind
 `empty` (sem o vermelho de erro e com `role="status"`). Os cartões ficam em
 `src/components/progress/`.
 
+### Correções P4
+
+- **Sequência**: abrir um bloco cria a sessão com `elapsedSec: 0`, e isso não
+  conta mais como dia estudado. `studiedDates` só inclui sessões com tempo
+  acumulado, então a sequência fica **0** (e a primeira métrica também) quando
+  nenhuma sessão tem minutos estudados.
+- **Estado vazio real**: a tela usa `isEmptyProgress` (zero segundos estudados
+  e zero questões respondidas), não mais "nenhuma sessão". Enquanto vazio, o
+  cartão neutro com o botão preenchido **Ir para Hoje** (48px) substitui as
+  métricas, o mapa de calor e o planejado × real; **Dias do plano** continua
+  visível abaixo.
+- **Mapa de calor**: grade centralizada com no máximo 340px, células de no
+  máximo 28px, raio de 6px e gap de 6px. Em paisagem (≥ 600px), **Últimos 28
+  dias** e **Planejado e real** ficam lado a lado num grid de 2 colunas com
+  gap de 16px.
+- **Diagnóstico compacto**: sem questões respondidas e sem erros no caderno,
+  **Assuntos mais fracos** e **Motivos dos erros** viram um único cartão curto
+  (**Diagnóstico de questões e erros — aparece após sua primeira sessão com
+  questões**). Os dois cartões completos voltam assim que houver o primeiro
+  dado real.
+
+`currentStreak`, `isEmptyProgress`, `totalStudiedSeconds`,
+`totalAnsweredQuestions` e `hasQuestionDiagnostics` são puros em
+`progress-metrics.ts`/`progress-dashboard.ts`; os casos novos estão em
+`progress-dashboard.test.ts` (`npm test`).
+
 Para validar no aparelho: o TalkBack lendo as 28 células do heatmap e os itens
 que levam ao caderno, o contorno de hoje em tela pequena, a rolagem até o fim
 sem a barra de navegação cobrir o último cartão e o estado vazio com o CTA
