@@ -15,3 +15,6 @@ Itens do Consultor de prioridade média/baixa e esforço M/G.
 ## Da P4 (2026-11-02)
 - **Próximo intervalo nos botões de revisão** (P4, comparação AnkiDroid) — média, M. "Errei · amanhã", "Difícil · 3d", "Fácil · 7d" no caderno de erros.
 - **Cartão "Dias do plano" em Progresso** (P4 prob. 5) — o Consultor sugeriu remover. Fica compacto, porque a regra é não remover funções. Reavaliar com o usuário.
+
+## Da P5 (2026-11-02)
+- Nada novo para o backlog: tudo era esforço P e foi aplicado. Os testes de TalkBack/foco nas gavetas e de Doze ficam no roteiro do aparelho.

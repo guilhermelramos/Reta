@@ -1,0 +1,38 @@
+Você é consultor de UI/UX e estratégia mobile (Android first) do app de estudos Reta. Responda em pt-BR, pesquisando fontes (Material Design 3, developer.android.com, Anki, Duolingo, Forest, Quizlet). Não invente: sem fonte, diga 'sem fonte'. Formato obrigatório: VEREDITO (1-2 frases); PROBLEMAS (numerada: onde, por quê, COMO CORRIGIR com componente, dp, cor, espaçamento, fluxo); MELHORIAS (numerada, prioridade alta/média/baixa, esforço P/M/G); COMPARAÇÃO (2-3 concorrentes); FONTES (links). As 10 imagens anexas são painéis, um por tela, cada um com 3 variantes lado a lado (360px, 320px e paisagem); o rótulo no topo identifica a tela.
+
+## P5 — momento (d) revisão final antes do merge — 2026-11-02 (UTC-3)
+
+**Contexto.** Branch `integracao-fase2`, ainda fora da main e sem tag, agora com `ui/p4-hoje`, `ui/p4-sessao`, `ui/p4-ajustes`, `ui/p4-importar`, `ui/p4-plano`, `ui/p4-progresso` e `ui/p4-erros`. A P4 está registrada em `DECISOES.md`. Duas sugestões foram para `MELHORIAS.md`: o intervalo da próxima revisão no botão, e o cartão "Dias do plano", que não foi removido porque a regra proíbe tirar funções. Typecheck ok, 468/468 testes do app passando, `build:cap` + `cap sync` + `assembleDebug` ok, APK em `/workspace/apk/reta-integracao-fase2-debug.apk`.
+
+**Correções da P4, para confirmar:**
+1. **Hoje:** o menu ⋮ abre alinhado à direita, abaixo do botão, sem cobrir o H1.
+2. **Sessão 320:** cronômetro com `clamp(22px, 6.5vw, 32px)`, Iniciar mais compacto e "Professor" em fluxo abaixo do cartão vazio (padding inferior de 88px).
+3. **Sheet do Professor:** título "Professor IA" inteiro, o timer virou chip, "Caderno" virou IconButton 48dp e a matéria foi para o subtítulo.
+4. **Ajustes:** "Testar conexão" fica desabilitado sem chave salva e com o campo vazio.
+5. **Importar e nomenclatura:** a planilha leva o nome do arquivo sem a extensão, e as antigas chamadas "Plano" aparecem como "Minha planilha". A prévia mostra o rótulo "PRÉ-VISUALIZAÇÃO" sem o topo duplo, e Importar/Cancelar ficam acima da dobra.
+6. **Plano:** a rolagem inicial para no aviso de atrasados, com `scroll-margin` sob o topo fixo. A linha tem 72dp e o estado é só ícone, com aria-label e title. Há um botão "+" de Novo dia visível, que saiu do ⋮.
+7. **Progresso:** a sequência é 0 quando não há estudo, e o estado vazio real mostra "Ir para Hoje". O heatmap tem no máximo 340px, com células de até 28px. Em paisagem fica em 2 colunas, ao lado de "Planejado e real". Sem dados, "Assuntos fracos" e "Motivos" viram um único cartão de diagnóstico.
+8. **Erros:** no estado vazio, "Registrar erro" fica tonal dentro do cartão, junto com "Estudar bloco de hoje".
+
+**Screenshots finais:** 50 imagens em `/workspace/reta-android/consultor/shots/p5/`, geradas por `shots5.mjs` com o método da P4. Depois do onboarding, o IndexedDB foi semeado com 7 sessões concluídas em dias seguidos e 4 erros (3 vencidos hoje, 1 para 04/11), então Erros e Progresso aparecem com dados. Arquivos novos: `erros-revisao-*` (revisão um a um) e `plano-detalhe-*` (sheet do dia). Também estão lá `hoje`, `hoje-menu`, `sessao`, `sessao-chat`, `ajustes`, `importar`, `importar-previa`, `erros`, `plano` e `progresso`, em light/dark e em 360, 320 e paisagem. A varredura de alvos menores que 48px só achou elementos ocultos ("Ir para o conteúdo" e os `input[type=file]`), e não houve erros de console (`log.txt`). As limitações são as mesmas: só tema escuro e a barra fixa aparecendo no meio dos shots `fullPage`.
+
+**Checklist por critério (sem aparelho):**
+
+| # | Critério | Estado | Evidência |
+| --- | --- | --- | --- |
+| 1 | Login com Grok (padrão: chave de API no Keystore) | ✅ chave / ⚠️ OAuth experimental | `@aparajita/capacitor-secure-storage` com testes em `src/lib/secure/keys.test.ts`; nenhuma chave no repositório nem no bundle; OAuth do Grok só como opção experimental |
+| 2 | Leitura da planilha (data, conteúdo A/B, revisão e tempos) | ✅ | Testes do parser e da prévia; o `plano-teste.xlsx` foi importado no fluxo dos shots (onboarding e Importar) |
+| 3 | Notificações confiáveis em segundo plano | pendente-aparelho | Manifest com POST_NOTIFICATIONS, SCHEDULE_EXACT_ALARM e RECEIVE_BOOT_COMPLETED; `@capacitor/local-notifications`; cartão de permissão e alarme exato em Ajustes; a bateria/Doze só dá para validar no aparelho |
+| 4 | Timer com a tela bloqueada | pendente-aparelho | `endsAt` como fonte de verdade (`timer-plan.ts` com testes), notificação local agendada, sem setInterval como verdade |
+| 5 | Questões geradas pelo Grok | ✅ código / pendente-chave | Cliente xAI via CapacitorHttp (`/v1/chat/completions`); sem chave real no box não houve chamada de ponta a ponta |
+| 6 | Pacotes offline com imagens | ✅ código / pendente-aparelho | Pacotes no IndexedDB e `@capacitor/filesystem`; `storage.persist()` automático; exportar/importar backup (`backup.test.ts`) |
+| 7 | Chat com o professor IA | ✅ UI / pendente-chave | Sheet do Professor ajustado na P4 (`sessao-chat-*`); a resposta real depende da chave xAI |
+
+Requisitos Android: Material 3, alvos de 48dp ou mais e 320px/paisagem foram verificados nos shots ✅. Voltar/gesto (`useBackOverlay`, com testes) ✅ em código, falta o aparelho. Tratamento de erros (planilha vazia ou malformada, sem rede, limite da API, permissão negada) ✅ em testes e UI.
+
+**Perguntas objetivas (revisão final, momento d).**
+(d1) Os 8 itens da P4 foram resolvidos? Responda sim/não por item e diga o que sobrou.
+(d2) Erros com dados (lista, filtros, revisão um a um), Plano (detalhe) e Progresso com dados: há algum bloqueador visual ou de acessibilidade antes do merge?
+(d3) Algum problema de prioridade alta que deva impedir o merge na main e a tag `v1.0-estavel`? O que pode ficar para depois?
+(d4) O checklist acima está correto? Falta algum risco a testar no aparelho real (Doze, alarme exato no Android 14+, voltar, TalkBack)?
+Responda no formato VEREDITO / PROBLEMAS / MELHORIAS (prioridade + esforço) / COMPARAÇÃO / FONTES.

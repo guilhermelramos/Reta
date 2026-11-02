@@ -171,3 +171,19 @@ Resposta em `consultor/respostas.md` (## P4), gerada pelo Gemini a pedido do Gui
 | Melh. 1 — estado vazio de Erros com "Registrar erro" tonal no cartão + "Estudar bloco de hoje" | alta, P | **Aplicar** | `ui/p4-erros` |
 | Comparação Anki — próximo intervalo no botão de revisão | média, M | MELHORIAS | — |
 | Shots com erros e sessões semeados | — | **Aplicar** na validação (P5) | — |
+
+## P5 — revisão final (d) antes do merge (2026-11-02, UTC-3)
+
+Resposta em `consultor/respostas.md` (## P5), gerada pelo Gemini a pedido do Guilherme (`consultor/gemini-p5/`). Veredito: **sem bloqueadores**; merge e `v1.0-estavel` liberados. Da P4, 7 dos 8 itens foram resolvidos e 1 ficou parcial (Importar em paisagem e nomenclatura). Regra: alta ou esforço P = aplicar.
+
+| Item | Esforço | Decisão | Branch |
+| --- | --- | --- | --- |
+| Prob. 1 — prévia de Importar colapsa em paisagem | P | **Aplicar** | `ui/p5-ajustes` |
+| Prob. 2 — ações do detalhe do dia escondidas em 320/paisagem | P | **Aplicar** (corpo rolável + rodapé fixo) | `ui/p5-ajustes` |
+| Prob. 3 — Progresso mistura "Bloco A" e matéria; sequência ≠ heatmap | P | **Aplicar** (corrigir a agregação e a sequência) | `ui/p5-ajustes` |
+| Prob. 4 — barra de navegação visível na revisão de erros | P | **Aplicar** | `ui/p5-ajustes` |
+| P4 item 5 parcial + Melh. 1 — "Plano" × "Minha planilha" em textos | baixa, P | **Aplicar** | `ui/p5-ajustes` |
+| Melh. 2 — fade nos chips roláveis | baixa, P | **Aplicar** | `ui/p5-ajustes` |
+| Melh. 3 — placeholder curto em 320 e "0 de 60 min" em paisagem | baixa, P | **Aplicar** | `ui/p5-ajustes` |
+| d4 — riscos do aparelho: allowBackup × Keystore, adjustResize, voltar fecha o teclado antes do sheet, alarme exato negado no Android 14+ | P | **Aplicar** | `fix/android-riscos` |
+| d4 — TalkBack com foco preso nas gavetas, Doze | — | Teste no aparelho (roteiro final) | — |
