@@ -81,8 +81,14 @@ describe("examCountdown: linha do topo", () => {
   });
 
   it("usa o singular com um dia e trata hoje e o passado", () => {
-    assert.equal(examCountdown([day("2026-11-20", [], "Prova")], "2026-11-19").label, "Falta 1 dia para a prova");
-    assert.equal(examCountdown([day("2026-11-20", [], "Prova")], "2026-11-20").label, "A prova é hoje");
+    assert.equal(
+      examCountdown([day("2026-11-20", [], "Prova")], "2026-11-19").label,
+      "Falta 1 dia para a prova",
+    );
+    assert.equal(
+      examCountdown([day("2026-11-20", [], "Prova")], "2026-11-20").label,
+      "A prova é hoje",
+    );
     assert.equal(
       examCountdown([day("2026-11-20", [], "Prova")], "2026-11-21").label,
       "A data da prova já passou",

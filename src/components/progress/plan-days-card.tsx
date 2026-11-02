@@ -32,13 +32,7 @@ const DAY_CLASS: Record<PlanDayState, string> = {
  * repetir o mesmo número. Os dias são uma grade de datas com estado escrito
  * (nunca só a cor).
  */
-export function PlanDaysCard({
-  coverage,
-  rows,
-}: {
-  coverage: RetaCoverage;
-  rows: PlanDayRow[];
-}) {
+export function PlanDaysCard({ coverage, rows }: { coverage: RetaCoverage; rows: PlanDayRow[] }) {
   const marker = Math.max(0, Math.min(100, coverage.expectedPct));
 
   return (
@@ -74,8 +68,8 @@ export function PlanDaysCard({
             />
           </div>
           <p className="mt-2 text-xs leading-relaxed text-muted">
-            {coverage.done} de {coverage.planned} blocos concluídos · esperado {coverage.expectedPct}%
-            até hoje
+            {coverage.done} de {coverage.planned} blocos concluídos · esperado{" "}
+            {coverage.expectedPct}% até hoje
           </p>
         </>
       )}

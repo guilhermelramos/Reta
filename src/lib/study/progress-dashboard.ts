@@ -320,9 +320,7 @@ export function planVsReal(input: {
     const seconds = Number.isFinite(session.elapsedSec) ? Math.max(0, session.elapsedSec) : 0;
     if (!(session.status === "done" || session.status === "active" || seconds >= 60)) continue;
     const label =
-      labelByBlock.get(`${session.date}:${session.kind}`) ??
-      KIND_LABEL[session.kind] ??
-      "Bloco";
+      labelByBlock.get(`${session.date}:${session.kind}`) ?? KIND_LABEL[session.kind] ?? "Bloco";
     const key = labelKey(label);
     if (!key) continue;
     display.set(key, display.get(key) ?? label);
@@ -340,11 +338,7 @@ export function planVsReal(input: {
         plannedMin,
         studiedMin,
         pct:
-          plannedMin > 0
-            ? Math.round((studiedMin / plannedMin) * 100)
-            : studiedMin > 0
-              ? 100
-              : 0,
+          plannedMin > 0 ? Math.round((studiedMin / plannedMin) * 100) : studiedMin > 0 ? 100 : 0,
       };
     })
     .filter((row) => row.plannedMin > 0 || row.studiedMin > 0)
