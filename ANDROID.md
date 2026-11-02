@@ -609,26 +609,46 @@ erros.
 
 | Elemento | Comportamento |
 | --- | --- |
-| Topo | sticky com título serifado **Plano**, a linha **Planilha: nome · DD/MM a DD/MM · N dias** e o menu ⋮ de 48dp (`role=menu`, ícones de 20dp) com **Trocar planilha**, **Novo dia** e **Recalcular atrasados** |
-| Atrasados | cartão de aviso em `surface-2` (sem preenchimento âmbar) com **N dias atrasados** e o botão tonal **Recalcular**, que abre a mesma prévia/confirmação antes de gravar |
-| Lista | uma linha M3 de 68dp por dia: data curta + dia da semana à esquerda, fase/assuntos em até duas linhas, total de minutos e ícone + texto do estado (**Feito / Parcial / Pendente / Descanso**) à direita; o dia de hoje tem borda âmbar e a tela abre rolada na semana dele |
+| Topo | sticky, opaco (`surface`) e acima da lista, com o título serifado **Plano** e, na mesma linha, o botão **+** de 48dp (`aria-label` **Novo dia**) e o menu ⋮ de 48dp (`role=menu`, ícones de 20dp) com **Trocar planilha** e **Recalcular atrasados**; a linha **Planilha: nome · DD/MM a DD/MM · N dias** ocupa a largura toda logo abaixo |
+| Atrasados | cartão de aviso em `surface-2` (sem preenchimento âmbar) com **N dias atrasados** e o botão tonal **Recalcular**, que abre a mesma prévia/confirmação antes de gravar; ao abrir a tela, a rolagem para no topo quando há atrasados, para o aviso não sumir atrás do cabeçalho |
+| Lista | uma linha M3 de 72dp (padding de 12dp × 16dp, 12dp entre colunas) por dia: data curta + dia da semana à esquerda, fase/assuntos em até duas linhas no meio e, à direita, o total de minutos sobre o ícone do estado (20dp: check verde, relógio âmbar, círculo cinza ou lua), com **Feito / Parcial / Pendente / Descanso** no `aria-label` e no `title` em vez de texto visível; o dia de hoje tem borda âmbar e a tela abre rolada na semana dele |
 | Semanas | seções **Semana de DD/MM** (segunda-feira), dias em ordem crescente e 12dp entre os cartões |
 | Detalhe | bottom sheet com a data longa, os blocos (tipo, minutos, tópico e estado), seleção do bloco e **Estudar este bloco** (filled, leva à Sessão), **Editar dia** (tonal) e **Excluir dia** (texto em cor de erro) |
 | Formulário | cartão com campos de 48dp e label, data/fase, blocos com tipo, minutos (`inputmode=numeric`, aceita 45/1h30/01:30) e tópico; **Salvar dia** filled e **Cancelar** texto |
 | Erros/vazio | `InlineError` para falhas de gravação e validação, `ErrorState` quando o plano não tem nenhum dia |
 | Diálogos | exclusão em `role=alertdialog` (ConfirmDialog), Esc e voltar do Android pela pilha `useBackOverlay` |
 
-O agrupamento por semana, o estado do dia, a contagem de atrasados, o cabeçalho
-e os tópicos da linha são puros em
-[`src/lib/study/plan-schedule.ts`](./src/lib/study/plan-schedule.ts) e testados
-em `plan-schedule.test.ts`. O rascunho e a validação do formulário ficam em
-[`src/lib/study/plan-draft.ts`](./src/lib/study/plan-draft.ts), com
+O agrupamento por semana, o estado do dia, a contagem de atrasados, o cabeçalho,
+os tópicos da linha e o alvo da rolagem inicial (`planScrollTarget`) são puros
+em [`src/lib/study/plan-schedule.ts`](./src/lib/study/plan-schedule.ts) e
+testados em `plan-schedule.test.ts`. O rascunho e a validação do formulário
+ficam em [`src/lib/study/plan-draft.ts`](./src/lib/study/plan-draft.ts), com
 `plan-draft.test.ts`; os três testes fazem parte de `npm test`.
 
+### Correções P4
+
+- **Cabeçalho fixo**: fundo opaco de `surface`, `z-index: 20` e a linha da
+  planilha truncada em uma linha. Os alvos de rolagem (mês/semana e
+  formulário) usam `scroll-margin-top` de 112px — a altura real do cabeçalho
+  (92px) + 16px — então o título **Semana de DD/MM** nunca fica atrás dele. Com
+  dias atrasados, a abertura para no topo e mantém o aviso **N dias atrasados**
+  + **Recalcular** visível; sem atrasados, para na semana de hoje. Vale com e
+  sem a navigation rail (paisagem).
+- **Linha do dia**: mínimo de 72dp, `padding: 12px 16px`, `gap: 12px`. A coluna
+  direita tem só os minutos (12px) sobre o ícone de estado de 20px; o texto do
+  estado saiu do visual e virou `aria-label`/`title` (**Feito** = check verde
+  `success`, **Parcial** = relógio âmbar, **Pendente** = círculo cinza,
+  **Descanso** = lua). A coluna central ganhou a largura do texto removido e
+  mantém as matérias em até duas linhas.
+- **Novo dia**: virou `IconButton` de 48×48 com **+** e `aria-label` **Novo
+  dia** no cabeçalho, ao lado do ⋮; o item **Novo dia** saiu do menu de
+  overflow (o menu ficou com **Trocar planilha** e **Recalcular atrasados**). A
+  ação continua a mesma (`startNew` → formulário).
+
 Para validar no aparelho: o teclado numérico nos minutos, a rolagem até o dia
-de hoje num plano longo, o TalkBack lendo o estado da linha (ícone + texto), a
-folha aberta por cima da barra de navegação e o gesto voltar fechando a folha e
-o `alertdialog`.
+de hoje num plano longo, o TalkBack lendo o estado da linha (ícone com
+`aria-label`/`title`), a folha aberta por cima da barra de navegação e o gesto
+voltar fechando a folha e o `alertdialog`.
 
 ## Redesign da tela Progresso (Material 3)
 
