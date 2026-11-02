@@ -34,13 +34,15 @@ type Snapshot = {
   onboardingDone: boolean;
   /** Segunda-feira da semana em que "Preparar semana" foi dispensado. */
   prepDismissedWeek: string;
+  /** Nome da planilha que gerou o plano atual; vazio no plano de exemplo. */
+  sheetName: string;
 };
 
 type StudyApi = Snapshot & {
   ready: boolean;
   loadError: string;
   prep: PrepState;
-  importDays: (days: PlanDay[]) => Promise<void>;
+  importDays: (days: PlanDay[], sheetName?: string) => Promise<void>;
   /** Cria ou substitui um dia inteiro (usado pela edição manual do plano). */
   upsertDay: (day: PlanDay) => Promise<void>;
   saveSettings: (settings: Settings, keys: KeyValues) => Promise<void>;
@@ -91,6 +93,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     seeded: false,
     onboardingDone: false,
     prepDismissedWeek: "",
+    sheetName: "",
   });
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -137,6 +140,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
           seeded: loaded.seeded,
           onboardingDone: loaded.onboardingDone,
           prepDismissedWeek: loaded.prepDismissedWeek,
+          sheetName: loaded.activeSheet,
         });
       })
       .catch(() => {
@@ -150,9 +154,11 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const importDays = useCallback(async (days: PlanDay[]) => {
+  const importDays = useCallback(async (days: PlanDay[], sheetName = "") => {
     await saveDays(days);
-    setSnap((s) => ({ ...s, days, seeded: false }));
+    // Guarda o nome da aba para a tela Importar mostrar qual planilha está ativa.
+    await saveMeta("activeSheet", sheetName);
+    setSnap((s) => ({ ...s, days, sheetName, seeded: false }));
   }, []);
 
   /**

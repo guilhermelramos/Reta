@@ -305,7 +305,7 @@ function SheetStep({ onDone, onLater }: { onDone: () => void; onLater: () => voi
         );
         return;
       }
-      await importDays(preview.days);
+      await importDays(preview.days, target.name);
       setImportedThisSession(true);
       setNote(`${preview.days.length} dias importados.`);
       onDone();

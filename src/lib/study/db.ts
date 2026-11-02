@@ -20,6 +20,8 @@ export type DbSnapshot = {
   doubts: Doubt[];
   /** Segunda-feira da semana em que a sugestão "Preparar semana" foi dispensada. */
   prepDismissedWeek: string;
+  /** Nome da aba/planilha que gerou o plano atual; vazio no plano de exemplo. */
+  activeSheet: string;
 };
 
 function openDb(): Promise<IDBDatabase> {
@@ -67,7 +69,7 @@ function all<T>(store: IDBObjectStore): Promise<T[]> {
 export async function loadSnapshot(): Promise<DbSnapshot> {
   const db = await openDb();
   const tx = db.transaction(["days", "packages", "sessions", "mistakes", "meta"], "readonly");
-  const [days, packages, sessions, mistakes, settings, notifyLog, seeded, doubts, onboardingDone, prepDismissedWeek] = await Promise.all([
+  const [days, packages, sessions, mistakes, settings, notifyLog, seeded, doubts, onboardingDone, prepDismissedWeek, activeSheet] = await Promise.all([
     all<PlanDay>(tx.objectStore("days")),
     all<StudyPackage>(tx.objectStore("packages")),
     all<StudySession>(tx.objectStore("sessions")),
@@ -80,6 +82,7 @@ export async function loadSnapshot(): Promise<DbSnapshot> {
     reqToPromise(
       tx.objectStore("meta").get("prepDismissedWeek") as IDBRequest<string | undefined>,
     ),
+    reqToPromise(tx.objectStore("meta").get("activeSheet") as IDBRequest<string | undefined>),
   ]);
   db.close();
   days.sort((a, b) => a.date.localeCompare(b.date));
@@ -94,6 +97,7 @@ export async function loadSnapshot(): Promise<DbSnapshot> {
     onboardingDone: Boolean(onboardingDone),
     doubts: Array.isArray(doubts) ? doubts : [],
     prepDismissedWeek: typeof prepDismissedWeek === "string" ? prepDismissedWeek : "",
+    activeSheet: typeof activeSheet === "string" ? activeSheet : "",
   };
 }
 
@@ -135,7 +139,14 @@ export function saveMistake(mistake: Mistake): Promise<void> {
 }
 
 export async function saveMeta(
-  key: "settings" | "notifyLog" | "seeded" | "doubts" | "onboardingDone" | "prepDismissedWeek",
+  key:
+    | "settings"
+    | "notifyLog"
+    | "seeded"
+    | "doubts"
+    | "onboardingDone"
+    | "prepDismissedWeek"
+    | "activeSheet",
   value: unknown,
 ): Promise<void> {
   if (key === "settings") {
