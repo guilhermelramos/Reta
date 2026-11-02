@@ -694,8 +694,8 @@ function SettingsPage() {
         {exact.opensSettings ? (
           <SettingsButtonRow
             icon={Cog}
-            label="Abrir configurações"
-            support="Permite que o aviso toque no minuto certo com a tela bloqueada."
+            label="Permitir"
+            support="Abre as configurações de alarmes do Android."
             chevron
             onClick={() => void allowNotes({ askExact: true })}
           />

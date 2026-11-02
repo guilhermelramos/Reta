@@ -14,7 +14,39 @@
 export const EXACT_ALARM_PROMPT =
   "Para o aviso tocar no minuto certo com a tela bloqueada, permita alarmes exatos";
 
+/** Aviso não bloqueante da sessão e dos Ajustes (texto fechado com o Consultor). */
+export const EXACT_ALARM_NOTICE =
+  "Alarme exato desativado: o aviso pode atrasar alguns minutos.";
+
 export const EXACT_ALARM_ASKED_KEY = "reta:exactAlarmAsked";
+
+export type ExactAlarmPermission = "granted" | "denied" | "unsupported";
+
+export type AlarmSchedulePlan = {
+  /** O Android autorizou `setExactAndAllowWhileIdle`. */
+  exact: boolean;
+  /**
+   * `isExactNotification` do plugin. `false` agenda como inexato e nunca abre
+   * a tela de configurações sozinho.
+   */
+  isExactNotification: boolean;
+  /**
+   * `allowWhileIdle` continua ligado no fallback: o plugin usa
+   * `setAndAllowWhileIdle` (inexato, compatível com Doze), não a variante
+   * `setExactAndAllowWhileIdle` que lança `SecurityException` sem permissão.
+   */
+  allowWhileIdle: boolean;
+};
+
+/**
+ * Decide entre alarme exato e inexato antes de chamar o plugin. `unsupported`
+ * (consulta indisponível/falhou) também cai no inexato: é melhor atrasar alguns
+ * minutos do que arriscar uma exceção no meio do timer.
+ */
+export function alarmSchedulePlan(exactAlarms: ExactAlarmPermission): AlarmSchedulePlan {
+  const exact = exactAlarms === "granted";
+  return { exact, isExactNotification: exact, allowWhileIdle: true };
+}
 
 export type ExactAlarmAskInput = {
   native: boolean;

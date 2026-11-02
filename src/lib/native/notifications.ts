@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import type { PermissionState } from "@capacitor/core";
 import { isIgnoringBatteryOptimizations } from "@/lib/native/battery";
+import { alarmSchedulePlan } from "@/lib/study/exact-alarm";
 import { buildReminderSchedule } from "@/lib/study/notification-schedule";
 import type { ScheduledReminder } from "@/lib/study/notification-schedule";
 import { formatClock } from "@/lib/study/time";
@@ -233,15 +234,17 @@ function schedulePayload(
   reminder: ScheduledReminder,
   exactAlarms: ExactAlarmPermission,
 ): Parameters<LocalNotificationsApi["schedule"]>[0]["notifications"][number] {
+  const alarm = alarmSchedulePlan(exactAlarms);
   return {
     id: reminder.id,
     title: reminder.title,
     body: reminder.body,
     channelId: reminder.channelId,
     autoCancel: true,
-    // Se o alarme exato foi negado, este campo evita que o plugin abra a
-    // tela de configurações sozinho e agenda como alarme inexato.
-    isExactNotification: exactAlarms === "granted",
+    // Só pede alarme exato quando o Android autorizou. Negado (Android 12+/14+
+    // com SCHEDULE_EXACT_ALARM revogado), o plugin agenda como inexato e não
+    // abre a tela de configurações sozinho.
+    isExactNotification: alarm.isExactNotification,
     extra: {
       reta: "reminder",
       key: reminder.key,
@@ -250,9 +253,37 @@ function schedulePayload(
     },
     schedule: {
       at: reminder.at,
-      allowWhileIdle: true,
+      allowWhileIdle: alarm.allowWhileIdle,
     },
   };
+}
+
+type NotificationPayload = Parameters<LocalNotificationsApi["schedule"]>[0]["notifications"][number];
+
+/**
+ * Agenda e, se um alarme exato falhar por corrida de permissão (o usuário
+ * revogou entre o `check` e o `schedule`), refaz a mesma chamada como inexata.
+ * Assim uma `SecurityException` nunca sobe e derruba o timer.
+ */
+async function scheduleWithFallback(
+  plugin: LocalNotificationsApi,
+  notifications: NotificationPayload[],
+): Promise<{ result: Awaited<ReturnType<LocalNotificationsApi["schedule"]>>; fellBack: boolean }> {
+  try {
+    return { result: await plugin.schedule({ notifications }), fellBack: false };
+  } catch (error) {
+    if (!notifications.some((notification) => notification.isExactNotification)) throw error;
+    const result = await plugin.schedule({
+      notifications: notifications.map((notification) => ({
+        ...notification,
+        isExactNotification: false,
+      })),
+    });
+    console.warn(
+      `[notificações] alarme exato falhou; reagendado como inexato: ${errorMessage(error)}`,
+    );
+    return { result, fellBack: true };
+  }
 }
 
 async function runSync(snapshot: ReminderSnapshot): Promise<NativeSyncResult> {
@@ -287,9 +318,8 @@ async function runSync(snapshot: ReminderSnapshot): Promise<NativeSyncResult> {
 
     await ensureChannels(plugin);
     const cancelled = await cancelReminders(plugin);
-    const result = await plugin.schedule({
-      notifications: reminders.map((reminder) => schedulePayload(reminder, exactAlarms)),
-    });
+    const queued = reminders.map((reminder) => schedulePayload(reminder, exactAlarms));
+    const { result, fellBack } = await scheduleWithFallback(plugin, queued);
 
     return {
       ...base,
@@ -298,7 +328,7 @@ async function runSync(snapshot: ReminderSnapshot): Promise<NativeSyncResult> {
       batteryOptimizationsIgnored: await isIgnoringBatteryOptimizations(),
       scheduled: result.notifications.length,
       cancelled,
-      inexactFallback: exactAlarms === "denied",
+      inexactFallback: exactAlarms === "denied" || fellBack,
     };
   } catch (error) {
     return { ...base, error: errorMessage(error), inexactFallback: false };
@@ -513,33 +543,33 @@ async function runTimerSync(input: TimerNotificationInput): Promise<TimerNotific
     }
 
     let alarmScheduled = false;
+    let fellBack = false;
     const shouldAlarm =
       input.running && input.endsAt != null && input.endsAt > now && !input.expired;
     if (shouldAlarm && input.endsAt != null) {
       await removeTimerAlarm(plugin);
-      const exact = exactAlarms === "granted";
-      const result = await plugin.schedule({
-        notifications: [
-          {
-            id: TIMER_ALARM_ID,
-            title: TIMER_ALARM_TITLE,
-            body: `${input.label} · fim às ${timerClock(input.endsAt)}`,
-            channelId: "timer",
-            autoCancel: true,
-            ongoing: false,
-            isExactNotification: exact,
-            schedule: { at: new Date(input.endsAt), allowWhileIdle: true },
-            extra: {
-              reta: "timer",
-              sessionId: input.sessionId,
-              endsAt: input.endsAt,
-              exact,
-            },
+      const alarm = alarmSchedulePlan(exactAlarms);
+      const scheduled = await scheduleWithFallback(plugin, [
+        {
+          id: TIMER_ALARM_ID,
+          title: TIMER_ALARM_TITLE,
+          body: `${input.label} · fim às ${timerClock(input.endsAt)}`,
+          channelId: "timer",
+          autoCancel: true,
+          ongoing: false,
+          isExactNotification: alarm.isExactNotification,
+          schedule: { at: new Date(input.endsAt), allowWhileIdle: alarm.allowWhileIdle },
+          extra: {
+            reta: "timer",
+            sessionId: input.sessionId,
+            endsAt: input.endsAt,
+            exact: alarm.exact,
           },
-        ],
-      });
-      alarmScheduled = result.notifications.some((item) => item.id === TIMER_ALARM_ID);
-      if (inexactFallback) {
+        },
+      ]);
+      fellBack = scheduled.fellBack;
+      alarmScheduled = scheduled.result.notifications.some((item) => item.id === TIMER_ALARM_ID);
+      if (inexactFallback || fellBack) {
         console.warn(
           `[timer] alarme exato negado pelo Android; "${TIMER_ALARM_TITLE}" agendado como inexato.`,
         );
@@ -577,7 +607,7 @@ async function runTimerSync(input: TimerNotificationInput): Promise<TimerNotific
       permission,
       alarmScheduled,
       ongoingShown: true,
-      inexactFallback,
+      inexactFallback: inexactFallback || fellBack,
     };
   } catch (error) {
     return { ...base, error: errorMessage(error) };

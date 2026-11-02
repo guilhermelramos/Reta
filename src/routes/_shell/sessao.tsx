@@ -31,12 +31,7 @@ import {
 } from "@/lib/native/notifications";
 import { notifyBlockDone } from "@/lib/study/notify";
 import { blockHeading } from "@/lib/study/outline";
-import {
-  EXACT_ALARM_PROMPT,
-  exactAlarmsAlreadyAsked,
-  rememberExactAlarmsAsked,
-  shouldAskExactAlarms,
-} from "@/lib/study/exact-alarm";
+import { EXACT_ALARM_NOTICE } from "@/lib/study/exact-alarm";
 import {
   completedSnackbarText,
   endDialogTitle,
@@ -224,7 +219,7 @@ function SessionPage() {
   const [chat, setChat] = useState(false);
   const [quote, setQuote] = useState<string | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
-  const [exactPrompt, setExactPrompt] = useState(false);
+  const [exactWarning, setExactWarning] = useState(false);
   const [timerSyncNonce, setTimerSyncNonce] = useState(0);
   const [snack, setSnack] = useState<{ text: string; restore: StudySession } | null>(null);
   const [barOpen, setBarOpen] = useState(false);
@@ -234,7 +229,7 @@ function SessionPage() {
   const tried = useRef(false);
   const restoredRef = useRef(false);
   const alertedRef = useRef("");
-  const exactPromptedRef = useRef(false);
+  const exactWarningDismissedRef = useRef(false);
   const sessionRef = useRef<StudySession | null>(null);
   const studyRef = useRef(study);
   studyRef.current = study;
@@ -372,29 +367,19 @@ function SessionPage() {
       expired: plan.expired,
       now: nowMs,
     }).then((result) => {
-      // Android liberou notificações mas negou alarmes exatos: pergunta uma
-      // única vez, na primeira vez que o timer começa a correr. O alarme
-      // inexato já foi agendado e continua valendo se a pessoa recusar.
-      if (!result.native || !result.inexactFallback) return;
-      const live = sessionRef.current;
-      if (!live || live.status !== "active" || !live.running) return;
-      if (exactPromptedRef.current || exactAlarmsAlreadyAsked()) return;
-      if (
-        !shouldAskExactAlarms({
-          native: result.native,
-          asked: false,
-          started: true,
-          permission: result.permission,
-          exactAlarms: "denied",
-        })
-      ) {
-        return;
-      }
-      rememberExactAlarmsAsked();
-      exactPromptedRef.current = true;
-      setExactPrompt(true);
+      // Android liberou notificações mas negou alarmes exatos: o alarme
+      // inexato já foi agendado e a sessão mostra o aviso não bloqueante com
+      // o botão "Permitir". Não interrompe o timer com um diálogo.
+      if (!result.native) return;
+      setExactWarning(result.inexactFallback && !exactWarningDismissedRef.current);
     });
   }, [timerSyncKey, sessionLabel, sessionTimerActive, timerSyncNonce]);
+
+  // Cada bloco/sessão começa com o aviso disponível de novo.
+  useEffect(() => {
+    exactWarningDismissedRef.current = false;
+    setExactWarning(false);
+  }, [sid]);
 
   // Fim do tempo do bloco / Revisão Relâmpago: vibra uma vez e notifica.
   useEffect(() => {
@@ -416,7 +401,6 @@ function SessionPage() {
 
   // Diálogos são overlays: o voltar/gesto do Android fecha só o diálogo.
   useBackOverlay(confirmEnd, () => setConfirmEnd(false));
-  useBackOverlay(exactPrompt, () => setExactPrompt(false));
 
   useEffect(() => {
     if (!block || !isModernaBlock(block.content)) return;
@@ -624,10 +608,15 @@ function SessionPage() {
 
   /** "Permitir" do diálogo de alarme exato: abre a tela do Android e reagenda. */
   async function allowExactAlarms() {
-    setExactPrompt(false);
+    setExactWarning(false);
     await requestNativeNotifications({ askExact: true });
     setTimerSyncNonce((value) => value + 1);
     setNow(Date.now());
+  }
+
+  function dismissExactWarning() {
+    exactWarningDismissedRef.current = true;
+    setExactWarning(false);
   }
 
   async function grade() {
@@ -1040,6 +1029,24 @@ function SessionPage() {
         )}
 
         <div className="session-content">
+          {exactWarning ? (
+            <section
+              className="rounded-xl border border-primary/40 bg-primary-tonal p-3"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="text-sm leading-relaxed text-fg">{EXACT_ALARM_NOTICE}</p>
+              <div className="mt-2 flex flex-wrap justify-end gap-2">
+                <Button variant="ghost" onClick={dismissExactWarning}>
+                  Agora não
+                </Button>
+                <Button variant="tonal" onClick={() => void allowExactAlarms()}>
+                  Permitir
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
           <header>
             {search.modo === "15" ? <p className="text-xs text-primary">Sessão de 15 min</p> : null}
             <h1 className="session-title mt-1 text-3xl">{blockTitle}</h1>
@@ -1377,34 +1384,6 @@ function SessionPage() {
           </DialogPrimitive.Portal>
         </DialogPrimitive.Root>
       ) : null}
-
-      <DialogPrimitive.Root
-        open={exactPrompt}
-        onOpenChange={(next) => {
-          if (!next) setExactPrompt(false);
-        }}
-      >
-        <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70" />
-          <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-border bg-surface p-6 shadow-2xl outline-none">
-            <DialogPrimitive.Title className="text-2xl">
-              Permitir alarmes exatos?
-            </DialogPrimitive.Title>
-            <DialogPrimitive.Description className="mt-2 text-base leading-relaxed text-muted">
-              {EXACT_ALARM_PROMPT}.
-            </DialogPrimitive.Description>
-            <p className="mt-3 text-sm leading-relaxed text-muted">
-              Sem isso o aviso do fim do bloco pode atrasar alguns minutos com a tela bloqueada.
-            </p>
-            <div className="mt-6 flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setExactPrompt(false)}>
-                Agora não
-              </Button>
-              <Button onClick={() => void allowExactAlarms()}>Permitir</Button>
-            </div>
-          </DialogPrimitive.Content>
-        </DialogPrimitive.Portal>
-      </DialogPrimitive.Root>
 
       {snack ? (
         <Snackbar

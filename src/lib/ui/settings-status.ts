@@ -5,6 +5,7 @@
  * exato que a pessoa vê: status da chave, da permissão, do alarme exato, da
  * otimização de bateria e do armazenamento. A UI só escolhe a cor pelo `tone`.
  */
+import { EXACT_ALARM_NOTICE } from "../study/exact-alarm.ts";
 
 export type StatusTone = "ok" | "warn" | "muted";
 
@@ -212,7 +213,7 @@ export function exactAlarmStatus(state: ExactAlarmState, native: boolean): Setti
   if (state === "denied") {
     return {
       label: "Desligado",
-      hint: "Os avisos podem atrasar alguns minutos. Abra as configurações para permitir alarmes exatos.",
+      hint: EXACT_ALARM_NOTICE,
       tone: "warn",
       opensSettings: true,
     };

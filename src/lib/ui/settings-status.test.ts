@@ -156,7 +156,7 @@ describe("status do alarme exato", () => {
     assert.equal(status.label, "Desligado");
     assert.equal(status.opensSettings, true);
     assert.equal(status.tone, "warn");
-    assert.match(status.hint, /atrasar/);
+    assert.equal(status.hint, "Alarme exato desativado: o aviso pode atrasar alguns minutos.");
   });
 
   it("na web o alarme exato é só do app Android", () => {
