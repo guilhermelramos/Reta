@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { generatePackageClient } from "@/lib/ai/xai-client";
 import { EMPTY_KEYS, loadKeys, setKeys, type KeyValues } from "@/lib/secure/keys";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
-import { loadSnapshot, saveDays, saveMeta, saveMistake, savePackage, saveSession, deleteMistake } from "@/lib/study/db";
+import { loadSnapshot, saveDays, saveMeta, saveMistake, savePackage, saveSession, deleteMistake, deleteDay } from "@/lib/study/db";
 import { restorePlan, type PlanUndo } from "@/lib/study/import-undo";
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
 import { SEED_DAYS } from "@/lib/study/seed";
@@ -53,6 +53,8 @@ type StudyApi = Snapshot & {
   undoImport: (undo: PlanUndo) => Promise<void>;
   /** Cria ou substitui um dia inteiro (usado pela edição manual do plano). */
   upsertDay: (day: PlanDay) => Promise<void>;
+  /** Remove um dia do plano; sessões, pacotes e erros continuam salvos. */
+  removeDay: (date: string) => Promise<void>;
   saveSettings: (settings: Settings, keys: KeyValues) => Promise<void>;
   /** Marca a introdução como concluída/pulada e grava em `meta.onboardingDone`. */
   completeOnboarding: () => Promise<void>;
@@ -197,6 +199,12 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     );
     await saveDays(next);
     setSnap((s) => ({ ...s, days: next, seeded: false }));
+  }, []);
+
+  const removeDay = useCallback(async (date: string) => {
+    const next = snapRef.current.days.filter((item) => item.date !== date);
+    await deleteDay(date);
+    setSnap((s) => ({ ...s, days: next }));
   }, []);
 
   const saveSettings = useCallback(async (settings: Settings, keys: KeyValues) => {
@@ -389,6 +397,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       importDays,
       undoImport,
       upsertDay,
+      removeDay,
       saveSettings,
       completeOnboarding,
       rememberNotify,
@@ -407,7 +416,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       cancelPrep,
       dismissPrepWeek,
     }),
-    [snap, ready, loadError, prep, importDays, undoImport, upsertDay, saveSettings, completeOnboarding, rememberNotify, upsertSession, addMistake, updateMistake, removeMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep, dismissPrepWeek],
+    [snap, ready, loadError, prep, importDays, undoImport, upsertDay, removeDay, saveSettings, completeOnboarding, rememberNotify, upsertSession, addMistake, updateMistake, removeMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep, dismissPrepWeek],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

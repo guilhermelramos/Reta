@@ -126,6 +126,21 @@ export async function saveDays(days: PlanDay[]): Promise<void> {
   db.close();
 }
 
+/**
+ * Remove um dia do plano (exclusão confirmada na tela Plano). As sessões,
+ * pacotes e erros do dia continuam no IndexedDB: só a agenda muda.
+ */
+export async function deleteDay(date: string): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("days", "readwrite");
+    tx.objectStore("days").delete(date);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("Falha ao excluir o dia."));
+  });
+  db.close();
+}
+
 export function savePackage(pkg: StudyPackage): Promise<void> {
   return putAll("packages", [pkg]);
 }
