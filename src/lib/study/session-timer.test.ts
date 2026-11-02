@@ -178,7 +178,10 @@ describe("session-timer: número principal (restante/estourado)", () => {
       timerHeadlineAria({ label: "15:00", state: "countdown" }),
       "Tempo restante: 15:00",
     );
-    assert.equal(timerHeadlineAria({ label: "+02:30", state: "overtime" }), "Tempo estourado: +02:30");
+    assert.equal(
+      timerHeadlineAria({ label: "+02:30", state: "overtime" }),
+      "Tempo estourado: +02:30",
+    );
     assert.equal(timerHeadlineAria({ label: "07:00", state: "elapsed" }), "Tempo estudado: 07:00");
   });
 });
