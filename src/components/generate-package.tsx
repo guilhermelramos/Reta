@@ -14,20 +14,30 @@ function online(): boolean {
 }
 
 /**
- * Botão "Gerar Aula, Flashcards e Questões com IA" para blocos que ainda não
- * têm pacote rico no IndexedDB. O pacote gerado é salvo na hora (`savePackage`
- * via `saveBuilt`) e passa a funcionar 100% offline neste aparelho.
+ * Cartão único de bloco sem material rico.
+ *
+ * Junta num só lugar as duas ações que antes ficavam em cartões separados:
+ * gerar o pacote com IA (principal) e montar a aula a partir do plano já
+ * importado (secundária, sem IA). O pacote gerado é salvo na hora (`saveBuilt`)
+ * e passa a funcionar 100% offline neste aparelho.
  */
 export function GeneratePackage({
   date,
   kind,
   topic,
   minutes,
+  onBuildLocal,
+  buildLocalBusy = false,
+  buildLocalError = null,
 }: {
   date: string;
   kind: BlockKind;
   topic: string;
   minutes: number;
+  /** Ação local ("Montar esta aula"), quando o plano permite montar sem IA. */
+  onBuildLocal?: () => void;
+  buildLocalBusy?: boolean;
+  buildLocalError?: ErrorCopy | null;
 }) {
   const study = useStudy();
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -60,19 +70,51 @@ export function GeneratePackage({
   }
 
   return (
-    <section className="rounded-xl border border-primary/40 bg-surface p-4">
+    <section className="rounded-2xl border border-border bg-surface p-5">
       <p className="text-xs tracking-wide text-primary">Aula sob demanda</p>
       <h2 className="mt-1 text-2xl">Este bloco ainda não tem material rico</h2>
       <p className="mt-2 text-sm leading-relaxed text-muted">
-        A IA monta um resumo focado no que mais cai no vestibular/ENEM, 5 flashcards e 4 questões A–E com
-        gabarito comentado. Fica salvo no aparelho e abre offline nas próximas vezes.
+        A aula completa deste bloco ainda não está neste aparelho. A IA monta um resumo focado no
+        que mais cai no vestibular/ENEM, 5 flashcards e 4 questões A–E com gabarito comentado. Fica
+        salvo aqui para abrir offline nas próximas vezes.
       </p>
-      <Button className="mt-4" disabled={busy} onClick={() => void generate()}>
-        {busy ? <ButtonSpinner /> : <Sparkles className="size-4" />}
-        {busy ? "Gerando…" : state === "error" ? "Tentar de novo" : "Gerar Aula, Flashcards e Questões com IA"}
+      <Button
+        className="mt-4 h-12 min-h-12 rounded-xl px-4 text-[15px] font-semibold whitespace-nowrap"
+        disabled={busy}
+        onClick={() => void generate()}
+      >
+        {busy ? <ButtonSpinner /> : <Sparkles className="size-4" aria-hidden />}
+        {busy ? "Gerando…" : state === "error" ? "Tentar de novo" : "Gerar material com IA"}
       </Button>
+      {onBuildLocal ? (
+        <div className="mt-3">
+          <Button
+            variant="surface"
+            className="min-h-12"
+            disabled={buildLocalBusy}
+            onClick={onBuildLocal}
+          >
+            {buildLocalBusy ? (
+              <>
+                <ButtonSpinner />
+                Montando…
+              </>
+            ) : (
+              "Montar esta aula"
+            )}
+          </Button>
+          <p className="mt-2 text-xs text-muted">
+            Sem IA: monta a aula com o conteúdo do seu plano e da planilha deste bloco.
+          </p>
+          {buildLocalError ? (
+            <InlineError className="mt-3" copy={buildLocalError} onAction={onBuildLocal} />
+          ) : null}
+        </div>
+      ) : null}
       <p className="mt-2 text-xs text-muted" aria-live="polite">
-        {busy ? "Pode levar até um minuto. Não feche esta tela." : "Consome a IA uma única vez por bloco."}
+        {busy
+          ? "Pode levar até um minuto. Não feche esta tela."
+          : "Consome a IA uma única vez por bloco."}
       </p>
       {state === "success" ? (
         <p className="mt-3 text-sm text-primary" role="status">
@@ -106,7 +148,9 @@ export function FlashcardDeck({ cards }: { cards: Flashcard[] }) {
               aria-pressed={flipped === index}
             >
               <span className="text-xs text-muted">{flipped === index ? "Verso" : "Frente"}</span>
-              <span className="mt-1 block text-sm leading-relaxed">{flipped === index ? card.back : card.front}</span>
+              <span className="mt-1 block text-sm leading-relaxed">
+                {flipped === index ? card.back : card.front}
+              </span>
             </button>
           </li>
         ))}
