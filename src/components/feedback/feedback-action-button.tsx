@@ -41,7 +41,14 @@ export function FeedbackActionButton({
       variant={emphasis === "primary" ? "primary" : "surface"}
       className={look}
       disabled={left > 0}
-      onClick={() => onAction?.(action)}
+      onClick={() => {
+        // Recarregar créditos do OpenRouter: nova janela/navegador externo,
+        // sem adicionar plugin ao APK.
+        if (action.externalUrl && typeof window !== "undefined") {
+          window.open(action.externalUrl, "_blank", "noopener,noreferrer");
+        }
+        onAction?.(action);
+      }}
     >
       {label}
     </Button>

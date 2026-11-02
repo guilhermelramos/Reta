@@ -170,3 +170,82 @@ describe("describeError — textos já traduzidos", () => {
     assert.equal(rateLimitCopy().action?.retryAfterSeconds, 60);
   });
 });
+
+describe("describeError — OpenRouter", () => {
+  it("401 usa a frase exata do OpenRouter e mantém o atalho de Ajustes", () => {
+    const copy = describeError(
+      new AiRequestError("recusada", "unauthorized", { status: 401, provider: "openrouter" }),
+    );
+    assert.equal(copy.kind, "unauthorized");
+    assert.equal(
+      copy.message,
+      "Chave do OpenRouter inválida ou revogada. Cole uma nova em Ajustes.",
+    );
+    assert.equal(copy.action?.id, "update-key");
+    assert.equal(copy.action?.href, "/ajustes");
+  });
+
+  it("402 oferece modelo grátis e recarregar em nova janela", () => {
+    const copy = describeError(
+      new AiRequestError("Sem créditos", "no-credits", { status: 402, provider: "openrouter" }),
+    );
+    assert.equal(copy.kind, "no-credits");
+    assert.equal(copy.message, "Sem créditos no OpenRouter. Escolha um modelo grátis ou recarregue.");
+    assert.equal(copy.action?.id, "use-free-model");
+    assert.equal(copy.action?.label, "Usar modelo grátis");
+    assert.equal(copy.action?.preset, "fast-free");
+    assert.equal(copy.secondaryAction?.id, "open-credits");
+    assert.equal(copy.secondaryAction?.label, "Recarregar");
+    assert.equal(
+      copy.secondaryAction?.externalUrl,
+      "https://openrouter.ai/settings/credits",
+    );
+  });
+
+  it("429 do OpenRouter usa X segundos e sugere trocar de modelo", () => {
+    const copy = describeError(
+      new AiRequestError("Limite", "rate-limit", {
+        status: 429,
+        retryAfterSeconds: 12,
+        provider: "openrouter",
+      }),
+    );
+    assert.equal(copy.kind, "rate-limit");
+    assert.equal(copy.message, "Limite de uso atingido. Tente em 12 s ou troque de modelo.");
+    assert.equal(copy.action?.id, "retry");
+    assert.equal(copy.action?.retryAfterSeconds, 12);
+    assert.equal(copy.secondaryAction?.id, "use-free-model");
+    assert.equal(copy.secondaryAction?.preset, "fast-free");
+  });
+
+  it("modelo sem visão explica e oferece o preset de 1 toque", () => {
+    const copy = describeError(
+      new AiRequestError("não lê imagens", "vision", { provider: "openrouter" }),
+    );
+    assert.equal(copy.kind, "vision");
+    assert.equal(
+      copy.message,
+      "Este modelo não lê imagens. Use um modelo com visão para anexar a foto.",
+    );
+    assert.equal(copy.action?.id, "use-vision-model");
+    assert.equal(copy.action?.label, "Usar modelo que lê fotos");
+    assert.equal(copy.action?.preset, "vision");
+  });
+
+  it("402 sem provedor explícito também cai no texto do OpenRouter", () => {
+    assert.equal(describeError({ status: 402, message: "payment required" }).kind, "no-credits");
+  });
+
+  it("mantém os textos da xAI quando o provedor é xAI", () => {
+    assert.equal(
+      describeError(new AiRequestError("recusada", "unauthorized", { status: 401, provider: "xai" }))
+        .message,
+      "Chave xAI inválida.",
+    );
+    assert.equal(
+      describeError(new AiRequestError("Limite", "rate-limit", { status: 429, provider: "xai" }))
+        .message,
+      "Muitas perguntas seguidas. Aguarde ~1 min.",
+    );
+  });
+});

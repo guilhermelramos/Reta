@@ -4,8 +4,10 @@ import {
   ChartNoAxesColumn,
   Compass,
   FileWarning,
+  ImageOff,
   KeyRound,
   TimerReset,
+  Wallet,
   WifiOff,
 } from "lucide-react";
 import type { FeedbackKind } from "@/lib/feedback/error-copy";
@@ -27,6 +29,10 @@ export function FeedbackIcon({
     case "unauthorized":
     case "missing-key":
       return <KeyRound {...props} />;
+    case "no-credits":
+      return <Wallet {...props} />;
+    case "vision":
+      return <ImageOff {...props} />;
     case "notifications":
       return <BellOff {...props} />;
     case "sheet":
