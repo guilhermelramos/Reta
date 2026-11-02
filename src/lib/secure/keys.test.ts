@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { EMPTY_KEYS, migrateLegacyKeys, normalizeKeys } from "./keys.ts";
+import { EMPTY_KEYS, migrateLegacyKeys, normalizeKeys, readKey } from "./keys.ts";
 import type { KeyName, KeyStorage, LegacyKeyStorage } from "./keys.ts";
 import { withoutKeys } from "./redact.ts";
 
@@ -53,6 +53,46 @@ class BrokenSecure extends FakeSecure {
     throw new Error("Keystore indisponível");
   }
 }
+
+class CorruptSecure extends FakeSecure {
+  removals: KeyName[] = [];
+
+  async get(name: KeyName): Promise<string | null> {
+    if (name === "xai") throw new Error("Falha ao decifrar a chave do Keystore");
+    return super.get(name);
+  }
+
+  async remove(name: KeyName): Promise<void> {
+    this.removals.push(name);
+    await super.remove(name);
+  }
+}
+
+describe("readKey com Keystore invalidado", () => {
+  it("trata a entrada ilegível como Não configurada e apaga só ela", async () => {
+    const secure = new CorruptSecure({ xai: "chave-corrompida", gemini: "chave-boa" });
+
+    assert.deepEqual(await readKey(secure, "xai"), { value: "", recovered: true });
+    assert.deepEqual(secure.removals, ["xai"]);
+    assert.equal(await secure.get("gemini"), "chave-boa");
+  });
+
+  it("apaga a entrada mesmo quando o próprio remove falha, sem lançar", async () => {
+    const secure = new CorruptSecure();
+    secure.remove = async () => {
+      throw new Error("Keystore indisponível");
+    };
+
+    assert.deepEqual(await readKey(secure, "xai"), { value: "", recovered: true });
+  });
+
+  it("leitura normal continua devolvendo a chave sem apagar nada", async () => {
+    const secure = new FakeSecure({ xai: "  xai-key  " });
+
+    assert.deepEqual(await readKey(secure, "xai"), { value: "xai-key", recovered: false });
+    assert.equal(await secure.get("xai"), "  xai-key  ");
+  });
+});
 
 describe("migrateLegacyKeys", () => {
   it("move as chaves preenchidas para o cofre e apaga do IndexedDB", async () => {

@@ -130,11 +130,36 @@ const legacyStorage: LegacyKeyStorage = {
   },
 };
 
+/**
+ * Lê uma chave tolerando cofre corrompido.
+ *
+ * No Android o valor é decifrado com a chave do Keystore. Depois de um restore
+ * de backup do sistema (ou de uma troca de chave do Keystore), o registro pode
+ * existir mas a decifragem falhar. Nesse caso a entrada é inútil e ainda
+ * derrubaria a inicialização: apagamos o registro e tratamos como "Não
+ * configurada", exatamente como se a pessoa nunca tivesse salvo a chave.
+ */
+export async function readKey(
+  storage: KeyStorage,
+  name: KeyName,
+): Promise<{ value: string; recovered: boolean }> {
+  try {
+    const value = await storage.get(name);
+    return { value: typeof value === "string" ? value.trim() : "", recovered: false };
+  } catch {
+    try {
+      await storage.remove(name);
+    } catch {
+      // Cofre indisponível: a leitura vazia já evita travar o app.
+    }
+    return { value: "", recovered: true };
+  }
+}
+
 async function readAll(storage: KeyStorage): Promise<KeyValues> {
   const out: KeyValues = { ...EMPTY_KEYS };
   for (const name of KEY_NAMES) {
-    const value = await storage.get(name);
-    out[name] = typeof value === "string" ? value.trim() : "";
+    out[name] = (await readKey(storage, name)).value;
   }
   return out;
 }
@@ -145,8 +170,7 @@ function activeStorage(): KeyStorage {
 
 /** Lê uma chave do cofre ativo (Android: Keystore; web: IndexedDB). */
 export async function getKey(name: KeyName): Promise<string> {
-  const value = await activeStorage().get(name);
-  return typeof value === "string" ? value.trim() : "";
+  return (await readKey(activeStorage(), name)).value;
 }
 
 /** Lê todas as chaves do cofre ativo. */
@@ -184,7 +208,12 @@ export async function loadKeys(): Promise<KeyValues> {
     await migrateLegacyKeys(nativeStorage(), legacyStorage);
     return await readAll(nativeStorage());
   } catch {
-    const oldKeys = normalizeKeys(await legacyStorage.read());
-    return oldKeys;
+    // A migração pode falhar justamente porque uma entrada do Keystore está
+    // corrompida. `readAll` tenta cada chave de novo e apaga só as inválidas,
+    // então uma chave boa não é perdida por causa de outra.
+    const recovered = await readAll(nativeStorage());
+    if (KEY_NAMES.some((name) => recovered[name])) return recovered;
+    // Cofre realmente indisponível: mantém as chaves antigas desta execução.
+    return normalizeKeys(await legacyStorage.read());
   }
 }
