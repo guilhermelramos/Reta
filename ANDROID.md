@@ -92,6 +92,30 @@ O prompt, o parse/validação zod e a sanitização de SVG são os mesmos nos do
 caminhos (`src/lib/ai/prompts.ts`, `parse.ts`, `block-package.ts`, `study/svg.ts`
 e `core.ts`). Assim o pacote gerado no APK não diverge do gerado na web.
 
+### Provedor ativo: xAI ou OpenRouter
+
+[`src/lib/ai/provider.ts`](./src/lib/ai/provider.ts) é a camada única de
+roteamento. A xAI continua sendo o padrão e mantém exatamente o caminho
+anterior (server function na web, `CapacitorHttp` no APK). Com OpenRouter
+ativo, a mesma geração de pacotes, as questões do tutor e o chat do professor
+usam o cliente de [`openrouter/client.ts`](./src/lib/ai/openrouter/client.ts):
+
+- todo pedido envia `models: [escolhido, ...fallbacks]`, com
+  `openrouter/auto` como último recurso;
+- no APK o transporte é `CapacitorHttp` (o `fetch` da WebView bloqueia
+  `HTTP-Referer`); na web é `fetch`, sem `HTTP-Referer` e com `X-Title`;
+- a chave `sk-or-…` fica só no cofre seguro (`getOpenRouterKey`), nunca no
+  IndexedDB, no bundle, em logs ou em backup;
+- antes de anexar foto, o catálogo em cache é consultado
+  (`architecture.input_modalities` com `image`). Modelo sem visão bloqueia o
+  envio e oferece o preset "Usar modelo que lê fotos";
+- 401/402/429 e modelo sem visão têm textos e ações próprios em
+  [`error-copy.ts`](./src/lib/feedback/error-copy.ts).
+
+O gate "IA configurada" considera a credencial do provedor ativo. A escolha do
+provedor é uma preferência em `settings`; a autenticação do OpenRouter é
+**somente** a chave colada — não há OAuth/PKCE/App Link/callback.
+
 O `CapacitorHttp` está ligado em [`capacitor.config.ts`](./capacitor.config.ts).
 No APK a chave vem de [`src/lib/secure/keys.ts`](./src/lib/secure/keys.ts)
 (Keystore); `XAI_API_KEY` do ambiente só existe no servidor da web. Sem chave

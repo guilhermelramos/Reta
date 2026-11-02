@@ -7,6 +7,8 @@
  * de erro da verificação da chave xAI.
  */
 
+import type { AiProvider } from "../ai/provider.ts";
+
 export const ONBOARDING_STEP_COUNT = 4;
 
 /** 0 = Boas-vindas, 1 = Planilha, 2 = Professor IA, 3 = Lembretes. */
@@ -17,9 +19,27 @@ export type OnboardingSignals = {
   onboardingDone: boolean;
   /** Existe chave xAI no cofre (Keystore no Android, IndexedDB na web). */
   hasXaiKey: boolean;
+  /** Existe chave do OpenRouter no cofre. */
+  hasOpenRouterKey?: boolean;
+  /** Provedor ativo; ausente = xAI, como antes. */
+  aiProvider?: AiProvider;
   /** O plano veio de uma planilha importada (não é o modelo semeado). */
   hasImportedPlan: boolean;
 };
+
+/**
+ * Gate "IA configurada": a credencial que importa é a do provedor ativo.
+ * A xAI continua valendo quando nenhum provedor foi escolhido.
+ */
+export function hasActiveAiKey(signals: {
+  aiProvider?: AiProvider;
+  hasXaiKey?: boolean;
+  hasOpenRouterKey?: boolean;
+}): boolean {
+  return signals.aiProvider === "openrouter"
+    ? Boolean(signals.hasOpenRouterKey)
+    : Boolean(signals.hasXaiKey);
+}
 
 /**
  * "Planilha importada" = a store `days` foi substituída por uma importação.
@@ -37,7 +57,7 @@ export function hasImportedPlan(seeded: boolean, dayCount: number): boolean {
  */
 export function shouldShowOnboarding(signals: OnboardingSignals): boolean {
   if (signals.onboardingDone) return false;
-  if (signals.hasXaiKey) return false;
+  if (hasActiveAiKey(signals)) return false;
   if (signals.hasImportedPlan) return false;
   return true;
 }

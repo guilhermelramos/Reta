@@ -255,3 +255,30 @@ describe("versão em Sobre", () => {
     assert.equal(appVersionLabel("   "), "—");
   });
 });
+
+import { aiConfigured, aiKeyStatus } from "./settings-status.ts";
+
+describe("gate IA configurada (provedor ativo)", () => {
+  it("só conta a chave do provedor escolhido", () => {
+    assert.equal(aiConfigured("xai", "xai-abc"), true);
+    assert.equal(aiConfigured("xai", "   "), false);
+    assert.equal(aiConfigured("openrouter", "sk-or-v1-abc"), true);
+    assert.equal(aiConfigured("openrouter", ""), false);
+  });
+
+  it("o status diz de qual provedor é a credencial", () => {
+    const xai = aiKeyStatus("xai", "xai-abc");
+    assert.equal(xai.configured, true);
+    assert.equal(xai.label, "Conectada");
+    assert.match(xai.hint, /xAI/);
+
+    const openRouter = aiKeyStatus("openrouter", "sk-or-v1-abc");
+    assert.equal(openRouter.configured, true);
+    assert.match(openRouter.hint, /OpenRouter/);
+
+    const empty = aiKeyStatus("openrouter", "");
+    assert.equal(empty.configured, false);
+    assert.equal(empty.label, "Não configurada");
+    assert.match(empty.hint, /OpenRouter/);
+  });
+});

@@ -5,6 +5,7 @@
  * exato que a pessoa vê: status da chave, da permissão, do alarme exato, da
  * otimização de bateria e do armazenamento. A UI só escolhe a cor pelo `tone`.
  */
+import type { AiProvider } from "../ai/provider.ts";
 import { EXACT_ALARM_NOTICE } from "../study/exact-alarm.ts";
 
 export type StatusTone = "ok" | "warn" | "muted";
@@ -36,6 +37,34 @@ export function keyStatus(value: string): KeyStatus {
     configured,
     label: "Não configurada",
     hint: "Sem chave, os recursos de IA pedem para configurar aqui.",
+    tone: "muted",
+  };
+}
+
+/** Gate "IA configurada": vale a credencial do provedor **ativo**. */
+export function aiConfigured(provider: AiProvider, key: string): boolean {
+  return key.trim().length > 0;
+}
+
+/**
+ * Status da credencial do provedor ativo. O rótulo é o mesmo de `keyStatus`;
+ * o texto de apoio diz de qual provedor é a chave (xAI ou OpenRouter).
+ */
+export function aiKeyStatus(provider: AiProvider, value: string): KeyStatus {
+  const configured = aiConfigured(provider, value);
+  const label = provider === "openrouter" ? "OpenRouter" : "xAI";
+  if (configured) {
+    return {
+      configured,
+      label: "Conectada",
+      hint: `A chave da ${label} fica só neste aparelho, no cofre seguro do sistema.`,
+      tone: "ok",
+    };
+  }
+  return {
+    configured,
+    label: "Não configurada",
+    hint: `Sem a chave da ${label}, os recursos de IA pedem para configurar aqui.`,
     tone: "muted",
   };
 }
