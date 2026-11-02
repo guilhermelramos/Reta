@@ -3,13 +3,13 @@ import { Button } from "@/components/ui/button";
 import { useBackOverlay } from "@/lib/android/use-back-overlay";
 
 /**
- * Diálogo de confirmação M3 para ações destrutivas dos Ajustes.
+ * Diálogo de confirmação M3 para ações destrutivas.
  *
  * `role="alertdialog"` anuncia o título e a consequência antes dos botões. O
  * Radix prende o foco dentro do diálogo, fecha com Esc e devolve o foco ao
  * gatilho; o `useBackOverlay` faz o mesmo com o botão/gesto voltar do Android.
  * A ação que destrói fica na cor de erro e a saída segura é "Cancelar".
- * Usado só pela tela de Ajustes.
+ * Usado pelos Ajustes e pelo caderno de erros.
  */
 export function ConfirmDialog({
   open,

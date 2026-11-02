@@ -275,6 +275,61 @@
   opacity: 0.5;
 }
 
+/*
+ * Filtros do caderno de erros: uma linha rolável, chip visual de 32dp dentro
+ * de um alvo de toque de 48dp. Sem quebra para não empurrar a lista.
+ */
+.notebook-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  scrollbar-width: none;
+}
+
+.notebook-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.notebook-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 3rem;
+  white-space: nowrap;
+}
+
+.notebook-chip-visual {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding-inline: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.notebook-chip:hover .notebook-chip-visual {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border));
+  color: var(--color-fg);
+}
+
+.notebook-chip-visual.chip-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-tonal);
+  color: var(--color-primary);
+}
+
 @media (orientation: landscape) and (min-width: 600px) {
   .session-page {
     display: flex;

@@ -1,82 +1,108 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { CheckCircle2, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
-import { Drawer } from "vaul";
-import { useBackOverlay } from "@/lib/android/use-back-overlay";
-import { ErrorReasonPicker } from "@/components/mistake-reason";
+import { NotebookFilterChips } from "@/components/erros/filter-chips";
+import { MistakeCard } from "@/components/erros/mistake-card";
+import { MistakeDetailSheet } from "@/components/erros/mistake-detail-sheet";
+import { MistakeFormSheet, type MistakeDraft } from "@/components/erros/mistake-form-sheet";
+import { InlineError } from "@/components/feedback/inline-error";
+import { ConfirmDialog } from "@/components/settings/confirm-dialog";
 import { TeacherChat } from "@/components/teacher-chat";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/cn";
+import type { ErrorCopy } from "@/lib/feedback/error-copy";
+import { useBackOverlay } from "@/lib/android/use-back-overlay";
 import {
-  easyIntervalDays,
-  isDueToday,
-  isMastered,
+  clearNotebookFilters,
+  DELETE_MISTAKE_BODY,
+  DELETE_MISTAKE_TITLE,
+  emptyListMessage,
+  hasActiveFilters,
+  mistakeSourceLabel,
+  nextReviewDate,
+  nextReviewLabel,
+  notebookCounts,
+  notebookList,
+  notebookReasons,
+  notebookSubjects,
+  notebookSummary,
+  outcomeIntervalLabel,
+  reviewProgressLabel,
+  reviewProgressPercent,
+  SRS_OUTCOME_SHORT_LABEL,
+  DEFAULT_NOTEBOOK_FILTERS,
+  type NotebookFilters,
+} from "@/lib/study/error-notebook";
+import {
   newMistakeSrs,
   reviewStatusLabel,
   SRS_OUTCOME_LABEL,
+  type SrsOutcome,
 } from "@/lib/study/srs";
-import type { SrsOutcome } from "@/lib/study/srs";
 import { useStudy } from "@/lib/study/store";
 import { formatClock, formatShortDate, saoPauloToday } from "@/lib/study/time";
-import { ERROR_REASON_LABEL, KIND_LABEL, MISTAKE_SOURCE_LABEL } from "@/lib/study/types";
-import type { ErrorReason, Mistake } from "@/lib/study/types";
+import { ERROR_REASON_LABEL, KIND_LABEL } from "@/lib/study/types";
+import type { Mistake } from "@/lib/study/types";
 
 export const Route = createFileRoute("/_shell/erros")({
   head: () => ({ meta: [{ title: "Erros · Reta" }] }),
   component: ErrorsPage,
 });
 
-type Filter = "vencidos" | "pendentes" | "dominados";
+type SheetState = { mode: "create" } | { mode: "edit"; id: string };
 
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: "vencidos", label: "Para revisar hoje" },
-  { id: "pendentes", label: "Todos pendentes" },
-  { id: "dominados", label: "Dominados" },
-];
+function localError(message: string): ErrorCopy {
+  return { kind: "unknown", title: "Não deu para concluir", message };
+}
 
-const EMPTY_FORM = {
-  subject: "",
-  topic: "",
-  prompt: "",
-  marked: "",
-  answerKey: "",
-  reason: "" as ErrorReason | "",
-};
-
-function sourceLabel(mistake: Mistake): string {
-  if (mistake.source === "externo")
-    return `${MISTAKE_SOURCE_LABEL.externo}${mistake.subject ? ` · ${mistake.subject}` : ""}`;
-  return KIND_LABEL[mistake.kind];
+function draftFromMistake(mistake: Mistake): MistakeDraft {
+  return {
+    subject: mistake.subject ?? "",
+    topic: mistake.topic ?? "",
+    prompt: mistake.prompt,
+    marked: mistake.marked ?? "",
+    answerKey: mistake.answerKey ?? "",
+    reason: mistake.errorReason ?? "",
+  };
 }
 
 function ErrorsPage() {
   const study = useStudy();
   const today = useMemo(() => saoPauloToday(), []);
 
-  const [filter, setFilter] = useState<Filter>("vencidos");
+  const [filters, setFilters] = useState<NotebookFilters>(DEFAULT_NOTEBOOK_FILTERS);
+  const [sheet, setSheet] = useState<SheetState | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [pageError, setPageError] = useState<ErrorCopy | null>(null);
+  const [chatId, setChatId] = useState<string | null>(null);
+
   const [review, setReview] = useState(false);
   const [queue, setQueue] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
   const [show, setShow] = useState(false);
   const [left, setLeft] = useState(5 * 60);
-  const [chatId, setChatId] = useState<string | null>(null);
-  const [externalOpen, setExternalOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [formError, setFormError] = useState("");
 
-  // Gaveta "Anotar erro externo": o voltar do Android fecha a gaveta antes
-  // de considerar o histórico do roteador.
-  useBackOverlay(externalOpen, () => setExternalOpen(false));
+  // Voltar do Android durante a revisão volta ao caderno, sem sair da rota.
+  useBackOverlay(review, () => setReview(false));
 
-  const due = study.mistakes.filter((m) => isDueToday(m, today));
-  const pending = study.mistakes.filter((m) => !isMastered(m));
-  const mastered = study.mistakes.filter((m) => isMastered(m));
-  const filtered = filter === "vencidos" ? due : filter === "pendentes" ? pending : mastered;
-  const list = [...filtered].sort(
-    (a, b) =>
-      (a.nextReviewAt ?? "").localeCompare(b.nextReviewAt ?? "") || b.createdAt - a.createdAt,
+  const counts = useMemo(() => notebookCounts(study.mistakes, today), [study.mistakes, today]);
+  const dueList = useMemo(
+    () => notebookList(study.mistakes, { ...DEFAULT_NOTEBOOK_FILTERS, status: "vencidos" }, today),
+    [study.mistakes, today],
   );
+  const list = useMemo(
+    () => notebookList(study.mistakes, filters, today),
+    [study.mistakes, filters, today],
+  );
+  const nextDate = useMemo(() => nextReviewDate(study.mistakes, today), [study.mistakes, today]);
+  const subjects = useMemo(() => notebookSubjects(study.mistakes), [study.mistakes]);
+  const reasons = useMemo(() => notebookReasons(study.mistakes), [study.mistakes]);
 
+  const detail = detailId ? (study.mistakes.find((m) => m.id === detailId) ?? null) : null;
+  const editing =
+    sheet?.mode === "edit" ? (study.mistakes.find((m) => m.id === sheet.id) ?? null) : null;
+  const deleteItem = deleteId ? (study.mistakes.find((m) => m.id === deleteId) ?? null) : null;
   const item = queue[index] ? (study.mistakes.find((m) => m.id === queue[index]) ?? null) : null;
   const chatItem = chatId ? (study.mistakes.find((m) => m.id === chatId) ?? null) : null;
 
@@ -92,6 +118,8 @@ function ErrorsPage() {
     setIndex(0);
     setShow(false);
     setLeft(5 * 60);
+    setDetailId(null);
+    setSheet(null);
     setReview(true);
   }
 
@@ -102,25 +130,16 @@ function ErrorsPage() {
     setIndex((n) => n + 1);
   }
 
-  function setField<K extends keyof typeof EMPTY_FORM>(key: K, value: (typeof EMPTY_FORM)[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
-
-  async function saveExternal() {
-    const prompt = form.prompt.trim();
-    if (!prompt) {
-      setFormError("Escreva o resumo da questão ou da dúvida.");
-      return;
-    }
-    const subject = form.subject.trim();
-    const topic = form.topic.trim();
+  async function saveNew(draft: MistakeDraft): Promise<ErrorCopy | null> {
+    const subject = draft.subject.trim();
+    const topic = draft.topic.trim();
     const mistake: Mistake = {
       id: crypto.randomUUID(),
       sessionId: "externo",
       date: today,
       kind: "A",
       topic: [subject, topic].filter(Boolean).join(" · ") || "Erro externo",
-      prompt,
+      prompt: draft.prompt.trim(),
       choices: [],
       correctIndex: -1,
       userIndex: -1,
@@ -129,15 +148,56 @@ function ErrorsPage() {
       ...newMistakeSrs(today),
       source: "externo",
       subject: subject || undefined,
-      marked: form.marked.trim() || undefined,
-      answerKey: form.answerKey.trim() || undefined,
-      errorReason: form.reason || undefined,
+      marked: draft.marked.trim() || undefined,
+      answerKey: draft.answerKey.trim() || undefined,
+      errorReason: draft.reason || undefined,
     };
-    await study.addMistake(mistake);
-    setForm(EMPTY_FORM);
-    setFormError("");
-    setExternalOpen(false);
-    setFilter("vencidos");
+    try {
+      await study.addMistake(mistake);
+      setFilters(clearNotebookFilters());
+      setPageError(null);
+      setSheet(null);
+      return null;
+    } catch {
+      return localError("Não consegui salvar este erro no aparelho. Tente de novo.");
+    }
+  }
+
+  async function saveEdit(id: string, draft: MistakeDraft): Promise<ErrorCopy | null> {
+    const subject = draft.subject.trim();
+    const topic = draft.topic.trim();
+    try {
+      await study.updateMistake(id, {
+        subject: subject || undefined,
+        topic: topic || undefined,
+        prompt: draft.prompt.trim(),
+        marked: draft.marked.trim() || undefined,
+        answerKey: draft.answerKey.trim() || undefined,
+        errorReason: draft.reason || undefined,
+      });
+      setPageError(null);
+      setSheet(null);
+      return null;
+    } catch {
+      return localError("Não consegui salvar as alterações. Tente de novo.");
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteId) return;
+    const id = deleteId;
+    setDeleting(true);
+    try {
+      await study.removeMistake(id);
+      if (detailId === id) setDetailId(null);
+      if (sheet?.mode === "edit" && sheet.id === id) setSheet(null);
+      setPageError(null);
+    } catch {
+      setPageError(localError("Não consegui excluir este erro. Tente de novo."));
+    } finally {
+      setDeleting(false);
+      setDeleteId(null);
+    }
   }
 
   const chatPkg =
@@ -158,166 +218,88 @@ function ErrorsPage() {
         .join("\n")
     : "";
 
-  return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-5">
-      <header>
-        <h1 className="text-4xl">Caderno de erros</h1>
-        <p className="mt-2 text-sm text-muted">
-          {due.length} para revisar hoje · {pending.length} pendentes · {mastered.length} dominados.
-          A revisão relâmpago dura 5 minutos e a repetição espaçada cuida do resto.
-        </p>
-      </header>
-
-      {!review ? (
-        <>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Button disabled={!due.length} onClick={() => startReview(due.map((m) => m.id))}>
-              Revisão relâmpago
-            </Button>
-            <Button variant="surface" onClick={() => setExternalOpen(true)}>
-              <Plus className="size-4" aria-hidden />
-              Anotar erro externo
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filtros do caderno">
-            {FILTERS.map((tab) => {
-              const count =
-                tab.id === "vencidos"
-                  ? due.length
-                  : tab.id === "pendentes"
-                    ? pending.length
-                    : mastered.length;
-              const active = filter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setFilter(tab.id)}
-                  className={cn(
-                    "min-h-12 rounded-full border px-3 text-xs transition-colors",
-                    active
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border text-muted hover:border-primary/50 hover:text-fg",
-                  )}
-                >
-                  {tab.label} ({count})
-                </button>
-              );
-            })}
-          </div>
-
-          <ul className="flex flex-col gap-3">
-            {list.map((m) => (
-              <li key={m.id} className="rounded-xl border border-border bg-surface p-3">
-                <p className="text-xs text-muted">
-                  {formatShortDate(m.date)} · {sourceLabel(m)}
-                  {m.errorReason ? ` · ${ERROR_REASON_LABEL[m.errorReason]}` : ""}
-                </p>
-                <p className="mt-1 text-sm leading-relaxed">{m.prompt}</p>
-                {m.source === "externo" && (m.marked || m.answerKey) ? (
-                  <p className="mt-1 text-xs text-muted">
-                    {m.marked ? `Marquei: ${m.marked}` : ""}
-                    {m.marked && m.answerKey ? " · " : ""}
-                    {m.answerKey ? `Gabarito: ${m.answerKey}` : ""}
-                  </p>
-                ) : null}
-                <p
-                  className={cn(
-                    "mt-2 text-xs",
-                    isDueToday(m, today) ? "text-primary" : "text-muted",
-                  )}
-                >
-                  {reviewStatusLabel(m, today)}
-                  {m.reviewCount ? ` · ${m.reviewCount} revisões` : ""}
-                </p>
-                <ErrorReasonPicker
-                  className="mt-3"
-                  label="Causa"
-                  value={m.errorReason}
-                  onChange={(reason) => void study.setMistakeErrorReason(m.id, reason)}
-                />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button variant="surface" onClick={() => startReview([m.id])}>
-                    Revisar agora
-                  </Button>
-                  <Button variant="ghost" onClick={() => setChatId(m.id)}>
-                    Perguntar ao Professor IA
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {!study.mistakes.length ? (
-            <p className="text-sm text-muted">
-              Nenhum erro guardado ainda. Eles aparecem quando você erra na sessão — ou aqui, pelo
-              botão de anotar erro externo.
-            </p>
-          ) : null}
-          {study.mistakes.length && !list.length ? (
-            <p className="text-sm text-muted">
-              {filter === "vencidos"
-                ? "Nada vencido agora. Volte amanhã ou abra os pendentes."
-                : filter === "pendentes"
-                  ? "Nenhum erro pendente. Tudo dominado por aqui."
-                  : "Nenhum erro dominado ainda. Marque “Dominado / Fácil” quando a questão ficar fácil."}
-            </p>
-          ) : null}
-        </>
-      ) : (
-        <section className="rounded-xl border border-border bg-surface p-4">
-          <div className="flex items-center justify-between gap-2">
-            <p className="tabular-nums text-sm text-primary" role="timer">
-              {formatClock(left)}
-            </p>
-            <Button variant="ghost" onClick={() => setReview(false)}>
+  if (review) {
+    const progressCurrent = queue.length ? Math.min(queue.length, index + 1) : 0;
+    return (
+      <div className="mx-auto flex w-full max-w-[600px] flex-col gap-3">
+        <section
+          aria-label="Revisão de erros"
+          className="rounded-2xl border border-border bg-surface p-4"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-baseline gap-2">
+              <p role="timer" className="tabular-nums text-sm font-semibold text-primary">
+                {formatClock(left)}
+              </p>
+              <span className="text-xs text-muted">revisão relâmpago</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReview(false)}
+              className="min-h-12 shrink-0 px-2 text-sm font-medium text-fg"
+            >
               Voltar ao caderno
-            </Button>
+            </button>
           </div>
+
+          {queue.length ? (
+            <div className="mt-1">
+              <div className="flex items-center justify-between gap-2 text-xs text-muted">
+                <span>Revisão espaçada</span>
+                <span className="tabular-nums">{reviewProgressLabel(index, queue.length)}</span>
+              </div>
+              <div
+                role="progressbar"
+                aria-label="Progresso da revisão"
+                aria-valuemin={0}
+                aria-valuemax={queue.length}
+                aria-valuenow={progressCurrent}
+                className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2"
+              >
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-200"
+                  style={{ width: `${reviewProgressPercent(index, queue.length)}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+
           {!item || left === 0 ? (
-            <>
-              <h2 className="mt-3 text-2xl">
-                {left === 0 ? "Os 5 minutos acabaram." : "Fila vazia."}
+            <div className="mt-4 flex flex-col items-start gap-2">
+              <CheckCircle2 className="size-7 text-primary" aria-hidden />
+              <h2 className="text-2xl leading-snug">
+                {left === 0 ? "Os 5 minutos acabaram" : "Revisão concluída"}
               </h2>
-              <p className="mt-2 text-sm text-muted">
+              <p className="text-sm leading-relaxed text-muted">
                 {left === 0
                   ? "O que você respondeu já foi agendado na repetição espaçada."
-                  : "Nada mais nesta fila."}
+                  : "Você revisou todos os erros da fila. O resultado de cada um já está na repetição espaçada."}
               </p>
-              <Button className="mt-4" variant="surface" onClick={() => setReview(false)}>
+              <Button variant="tonal" className="mt-2" onClick={() => setReview(false)}>
                 Voltar ao caderno
               </Button>
-            </>
+            </div>
           ) : (
             <>
-              <p className="mt-3 text-xs text-muted">
-                {formatShortDate(item.date)} · {sourceLabel(item)} ·{" "}
+              <p className="mt-3 text-xs leading-relaxed text-muted">
+                {formatShortDate(item.date)} · {mistakeSourceLabel(item)} ·{" "}
                 {reviewStatusLabel(item, today)}
               </p>
-              <p className="mt-2 text-lg leading-relaxed">{item.prompt}</p>
+              <p className="mt-2 text-base leading-relaxed text-fg">{item.prompt}</p>
               {item.source === "externo" && (item.marked || item.answerKey) ? (
-                <p className="mt-2 text-sm text-muted">
+                <p className="mt-2 text-sm leading-relaxed text-muted">
                   {item.marked ? `Marquei: ${item.marked}` : ""}
                   {item.marked && item.answerKey ? " · " : ""}
                   {item.answerKey ? `Gabarito: ${item.answerKey}` : ""}
                 </p>
               ) : null}
 
-              <ErrorReasonPicker
-                className="mt-4"
-                value={item.errorReason}
-                onChange={(reason) => void study.setMistakeErrorReason(item.id, reason)}
-              />
-
               {!show ? (
-                <Button className="mt-4" onClick={() => setShow(true)}>
+                <Button variant="tonal" className="mt-3 w-full" onClick={() => setShow(true)}>
                   Mostrar o gabarito
                 </Button>
               ) : (
-                <div className="mt-4">
+                <div className="mt-3">
                   {item.source === "externo" ? (
                     <>
                       <p className="text-sm">Marquei: {item.marked || "—"}</p>
@@ -334,106 +316,173 @@ function ErrorsPage() {
                       ) : null}
                     </>
                   )}
-                  <p className="mt-4 text-xs text-muted">
+                  <p className="mt-3 text-xs text-muted">
                     Como você ficou? Isso agenda a próxima revisão.
                   </p>
-                  <div className="mt-2 flex flex-col gap-2">
-                    <Button variant="clay" onClick={() => void answer("errei")}>
-                      {SRS_OUTCOME_LABEL.errei}{" "}
-                      <span className="text-xs font-normal">(+1 dia)</span>
-                    </Button>
-                    <Button variant="surface" onClick={() => void answer("dificil")}>
-                      {SRS_OUTCOME_LABEL.dificil}{" "}
-                      <span className="text-xs font-normal">(+3 dias)</span>
-                    </Button>
-                    <Button onClick={() => void answer("facil")}>
-                      {SRS_OUTCOME_LABEL.facil}{" "}
-                      <span className="text-xs font-normal">
-                        (+{easyIntervalDays(item.srsStage ?? 0)} dias)
-                      </span>
-                    </Button>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {(["errei", "dificil", "facil"] as SrsOutcome[]).map((outcome) => {
+                      const interval = outcomeIntervalLabel(outcome, item.srsStage);
+                      return (
+                        <Button
+                          key={outcome}
+                          variant={
+                            outcome === "errei"
+                              ? "clay"
+                              : outcome === "dificil"
+                                ? "surface"
+                                : "tonal"
+                          }
+                          aria-label={`${SRS_OUTCOME_LABEL[outcome]}, ${interval}`}
+                          className="flex-col gap-0.5 px-2"
+                          onClick={() => void answer(outcome)}
+                        >
+                          <span>{SRS_OUTCOME_SHORT_LABEL[outcome]}</span>
+                          <span className="text-xs font-normal">{interval}</span>
+                        </Button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
             </>
           )}
         </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex w-full max-w-[600px] flex-col gap-3">
+      <header className="pt-1">
+        <h1 className="text-3xl leading-tight">Caderno de erros</h1>
+        <p className="mt-1 text-sm text-muted">{notebookSummary(counts)}</p>
+      </header>
+
+      {pageError ? <InlineError copy={pageError} /> : null}
+
+      {counts.due ? (
+        <section className="rounded-xl border border-primary bg-surface-2 p-5">
+          <h2 className="text-2xl leading-snug">
+            Revisar {counts.due} {counts.due === 1 ? "erro" : "erros"} agora
+          </h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted">
+            Um erro por vez. O resultado de cada um agenda a próxima revisão.
+          </p>
+          <Button
+            className="mt-4 w-full sm:w-auto"
+            onClick={() => startReview(dueList.map((m) => m.id))}
+          >
+            Começar revisão
+          </Button>
+        </section>
+      ) : (
+        <section className="flex items-start gap-3 rounded-xl border border-border bg-surface p-5">
+          <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-primary" aria-hidden />
+          <div className="min-w-0">
+            <h2 className="text-2xl leading-snug">
+              {counts.total ? "Nada para revisar hoje" : "Nenhum erro guardado ainda"}
+            </h2>
+            <p className="mt-1 text-sm leading-relaxed text-muted">
+              {counts.total
+                ? nextDate
+                  ? nextReviewLabel(nextDate, today)
+                  : "Todos os erros do caderno estão dominados."
+                : "Eles aparecem quando você erra na sessão — ou registre um erro de fora do app."}
+            </p>
+          </div>
+        </section>
       )}
 
-      <Drawer.Root open={externalOpen} onOpenChange={setExternalOpen}>
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 z-[55] bg-black/60" />
-          <Drawer.Content className="fixed inset-x-0 bottom-0 z-[60] flex max-h-[90dvh] flex-col rounded-t-2xl border border-border bg-surface">
-            <Drawer.Handle className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-border" />
-            <div className="flex items-start justify-between gap-3 px-4 pt-2">
-              <div>
-                <Drawer.Title className="font-display text-2xl">Anotar erro externo</Drawer.Title>
-                <Drawer.Description className="mt-1 text-sm text-muted">
-                  Simulado impresso, PDF ou dúvida fora do app. Entra no mesmo caderno e na
-                  repetição espaçada.
-                </Drawer.Description>
-              </div>
-              <Drawer.Close asChild>
-                <Button variant="ghost" aria-label="Fechar">
-                  Fechar
-                </Button>
-              </Drawer.Close>
-            </div>
-            <form
-              className="mt-4 flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void saveExternal();
-              }}
+      <Button
+        variant="tonal"
+        className="w-full sm:w-auto sm:self-start"
+        onClick={() => {
+          setPageError(null);
+          setSheet({ mode: "create" });
+        }}
+      >
+        <Plus className="size-5" aria-hidden />
+        Registrar erro
+      </Button>
+
+      {counts.total ? (
+        <NotebookFilterChips
+          filters={filters}
+          subjects={subjects}
+          reasons={reasons}
+          onChange={setFilters}
+          onClear={() => setFilters(clearNotebookFilters())}
+        />
+      ) : null}
+
+      {list.length ? (
+        <ul className="flex flex-col gap-3">
+          {list.map((mistake) => (
+            <li key={mistake.id}>
+              <MistakeCard
+                mistake={mistake}
+                today={today}
+                onOpen={() => setDetailId(mistake.id)}
+                onEdit={() => setSheet({ mode: "edit", id: mistake.id })}
+                onDelete={() => setDeleteId(mistake.id)}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : counts.total ? (
+        <div className="rounded-xl border border-dashed border-border bg-surface px-4 py-5 text-center">
+          <p className="text-sm leading-relaxed text-muted">
+            {emptyListMessage(filters.status, hasActiveFilters(filters))}
+          </p>
+          {hasActiveFilters(filters) ? (
+            <button
+              type="button"
+              onClick={() => setFilters(clearNotebookFilters())}
+              className="mt-1 min-h-12 px-3 text-sm font-semibold text-primary"
             >
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field
-                  label="Matéria"
-                  value={form.subject}
-                  placeholder="Ex.: Biologia"
-                  onChange={(v) => setField("subject", v)}
-                />
-                <Field
-                  label="Tópico"
-                  value={form.topic}
-                  placeholder="Ex.: Genética"
-                  onChange={(v) => setField("topic", v)}
-                />
-              </div>
-              <Field
-                label="Resumo da questão ou dúvida"
-                value={form.prompt}
-                placeholder="O que a questão pedia, em uma ou duas frases"
-                onChange={(v) => setField("prompt", v)}
-                multiline
-              />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field
-                  label="O que eu marquei"
-                  value={form.marked}
-                  placeholder="Alternativa ou raciocínio"
-                  onChange={(v) => setField("marked", v)}
-                />
-                <Field
-                  label="Gabarito"
-                  value={form.answerKey}
-                  placeholder="Resposta certa"
-                  onChange={(v) => setField("answerKey", v)}
-                />
-              </div>
-              <ErrorReasonPicker
-                label="Motivo do erro (opcional)"
-                value={form.reason || undefined}
-                onChange={(reason) => setField("reason", reason)}
-              />
-              {formError ? <p className="text-sm text-clay-text">{formError}</p> : null}
-              <Button type="submit" className="mt-2">
-                Salvar no caderno
-              </Button>
-            </form>
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+              Limpar filtros
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <MistakeDetailSheet
+        mistake={detail}
+        today={today}
+        onClose={() => setDetailId(null)}
+        onReview={() => {
+          if (detail) startReview([detail.id]);
+        }}
+        onAsk={() => {
+          if (!detail) return;
+          setDetailId(null);
+          setChatId(detail.id);
+        }}
+        onReason={(reason) => {
+          if (detail) void study.setMistakeErrorReason(detail.id, reason);
+        }}
+      />
+
+      <MistakeFormSheet
+        key={sheet ? (sheet.mode === "create" ? "novo" : `editar-${sheet.id}`) : "fechado"}
+        open={Boolean(sheet) && (sheet?.mode === "create" || Boolean(editing))}
+        mode={sheet?.mode ?? "create"}
+        initial={editing ? draftFromMistake(editing) : undefined}
+        onClose={() => setSheet(null)}
+        onSave={(draft) =>
+          sheet?.mode === "edit" && editing ? saveEdit(editing.id, draft) : saveNew(draft)
+        }
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteItem)}
+        title={DELETE_MISTAKE_TITLE}
+        description={DELETE_MISTAKE_BODY}
+        confirmLabel="Excluir"
+        busy={deleting}
+        onCancel={() => setDeleteId(null)}
+        onConfirm={() => void confirmDelete()}
+      />
 
       {chatItem ? (
         <TeacherChat
@@ -469,37 +518,5 @@ function ErrorsPage() {
         />
       ) : null}
     </div>
-  );
-}
-
-type FieldProps = {
-  label: string;
-  value: string;
-  placeholder: string;
-  multiline?: boolean;
-  onChange: (value: string) => void;
-};
-
-function Field({ label, value, placeholder, multiline, onChange }: FieldProps) {
-  const className = "min-h-12 w-full rounded-xl border border-border bg-bg px-3 text-sm";
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs text-muted">{label}</span>
-      {multiline ? (
-        <textarea
-          value={value}
-          placeholder={placeholder}
-          onChange={(event) => onChange(event.target.value)}
-          className={`${className} min-h-24 py-2`}
-        />
-      ) : (
-        <input
-          value={value}
-          placeholder={placeholder}
-          onChange={(event) => onChange(event.target.value)}
-          className={className}
-        />
-      )}
-    </label>
   );
 }
