@@ -15,6 +15,10 @@ export type AiErrorKind =
   | "server"
   | "bad-request"
   | "empty"
+  /** OpenRouter: a conta/chave está sem créditos (HTTP 402). */
+  | "no-credits"
+  /** OpenRouter: o modelo escolhido não aceita imagem em `input_modalities`. */
+  | "vision"
   | "unknown";
 
 /**
