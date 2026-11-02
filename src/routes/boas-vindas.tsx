@@ -359,8 +359,9 @@ function SheetStep({ onDone, onLater }: { onDone: () => void; onLater: () => voi
         <p className="text-sm font-semibold uppercase tracking-wide text-primary">Planilha</p>
         <h1 className="mt-3 text-4xl leading-tight">Importe sua planilha ou use o modelo.</h1>
         <p className="mt-4 text-base leading-relaxed text-muted">
-          Entram só data, bloco A, bloco B e revisão, com o tempo de cada um. Se preferir, avance e importe
-          depois em <span className="font-semibold text-fg">Planilha</span>.
+          Entram só data, bloco A, bloco B e revisão, com o tempo de cada um. Se preferir, avance e
+          importe depois na aba <span className="font-semibold text-fg">Plano</span> ou no menu de{" "}
+          <span className="font-semibold text-fg">Hoje</span>.
         </p>
       </div>
 
