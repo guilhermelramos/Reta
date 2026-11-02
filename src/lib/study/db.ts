@@ -18,6 +18,8 @@ export type DbSnapshot = {
   /** A introdução (/boas-vindas) já foi concluída ou pulada. */
   onboardingDone: boolean;
   doubts: Doubt[];
+  /** Segunda-feira da semana em que a sugestão "Preparar semana" foi dispensada. */
+  prepDismissedWeek: string;
 };
 
 function openDb(): Promise<IDBDatabase> {
@@ -65,7 +67,7 @@ function all<T>(store: IDBObjectStore): Promise<T[]> {
 export async function loadSnapshot(): Promise<DbSnapshot> {
   const db = await openDb();
   const tx = db.transaction(["days", "packages", "sessions", "mistakes", "meta"], "readonly");
-  const [days, packages, sessions, mistakes, settings, notifyLog, seeded, doubts, onboardingDone] = await Promise.all([
+  const [days, packages, sessions, mistakes, settings, notifyLog, seeded, doubts, onboardingDone, prepDismissedWeek] = await Promise.all([
     all<PlanDay>(tx.objectStore("days")),
     all<StudyPackage>(tx.objectStore("packages")),
     all<StudySession>(tx.objectStore("sessions")),
@@ -75,6 +77,9 @@ export async function loadSnapshot(): Promise<DbSnapshot> {
     reqToPromise(tx.objectStore("meta").get("seeded") as IDBRequest<boolean | undefined>),
     reqToPromise(tx.objectStore("meta").get("doubts") as IDBRequest<Doubt[] | undefined>),
     reqToPromise(tx.objectStore("meta").get("onboardingDone") as IDBRequest<boolean | undefined>),
+    reqToPromise(
+      tx.objectStore("meta").get("prepDismissedWeek") as IDBRequest<string | undefined>,
+    ),
   ]);
   db.close();
   days.sort((a, b) => a.date.localeCompare(b.date));
@@ -88,6 +93,7 @@ export async function loadSnapshot(): Promise<DbSnapshot> {
     seeded: Boolean(seeded),
     onboardingDone: Boolean(onboardingDone),
     doubts: Array.isArray(doubts) ? doubts : [],
+    prepDismissedWeek: typeof prepDismissedWeek === "string" ? prepDismissedWeek : "",
   };
 }
 
@@ -128,7 +134,10 @@ export function saveMistake(mistake: Mistake): Promise<void> {
   return putAll("mistakes", [mistake]);
 }
 
-export async function saveMeta(key: "settings" | "notifyLog" | "seeded" | "doubts" | "onboardingDone", value: unknown): Promise<void> {
+export async function saveMeta(
+  key: "settings" | "notifyLog" | "seeded" | "doubts" | "onboardingDone" | "prepDismissedWeek",
+  value: unknown,
+): Promise<void> {
   if (key === "settings") {
     // `settings` não carrega mais as chaves (elas têm serviço próprio), mas o
     // fallback web as guarda no mesmo registro. Preservar o campo evita perder

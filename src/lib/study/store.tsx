@@ -32,6 +32,8 @@ type Snapshot = {
   seeded: boolean;
   /** Introdução (/boas-vindas) concluída; vem de `meta.onboardingDone`. */
   onboardingDone: boolean;
+  /** Segunda-feira da semana em que "Preparar semana" foi dispensado. */
+  prepDismissedWeek: string;
 };
 
 type StudyApi = Snapshot & {
@@ -58,6 +60,8 @@ type StudyApi = Snapshot & {
   buildOne: (date: string, kind: BlockKind) => Promise<string | null>;
   startPrep: (fromDate: string) => void;
   cancelPrep: () => void;
+  /** Dispensa a sugestão "Preparar semana" na semana de `weekKey` (YYYY-MM-DD). */
+  dismissPrepWeek: (weekKey: string) => Promise<void>;
 };
 
 const IDLE_PREP: PrepState = { running: false, total: 0, done: 0, current: "", failures: [] };
@@ -86,6 +90,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     notifyLog: {},
     seeded: false,
     onboardingDone: false,
+    prepDismissedWeek: "",
   });
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -131,6 +136,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
           notifyLog: loaded.notifyLog,
           seeded: loaded.seeded,
           onboardingDone: loaded.onboardingDone,
+          prepDismissedWeek: loaded.prepDismissedWeek,
         });
       })
       .catch(() => {
@@ -281,6 +287,11 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     cancelRef.current = true;
   }, []);
 
+  const dismissPrepWeek = useCallback(async (weekKey: string) => {
+    await saveMeta("prepDismissedWeek", weekKey);
+    setSnap((s) => ({ ...s, prepDismissedWeek: weekKey }));
+  }, []);
+
   const startPrep = useCallback((fromDate: string) => {
     if (prepLock.current) return;
     const { days, packages } = snapRef.current;
@@ -345,8 +356,9 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       buildOne,
       startPrep,
       cancelPrep,
+      dismissPrepWeek,
     }),
-    [snap, ready, loadError, prep, importDays, upsertDay, saveSettings, completeOnboarding, rememberNotify, upsertSession, addMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep],
+    [snap, ready, loadError, prep, importDays, upsertDay, saveSettings, completeOnboarding, rememberNotify, upsertSession, addMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep, dismissPrepWeek],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
