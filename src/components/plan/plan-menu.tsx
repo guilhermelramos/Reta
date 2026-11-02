@@ -1,6 +1,6 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Link } from "@tanstack/react-router";
-import { FileUp, MoreVertical, Plus, RefreshCw } from "lucide-react";
+import { FileUp, MoreVertical, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useBackOverlay } from "@/lib/android/use-back-overlay";
 
@@ -9,19 +9,16 @@ const ITEM =
   "flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm text-fg outline-none data-[highlighted]:bg-surface data-[disabled]:pointer-events-none data-[disabled]:opacity-50";
 
 /**
- * Menu ⋮ do topo do Plano. "Trocar planilha" navega; "Novo dia" e
- * "Recalcular atrasados" continuam existindo aqui mesmo quando o cartão de
- * aviso de atrasados não aparece.
+ * Menu ⋮ do topo do Plano, só com as ações raras: "Trocar planilha" e
+ * "Recalcular atrasados". "Novo dia" é ação primária e fica no botão de "+"
+ * ao lado, visível no cabeçalho (o recálculo também aparece no aviso de
+ * atrasados e continua aqui mesmo quando ele não está na tela).
  */
 export function PlanMenu({
-  canCreateDay,
   canRecalculate,
-  onNewDay,
   onRecalculate,
 }: {
-  canCreateDay: boolean;
   canRecalculate: boolean;
-  onNewDay: () => void;
   onRecalculate: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -51,14 +48,6 @@ export function PlanMenu({
               <FileUp className="size-5 shrink-0" aria-hidden />
               Trocar planilha
             </Link>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            disabled={!canCreateDay}
-            onSelect={() => window.setTimeout(onNewDay, 0)}
-            className={ITEM}
-          >
-            <Plus className="size-5 shrink-0" aria-hidden />
-            Novo dia
           </DropdownMenu.Item>
           <DropdownMenu.Item
             disabled={!canRecalculate}

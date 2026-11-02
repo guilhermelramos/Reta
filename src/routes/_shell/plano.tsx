@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ErrorState } from "@/components/feedback/error-state";
 import { InlineError } from "@/components/feedback/inline-error";
@@ -24,6 +24,7 @@ import {
   overdueDays,
   overdueLabel,
   planHeaderLine,
+  planScrollTarget,
 } from "@/lib/study/plan-schedule";
 import { useStudy } from "@/lib/study/store";
 import { weekKey } from "@/lib/study/today";
@@ -87,17 +88,23 @@ function PlanPage() {
   );
 
   // O dia de hoje precisa estar à vista ao abrir a tela, mesmo no meio de um
-  // plano de 90 dias. Rola até a semana dele (o dia aparece logo abaixo do
-  // cabeçalho) e só uma vez por montagem; depois a lista manda.
+  // plano de 90 dias. Com dias atrasados o alvo é o topo: o aviso "N dias
+  // atrasados" e o Recalcular ficam acima da lista e não podem sumir atrás do
+  // cabeçalho. Só uma vez por montagem; depois a lista manda.
   useEffect(() => {
     if (todayScrolled.current) return;
-    if (!days.some((day) => day.date === today)) return;
+    const target = planScrollTarget({ days, today, overdueCount: lateDays.length });
+    if (target === "nenhum") return;
     const frame = requestAnimationFrame(() => {
-      todaySectionRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+      if (target === "atrasados") {
+        window.scrollTo({ top: 0, behavior: "auto" });
+      } else {
+        todaySectionRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+      }
       todayScrolled.current = true;
     });
     return () => cancelAnimationFrame(frame);
-  }, [days, today]);
+  }, [days, today, lateDays.length]);
 
   // Ao abrir o formulário de baixo da lista, sobe até ele. O atraso espera a
   // folha de detalhe fechar e devolver o foco ao gatilho.
@@ -219,17 +226,33 @@ function PlanPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[600px] flex-col gap-3">
-      <header className="sticky top-0 z-20 flex items-start justify-between gap-2 bg-bg/95 py-2 backdrop-blur">
-        <div className="min-w-0">
-          <h1 className="text-3xl leading-tight">Plano</h1>
-          <p className="mt-1 text-sm leading-relaxed text-muted">{headerLine}</p>
+      {/* Top app bar: superfície opaca e acima da lista. O título divide a
+          linha com as duas ações (+ e ⋮); a linha da planilha usa a largura
+          toda logo abaixo. Os alvos de rolagem usam scroll-mt-[112px], a
+          altura dele (≈90px) + a folga de 16px, para nada parar atrás. */}
+      <header className="sticky top-0 z-20 -mx-4 flex flex-col border-b border-border bg-surface px-4 py-2 min-[600px]:-mx-6 min-[600px]:px-6">
+        <div className="flex min-h-12 items-center justify-between gap-2">
+          <h1 className="min-w-0 truncate text-3xl leading-tight">Plano</h1>
+          <div className="flex shrink-0 items-center">
+            <button
+              type="button"
+              aria-label="Novo dia"
+              title="Novo dia"
+              onClick={startNew}
+              disabled={Boolean(draft) || busy || applying}
+              className="grid size-12 shrink-0 place-items-center rounded-full text-fg transition-colors hover:bg-surface-2 disabled:opacity-50"
+            >
+              <Plus className="size-6" aria-hidden />
+            </button>
+            <PlanMenu
+              canRecalculate={!draft && !busy && !applying && days.length > 0}
+              onRecalculate={startRecalculate}
+            />
+          </div>
         </div>
-        <PlanMenu
-          canCreateDay={!draft && !busy && !applying}
-          canRecalculate={!draft && !busy && !applying && days.length > 0}
-          onNewDay={startNew}
-          onRecalculate={startRecalculate}
-        />
+        <p className="mt-1 truncate text-sm leading-relaxed text-muted" title={headerLine}>
+          {headerLine}
+        </p>
       </header>
 
       {notice ? (
@@ -271,7 +294,7 @@ function PlanPage() {
       ) : null}
 
       {draft ? (
-        <div ref={formRef} className="scroll-mt-24">
+        <div ref={formRef} className="scroll-mt-[112px]">
           <PlanDayForm
             draft={draft}
             error={error}
@@ -291,7 +314,7 @@ function PlanPage() {
               key={week.start}
               ref={week.start === todayWeek ? todaySectionRef : undefined}
               aria-labelledby={`plan-week-${week.start}`}
-              className="flex scroll-mt-24 flex-col gap-2"
+              className="flex scroll-mt-[112px] flex-col gap-2"
             >
               <h2
                 id={`plan-week-${week.start}`}
