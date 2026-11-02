@@ -34,7 +34,7 @@ export function GeneratePackage({
   kind: BlockKind;
   topic: string;
   minutes: number;
-  /** Ação local ("Montar esta aula"), quando o plano permite montar sem IA. */
+  /** Ação local ("Usar só a planilha"), quando o plano permite montar sem IA. */
   onBuildLocal?: () => void;
   buildLocalBusy?: boolean;
   buildLocalError?: ErrorCopy | null;
@@ -90,7 +90,7 @@ export function GeneratePackage({
         <div className="mt-3">
           <Button
             variant="surface"
-            className="min-h-12"
+            className="h-12 min-h-12 whitespace-nowrap"
             disabled={buildLocalBusy}
             onClick={onBuildLocal}
           >
@@ -100,7 +100,7 @@ export function GeneratePackage({
                 Montando…
               </>
             ) : (
-              "Montar esta aula"
+              "Usar só a planilha (sem IA)"
             )}
           </Button>
           <p className="mt-2 text-xs text-muted">

@@ -821,7 +821,7 @@ function SessionPage() {
         {chevron ? (
           <ChevronDown
             className={cn(
-              "size-4 shrink-0 transition-transform motion-reduce:transition-none",
+              "size-[18px] shrink-0 transition-transform motion-reduce:transition-none",
               barOpen && "rotate-180",
             )}
             aria-hidden
@@ -841,7 +841,7 @@ function SessionPage() {
   );
 
   const subline = (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center justify-between gap-2">
       {studiedToggle(true)}
       {endButton}
     </div>
@@ -941,8 +941,8 @@ function SessionPage() {
                 {timerView.headline}
               </p>
               {progressBar}
-              <div className="flex items-center gap-1">
-                {studiedToggle(false)}
+              <div className="flex items-center justify-between gap-2">
+                {studiedToggle(true)}
                 {endButton}
               </div>
               {timerToggle("w-full")}
@@ -1001,7 +1001,7 @@ function SessionPage() {
         <div className="session-content">
           <header>
             {search.modo === "15" ? <p className="text-xs text-primary">Sessão de 15 min</p> : null}
-            <h1 className="mt-1 text-3xl">{blockTitle}</h1>
+            <h1 className="session-title mt-1 text-3xl">{blockTitle}</h1>
             <ul className="mt-2 flex flex-wrap gap-2">
               {(pkg?.codes?.length ? pkg.codes : heading.codes).map((code) => (
                 <li

@@ -229,15 +229,18 @@
 }
 
 /*
- * Chips do professor: uma linha só, com rolagem horizontal e fade na borda
- * direita (o último chip nunca aparece "cortado" sem indicação).
+ * Chips do professor: uma única linha rolável na horizontal (nunca quebra em
+ * duas linhas), com chip de 32dp dentro de um alvo de toque de 48dp e fade na
+ * borda direita (o último chip nunca aparece "cortado" sem indicação).
  */
 .session-chips {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 0.5rem;
   overflow-x: auto;
-  padding: 0.5rem 1rem;
-  scroll-padding-left: 1rem;
+  padding-inline: 1rem;
+  scroll-padding-inline: 1rem;
   scrollbar-width: none;
   -webkit-mask-image: linear-gradient(to right, #000 88%, transparent 100%);
   mask-image: linear-gradient(to right, #000 88%, transparent 100%);
@@ -245,6 +248,31 @@
 
 .session-chips::-webkit-scrollbar {
   display: none;
+}
+
+.session-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 3rem;
+  white-space: nowrap;
+}
+
+.session-chip > span {
+  display: inline-flex;
+  align-items: center;
+  height: 2rem;
+  padding-inline: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+  color: var(--color-fg);
+  font-size: 0.8125rem;
+  line-height: 1;
+}
+
+.session-chip:disabled > span {
+  opacity: 0.5;
 }
 
 @media (orientation: landscape) and (min-width: 600px) {
@@ -282,7 +310,13 @@
   .session-content {
     max-width: 48rem;
     margin-inline: auto;
-    padding: 1.25rem 1.5rem 2rem;
+    padding: 1rem 1.5rem 2rem;
+  }
+
+  /* O painel esquerdo já mostra bloco e assunto; repetir o H1 aqui só
+     consumia altura e empurrava os CTAs para fora da dobra. */
+  .session-title {
+    display: none;
   }
 }
 
