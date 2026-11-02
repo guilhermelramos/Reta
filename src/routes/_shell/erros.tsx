@@ -11,6 +11,7 @@ import { TeacherChat } from "@/components/teacher-chat";
 import { Button } from "@/components/ui/button";
 import type { ErrorCopy } from "@/lib/feedback/error-copy";
 import { useBackOverlay } from "@/lib/android/use-back-overlay";
+import { usePageFocus } from "@/lib/ui/use-page-focus";
 import {
   clearNotebookFilters,
   DELETE_MISTAKE_BODY,
@@ -86,6 +87,8 @@ function ErrorsPage() {
 
   // Voltar do Android durante a revisão volta ao caderno, sem sair da rota.
   useBackOverlay(review, () => setReview(false));
+  // Mesmo layout imersivo da Sessão: some a navegação inferior e o rail.
+  usePageFocus(review);
 
   const counts = useMemo(() => notebookCounts(study.mistakes, today), [study.mistakes, today]);
   const dueList = useMemo(
@@ -223,7 +226,7 @@ function ErrorsPage() {
   if (review) {
     const progressCurrent = queue.length ? Math.min(queue.length, index + 1) : 0;
     return (
-      <div className="mx-auto flex w-full max-w-[600px] flex-col gap-3">
+      <div className="mx-auto flex w-full max-w-[600px] flex-col gap-3 px-4 py-6 pb-[calc(1.5rem_+_env(safe-area-inset-bottom))]">
         <section
           aria-label="Revisão de erros"
           className="rounded-2xl border border-border bg-surface p-4"
@@ -238,7 +241,7 @@ function ErrorsPage() {
             <button
               type="button"
               onClick={() => setReview(false)}
-              className="min-h-12 shrink-0 px-2 text-sm font-medium text-fg"
+              className="min-h-12 shrink-0 px-3 text-sm font-medium text-fg"
             >
               Voltar ao caderno
             </button>

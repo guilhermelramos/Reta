@@ -6,6 +6,7 @@ import { syncNativeNotifications } from "@/lib/native/notifications";
 import { dueNotices, registerWorker, showNotice } from "@/lib/study/notify";
 import { hasImportedPlan, shouldShowOnboarding } from "@/lib/study/onboarding";
 import { StudyProvider, useStudy } from "@/lib/study/store";
+import { usePageFocusActive } from "@/lib/ui/use-page-focus";
 
 const NAV = [
   { to: "/", label: "Hoje", icon: BookOpen },
@@ -21,8 +22,11 @@ function Frame() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   // Modo foco: a sessão de estudo esconde a navegação inferior e a barra
   // lateral (em qualquer largura) para o timer ocupar a tela inteira; a
-  // paisagem usa o split view da própria sessão.
-  const focusMode = path === "/sessao" || path.startsWith("/sessao/");
+  // paisagem usa o split view da própria sessão. A revisão de erros pede o
+  // mesmo layout pelo store de foco enquanto está aberta.
+  const pathFocus = path === "/sessao" || path.startsWith("/sessao/");
+  const pageFocus = usePageFocusActive();
+  const focusMode = pathFocus || pageFocus;
 
   // Primeira abertura (ou revisão pendente): a introdução mora fora da barra
   // de navegação. Chave salva ou planilha importada contam como "já feito".
