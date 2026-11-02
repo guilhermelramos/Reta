@@ -257,10 +257,10 @@ horário salvo + alarme agendado.
 | Voltar do Android | diálogos e folha do professor entram na pilha de overlays (`useBackOverlay`): o voltar fecha só o overlay mais recente |
 | Paisagem larga (≥600dp) | split view: coluna fixa de 260dp com 100dvh (16dp de padding, borda direita) traz voltar + bloco, timer de 40sp, progresso, sub-linha, Pausar/Encerrar e o botão **Professor** (48dp, largura total) na base; coluna direita rolável com o conteúdo. Sem FAB e sem app bar fixa |
 | Professor (retrato) | FAB fixo na viewport (`right: 16dp`, `bottom: 16dp + safe-area`, z 30, 56dp, raio 16dp) e 96dp de padding no rodapé do conteúdo para nada ficar sob ele |
-| Folha do Professor | alça 32×4dp, chip `⏱ mm:ss` (32dp, mono 13sp, borda primária), título “Professor IA”, assist chip **Caderno** (visual 32dp, alvo 48dp) e fechar 48dp; perguntas rápidas em uma linha com rolagem horizontal e fade na borda (somem depois da 1ª mensagem; atalhos continuam); enviar virou IconButton 48×48 com `ArrowUp`, desabilitado com o campo vazio |
+| Folha do Professor | alça 32×4dp, chip `⏱ mm:ss` (32dp, mono 13sp, borda primária), título “Professor IA”, assist chip **Caderno** (visual 32dp, alvo 48dp) e fechar 48dp; perguntas rápidas, atalhos e ações (desenho/teste) em uma única linha com rolagem horizontal e fade na borda (as perguntas rápidas somem depois da 1ª mensagem); enviar virou IconButton 48×48 com `ArrowUp`, desabilitado com o campo vazio |
 | Conclusão | háptico (`navigator.vibrate`, permissão normal `VIBRATE`) e snackbar “Bloco concluído · N min” com **Desfazer**, que devolve a sessão ativa com o tempo já salvo |
 | Bloco ausente | `<ErrorState>` com “Esse bloco não existe mais no seu plano (talvez a planilha tenha mudado).” e ação **Ver plano de hoje** |
-| Conteúdo vazio | um único cartão (20dp de padding, raio 16dp) com o CTA “Gerar material com IA” em uma linha e **Montar esta aula** como ação secundária (monta do plano, sem IA) |
+| Conteúdo vazio | um único cartão (20dp de padding, raio 16dp) com o CTA “Gerar material com IA” em uma linha e **Usar só a planilha (sem IA)** como ação secundária (monta do plano, sem IA) |
 
 A fonte de verdade do tempo continua sendo `startedAt` + acumulado e o
 `endsAt` gravado; o `setInterval` de um segundo só repinta a barra
@@ -298,6 +298,36 @@ Para validar no aparelho: criar/ler o alarme exato, o diálogo ao tocar
 a vibração no fim do bloco e o snackbar **Desfazer** depois de matar/reabrir o
 app. No WebView (mesmo bundle do APK) os fluxos de UI, a folha, o foco do
 diálogo e o layout de 320px foram exercitados.
+
+### Correções P3 na Sessão e no onboarding
+
+- **Paisagem (split view):** o H1 serifado do assunto sai do painel direito
+  (`.session-title`), porque o painel esquerdo já mostra bloco e assunto. O
+  conteúdo começa no topo com 16px de padding e os CTAs voltam à primeira dobra.
+- **Painel esquerdo:** a sublinha "N min estudados de M min" voltou a ter o
+  chevron de 18px (`ChevronDown`) que abre **+5 min** e as seções, com
+  `justify-content: space-between` e 8px mínimos antes de **Encerrar**. Em
+  retrato, nada muda.
+- **Botão secundário:** **Montar esta aula** virou **Usar só a planilha (sem
+  IA)** (outlined, 48dp), com a mesma ação local (`buildOne`), para contrastar
+  com **Gerar material com IA**.
+- **Folha do Professor:** perguntas rápidas, atalhos e as ações de desenho/teste
+  ficam em uma única linha rolável (`flex-wrap: nowrap`, `overflow-x: auto`, gap
+  de 8px, 16px de padding lateral), com chip visual de 32dp dentro de alvo de
+  48dp e `white-space: nowrap`. Conferido em 360px e 320px sem segunda linha. O
+  botão de livro virou assist chip de 32dp visual / 48dp de toque com ícone e
+  rótulo **Caderno** (e **Conversa** quando o caderno está aberto), mantendo o
+  toggle.
+- **Onboarding passo 2:** o texto agora aponta a navegação real — "importe
+  depois na aba **Plano** ou no menu de **Hoje**."
+
+A ordem/visibilidade dos chips e o rótulo do assist chip são puros em
+[`src/lib/study/professor-chips.ts`](./src/lib/study/professor-chips.ts) e
+testados em `professor-chips.test.ts` (incluído em `npm test`).
+
+Para validar no aparelho: girar a tela durante a sessão (o split view entra e
+sai), o toque real nos chips com o teclado aberto, o TalkBack no assist chip
+**Caderno** e o gesto de voltar fechando a folha.
 
 ## Redesign da tela Hoje (Material 3)
 
