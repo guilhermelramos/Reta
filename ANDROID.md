@@ -754,6 +754,33 @@ Testes novos: `src/lib/ui/page-focus.test.ts`, casos de matéria/sequência em
 `npm run build:cap` passam. Toque, teclado, TalkBack e o gesto voltar nativo
 continuam dependendo de validação em aparelho.
 
+### Correções P5 — riscos Android
+
+- **Backup:** `android:allowBackup="false"` no `<application>`; não há
+  `fullBackupContent`/`dataExtractionRules`. A cópia de dados continua sendo o
+  export/import manual. Ao iniciar, uma chave que o Keystore não decifra é
+  apagada e tratada como **Não configurada** (`readKey`), sem derrubar o app.
+- **Teclado:** `android:windowSoftInputMode="adjustResize"` na MainActivity. O
+  sheet do Professor usa `visualViewport` (`--reta-vvh` e
+  `--reta-keyboard-inset`) para limitar a altura à área visível e subir acima
+  do IME: o cabeçalho e o campo de texto continuam na tela.
+- **Voltar:** com um campo de texto focado, o primeiro voltar só faz `blur`
+  (fecha o teclado); o segundo fecha o overlay pelo `useBackOverlay`; só depois
+  o histórico/navegação é considerado (`decideBackAction` → `blur-field`).
+- **Alarme exato:** antes de agendar, `checkExactNotificationSetting()` decide
+  entre `isExactNotification` exato e inexato (`alarmSchedulePlan`); negado ou
+  indisponível, o plugin usa `setAndAllowWhileIdle` (inexato) e uma
+  `SecurityException` numa corrida de permissão é reagendada como inexata, sem
+  quebrar o timer. A sessão e Ajustes mostram o aviso não bloqueante
+  **Alarme exato desativado: o aviso pode atrasar alguns minutos.** com
+  **Permitir**, que abre a configuração do Android.
+
+Testes novos: `src/lib/android/visual-viewport.test.ts`, casos de teclado em
+`back-navigation.test.ts`, recuperação do Keystore em `keys.test.ts` e a
+decisão exato/inexato em `exact-alarm.test.ts`. No aparelho ainda é preciso
+validar o IME real, o gesto voltar, o restore/Keystore invalidado e o
+`SecurityException` com `SCHEDULE_EXACT_ALARM` revogado.
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**
