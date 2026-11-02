@@ -1,14 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { NOTIFICATIONS_DENIED_MESSAGE } from "../feedback/error-copy.ts";
 import {
+  alertLock,
+  alertLockHint,
   appVersionLabel,
   batteryStatus,
+  canSaveKey,
   exactAlarmStatus,
+  formatStudyTimeTyping,
   keySaveLabel,
+  keySaveNeedsConfirm,
   keyStatus,
-  remindersStatus,
+  notificationsCard,
+  NOTIFICATIONS_CARD_HINT,
+  parseStudyTime,
   storageStatus,
+  studyTimeValue,
   testConnectionLabel,
   testConnectionMessage,
 } from "./settings-status.ts";
@@ -34,37 +41,104 @@ describe("status da chave xAI", () => {
     assert.equal(keySaveLabel(false), "Salvar chave");
     assert.equal(keySaveLabel(true), "Atualizar chave");
   });
+
+  it("salvar só habilita com texto no campo (trim)", () => {
+    assert.equal(canSaveKey("xai-abc"), true);
+    assert.equal(canSaveKey("  xai-abc  "), true);
+    for (const value of ["", "   ", "\n\t"]) assert.equal(canSaveKey(value), false);
+  });
+
+  it("sobrescrever uma chave salva pede confirmação; salvar a mesma não", () => {
+    assert.equal(keySaveNeedsConfirm("xai-antiga", "xai-nova"), true);
+    assert.equal(keySaveNeedsConfirm("xai-antiga", " xai-antiga "), false);
+    assert.equal(keySaveNeedsConfirm("", "xai-nova"), false);
+    assert.equal(keySaveNeedsConfirm("xai-antiga", ""), false);
+  });
 });
 
-describe("status dos lembretes", () => {
-  it("permissão concedida no Android fala do agendamento no aparelho", () => {
-    const status = remindersStatus("granted", true);
-    assert.equal(status.label, "Ativadas");
-    assert.equal(status.tone, "ok");
-    assert.match(status.hint, /próprio aparelho/);
+describe("cartão único de permissão de notificações", () => {
+  it("concedida mostra Ativadas e nenhum botão", () => {
+    const card = notificationsCard("granted", true);
+    assert.equal(card.label, "Ativadas");
+    assert.equal(card.tone, "ok");
+    assert.equal(card.action, null);
+    assert.equal(card.actionLabel, null);
+    assert.match(card.hint, /próprio aparelho/);
   });
 
-  it("permissão concedida na web fala da aba aberta", () => {
-    const status = remindersStatus("granted", false);
-    assert.equal(status.label, "Ativadas");
-    assert.match(status.hint, /Reta aberto/);
+  it("não pedida usa o texto único e oferece Ativar notificações", () => {
+    const card = notificationsCard("default", true);
+    assert.equal(card.label, "Não pedida");
+    assert.equal(card.tone, "muted");
+    assert.equal(card.hint, NOTIFICATIONS_CARD_HINT);
+    assert.equal(card.action, "request");
+    assert.equal(card.actionLabel, "Ativar notificações");
   });
 
-  it("permissão negada usa o texto padronizado de feedback", () => {
-    const status = remindersStatus("denied", true);
-    assert.equal(status.label, "Bloqueadas");
-    assert.equal(status.tone, "warn");
-    assert.equal(status.hint, NOTIFICATIONS_DENIED_MESSAGE);
-    assert.equal(
-      status.hint,
-      "Lembretes desativados. Você não vai receber aviso do timer.",
-    );
+  it("bloqueada usa o mesmo texto e abre as configurações", () => {
+    const card = notificationsCard("denied", true);
+    assert.equal(card.label, "Bloqueadas");
+    assert.equal(card.tone, "warn");
+    assert.equal(card.hint, NOTIFICATIONS_CARD_HINT);
+    assert.equal(card.action, "settings");
+    assert.equal(card.actionLabel, "Abrir configurações");
   });
 
-  it("pedido ainda não feito e ambiente sem suporte têm rótulos próprios", () => {
-    assert.equal(remindersStatus("default", false).label, "Não ativadas");
-    assert.equal(remindersStatus("unsupported", true).label, "Indisponível");
-    assert.equal(remindersStatus("unsupported", false).label, "Indisponível");
+  it("ambiente sem suporte não inventa uma ação", () => {
+    const card = notificationsCard("unsupported", false);
+    assert.equal(card.label, "Indisponível");
+    assert.equal(card.action, null);
+  });
+});
+
+describe("travas dos controles dependentes", () => {
+  it("permissão concedida e modo silencioso desligado libera", () => {
+    assert.equal(alertLock("granted", false), null);
+    assert.equal(alertLockHint(null), null);
+  });
+
+  it("qualquer permissão diferente de concedida trava pelo motivo da permissão", () => {
+    for (const permission of ["denied", "default", "unsupported"] as const) {
+      assert.equal(alertLock(permission, false), "permission");
+    }
+    assert.match(alertLockHint("permission") ?? "", /Ative as notificações/);
+  });
+
+  it("modo silencioso trava mesmo com a permissão concedida", () => {
+    assert.equal(alertLock("granted", true), "quiet");
+    assert.match(alertLockHint("quiet") ?? "", /modo silencioso/);
+  });
+});
+
+describe("horário de estudo", () => {
+  it("o minuto sempre aparece com dois dígitos", () => {
+    assert.equal(studyTimeValue(14, 0), "14:00");
+    assert.equal(studyTimeValue(9, 5), "09:05");
+    assert.equal(studyTimeValue(23, 59), "23:59");
+  });
+
+  it("valores fora da faixa são normalizados, sem mudar o modelo", () => {
+    assert.equal(studyTimeValue(28, 70), "23:59");
+    assert.equal(studyTimeValue(-1, -1), "00:00");
+    assert.equal(studyTimeValue(Number.NaN, Number.NaN), "00:00");
+  });
+
+  it("lê o HH:MM do seletor e rejeita vazio/inválido", () => {
+    assert.deepEqual(parseStudyTime("14:00"), { hour: 14, minute: 0 });
+    assert.deepEqual(parseStudyTime(" 8:05 "), { hour: 8, minute: 5 });
+    assert.equal(parseStudyTime(""), null);
+    assert.equal(parseStudyTime("24:00"), null);
+    assert.equal(parseStudyTime("12:60"), null);
+    assert.equal(parseStudyTime("12"), null);
+  });
+
+  it("a digitação ganha os dois pontos e o minuto de dois dígitos", () => {
+    assert.equal(formatStudyTimeTyping("1400"), "14:00");
+    assert.equal(formatStudyTimeTyping("9"), "9");
+    assert.equal(formatStudyTimeTyping("14:0"), "14:0");
+    assert.equal(formatStudyTimeTyping("14:00:00"), "14:00");
+    assert.equal(formatStudyTimeTyping("abc14h00"), "14:00");
+    assert.equal(formatStudyTimeTyping(""), "");
   });
 });
 
