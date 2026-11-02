@@ -420,6 +420,53 @@ export function planDayRows(
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * Estado vazio e diagnóstico de questões
+ * ------------------------------------------------------------------ */
+
+/**
+ * Total de segundos realmente estudados. A sessão criada ao abrir um bloco
+ * começa com `elapsedSec: 0` e só passa a contar depois do primeiro segundo,
+ * a mesma regra da sequência.
+ */
+export function totalStudiedSeconds(sessions: StudySession[]): number {
+  return sessions.reduce((sum, session) => {
+    const seconds = Number.isFinite(session.elapsedSec) ? Math.max(0, session.elapsedSec) : 0;
+    return sum + seconds;
+  }, 0);
+}
+
+/** Questões respondidas: acertos + erros registrados nas sessões. */
+export function totalAnsweredQuestions(sessions: StudySession[]): number {
+  return sessions.reduce((sum, session) => {
+    const correct = Number.isFinite(session.correct) ? Math.max(0, session.correct) : 0;
+    const wrong = Number.isFinite(session.wrong) ? Math.max(0, session.wrong) : 0;
+    return sum + correct + wrong;
+  }, 0);
+}
+
+/**
+ * Estado vazio da tela: nenhum segundo estudado e nenhuma questão respondida.
+ * Sessões de bloco abertas e não iniciadas não contam.
+ */
+export function isEmptyProgress(sessions: StudySession[]): boolean {
+  return totalStudiedSeconds(sessions) === 0 && totalAnsweredQuestions(sessions) === 0;
+}
+
+/**
+ * `true` quando já existe dado real para o diagnóstico: questão respondida em
+ * alguma sessão ou erro anotado no caderno (inclusive externo).
+ */
+export function hasQuestionDiagnostics(input: {
+  sessions: StudySession[];
+  mistakes: Mistake[];
+}): boolean {
+  return totalAnsweredQuestions(input.sessions) > 0 || input.mistakes.length > 0;
+}
+
+export const DIAGNOSIS_TITLE = "Diagnóstico de questões e erros";
+export const DIAGNOSIS_PLACEHOLDER = "Aparece após sua primeira sessão com questões.";
+
 export const EMPTY_PROGRESS_TITLE = "Seu progresso começa no primeiro bloco";
 export const EMPTY_PROGRESS_MESSAGE = "Estude o primeiro bloco para ver seu progresso";
 

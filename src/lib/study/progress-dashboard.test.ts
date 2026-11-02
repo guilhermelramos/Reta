@@ -7,14 +7,19 @@ import {
   examCountdown,
   firstFoldMetrics,
   formatHoursCompact,
+  hasQuestionDiagnostics,
   heatmapLevel,
+  isEmptyProgress,
   planDayRows,
   planVsReal,
   reasonRows,
+  totalAnsweredQuestions,
+  totalStudiedSeconds,
   weekEnd,
   weekProgress,
   weekStart,
 } from "./progress-dashboard.ts";
+import { currentStreak } from "./progress-metrics.ts";
 import type { BlockKind, Mistake, PlanBlock, PlanDay, StudySession } from "./types.ts";
 
 const TODAY = "2026-11-01";
@@ -338,5 +343,92 @@ describe("emptyProgressCopy: estado vazio", () => {
     assert.equal(copy.message, EMPTY_PROGRESS_MESSAGE);
     assert.equal(copy.action?.label, "Ir para Hoje");
     assert.equal(copy.action?.href, "/");
+  });
+});
+
+describe("currentStreak: só conta dia com tempo estudado", () => {
+  it("abrir o bloco sem iniciar o cronômetro não conta como dia estudado", () => {
+    const days = [day("2026-10-31", [block("A", 60)]), day(TODAY, [block("A", 60)])];
+    const sessions = [session({ kind: "A", status: "active", date: TODAY, elapsedSec: 0 })];
+
+    assert.equal(currentStreak(days, sessions, TODAY), 0);
+    assert.equal(firstFoldMetrics({ days, sessions, today: TODAY })[0].value, "0");
+  });
+
+  it("não soma hoje quando a sessão foi aberta mas não estudou nada", () => {
+    const days = [day("2026-10-31", [block("A", 60)]), day(TODAY, [block("A", 60)])];
+    const sessions = [
+      session({ kind: "A", status: "done", date: "2026-10-31", elapsedSec: 600 }),
+      session({ kind: "A", status: "active", date: TODAY, elapsedSec: 0 }),
+    ];
+
+    assert.equal(currentStreak(days, sessions, TODAY), 1);
+  });
+
+  it("conta hoje e ontem quando as duas sessões acumularam segundos", () => {
+    const days = [day("2026-10-31", [block("A", 60)]), day(TODAY, [block("A", 60)])];
+    const sessions = [
+      session({ kind: "A", status: "done", date: "2026-10-31", elapsedSec: 1800 }),
+      session({ kind: "A", status: "active", date: TODAY, elapsedSec: 10 }),
+    ];
+
+    assert.equal(currentStreak(days, sessions, TODAY), 2);
+  });
+});
+
+describe("isEmptyProgress: condição do estado vazio", () => {
+  it("é vazio sem tempo estudado e sem questão respondida", () => {
+    assert.equal(isEmptyProgress([]), true);
+    assert.equal(
+      isEmptyProgress([session({ kind: "A", status: "active", elapsedSec: 0 })]),
+      true,
+    );
+  });
+
+  it("deixa de ser vazio com tempo estudado ou com questão respondida", () => {
+    assert.equal(
+      isEmptyProgress([session({ kind: "A", status: "active", elapsedSec: 30 })]),
+      false,
+    );
+    assert.equal(
+      isEmptyProgress([session({ kind: "A", status: "active", elapsedSec: 0, correct: 1 })]),
+      false,
+    );
+  });
+
+  it("soma segundos estudados e questões respondidas", () => {
+    const sessions = [
+      session({ kind: "A", status: "done", elapsedSec: 90, correct: 2, wrong: 1 }),
+      session({ kind: "B", status: "done", elapsedSec: 30, correct: 1, wrong: 0 }),
+    ];
+    assert.equal(totalStudiedSeconds(sessions), 120);
+    assert.equal(totalAnsweredQuestions(sessions), 4);
+  });
+});
+
+describe("hasQuestionDiagnostics: cartões de questões e erros", () => {
+  it("fica oculto sem questão respondida nem erro no caderno", () => {
+    assert.equal(hasQuestionDiagnostics({ sessions: [], mistakes: [] }), false);
+    assert.equal(
+      hasQuestionDiagnostics({
+        sessions: [session({ kind: "A", status: "active", elapsedSec: 600 })],
+        mistakes: [],
+      }),
+      false,
+    );
+  });
+
+  it("aparece com questão respondida", () => {
+    assert.equal(
+      hasQuestionDiagnostics({
+        sessions: [session({ kind: "A", status: "done", elapsedSec: 600, correct: 1 })],
+        mistakes: [],
+      }),
+      true,
+    );
+  });
+
+  it("aparece com erro anotado no caderno mesmo sem sessão", () => {
+    assert.equal(hasQuestionDiagnostics({ sessions: [], mistakes: [mistake()] }), true);
   });
 });

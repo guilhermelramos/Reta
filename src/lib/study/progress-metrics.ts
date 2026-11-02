@@ -62,12 +62,19 @@ export type RetaCoverage = {
   status: "vazio" | "adiantado" | "no ritmo" | "atrasado";
 };
 
-/** Datas com alguma sessão realmente estudada (mesma regra usada na página). */
+/**
+ * Datas com algum tempo realmente estudado (mesma regra usada na página).
+ *
+ * Abrir um bloco cria uma sessão com `elapsedSec: 0`; ela não pode contar como
+ * dia estudado nem alimentar a sequência. Só entra quem já acumulou segundos,
+ * independentemente de a sessão estar ativa ou concluída.
+ */
 export function studiedDates(sessions: StudySession[]): Set<string> {
   return new Set(
     sessions
-      .filter((s) => s.status === "done" || s.status === "active" || s.elapsedSec >= 60)
-      .map((s) => s.date),
+      .filter((s) => Number.isFinite(s.elapsedSec) && s.elapsedSec > 0)
+      .map((s) => s.date)
+      .filter(Boolean),
   );
 }
 
