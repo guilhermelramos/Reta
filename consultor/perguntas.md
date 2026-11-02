@@ -73,3 +73,34 @@ Typecheck ok, 299/299 testes do app passando, `build:cap` + `assembleDebug` ok (
 (c3) Ajustes: a ordem das seções, os textos de status e a linha de bateria estão claros? Algo deveria sair, ir para "Avançado" ou ganhar confirmação (ex.: remover chave, restaurar backup)?
 (c4) Importar: o fluxo escolher → pré-visualizar → confirmar está claro para quem nunca viu a planilha modelo? A substituição do plano sem diálogo é segura o bastante? A pré-visualização (3 linhas) e os erros são suficientes?
 Responda no formato VEREDITO / PROBLEMAS / MELHORIAS (prioridade + esforço) / COMPARAÇÃO (Anki, Duolingo, Forest ou Quizlet) / FONTES.
+
+## P4 — momento (c) revisão por tela: Erros + Plano + Progresso (+ confirmação da P3) — 2026-11-02 (UTC-3)
+
+**Contexto.** Branch `integracao-fase2` (fora da main), agora com `ui/p3-hoje`, `ui/p3-sessao`, `ui/p3-ajustes`, `ui/p3-importar`, `ui/erros`, `ui/plano` e `ui/progresso`. A P3 está registrada em `DECISOES.md`: todos os itens eram de esforço P e foram aplicados; o TimePicker M3 foi para `MELHORIAS.md`. Typecheck ok, 428/428 testes do app passando, `build:cap` + `assembleDebug` ok (APK em `/workspace/apk/reta-integracao-fase2-debug.apk`).
+
+**Correções da P3, para confirmar:**
+- **Hoje:** o banner redundante saiu, "Só 15 min" aparece só no cartão herói e "Preparar semana" ficou abaixo dos blocos, como sugestão secundária.
+- **Sessão em paisagem:** o split view não repete o H1, o CTA "sem IA" não é mais cortado e os chips do professor ficam numa linha só.
+- **Nomenclatura:** "Planilha" é o arquivo importado e "Plano" é a agenda. O passo 2 das boas-vindas aponta para a aba Plano.
+- **Ajustes:** as seções agora são Estudo e notificações, Plano e dados, Professor IA (com "Avançado") e Sobre. Há um único cartão "Permissão de notificações" com badge do estado real. Os switches dependentes ficam desabilitados sem permissão, sem perder o valor salvo. "Salvar chave" fica desabilitado com o campo vazio. Remover ou substituir a chave e restaurar o backup pedem confirmação em `alertdialog`. `storage.persist()` é chamado sozinho, e o uso local foi para "Avançado".
+- **Importar:** a prévia vem compacta e o botão de confirmar fica visível sem rolar. Há acordeão de colunas e um snackbar com "Desfazer".
+
+**Redesign novo:**
+- **Erros:** herói "Revisar N erros agora" ou estado positivo, FilterChips de status, matéria e motivo, e cartões compactos com menu ⋮ (Editar/Excluir com confirmação). "Registrar erro" abre uma bottom sheet, e a revisão mostra um erro por vez com timer de 5 min e Errei/Difícil/Fácil.
+- **Plano:** topo fixo com "Planilha: nome · período · N dias" e menu ⋮ (Trocar planilha/Novo dia/Recalcular atrasados). Há um cartão de atrasados com prévia, as semanas são agrupadas, cada dia ocupa uma linha de 68dp com estado em ícone e texto e a tela abre rolada no dia de hoje. O detalhe abre numa bottom sheet (Estudar/Editar/Excluir).
+- **Progresso:** três métricas (sequência, horas na semana contra o planejado e % do plano), mapa de calor de 28 dias, planejado × real por assunto, assuntos mais fracos, motivos dos erros, dias do plano compactos e um estado vazio neutro com "Ir para Hoje".
+
+**Método dos screenshots:** o mesmo da P3 (bundle `dist-cap` sem API no Playwright, viewport de celular, DPR 2, plano de 7 dias importado no onboarding). Script: `consultor/shots/p4/shots4.mjs`, log: `consultor/shots/p4/log.txt`.
+
+**Screenshots** (`/workspace/reta-android/consultor/shots/p4/`), com sufixo `-{light|dark}-{360|320|paisagem}.png`:
+- `erros-*`, `plano-*`, `progresso-*` (novos)
+- `hoje-*`, `hoje-menu-*`, `sessao-*`, `sessao-chat-*`, `ajustes-*`, `importar-*`, `importar-previa-*` (para confirmar a P3)
+
+**Limitações:** as mesmas da P3. Só existe tema escuro, então light = dark. Os shots `fullPage` desenham a barra inferior fixa no meio. Sem sessões nem erros, Erros e Progresso aparecem no estado vazio. Os plugins nativos aparecem no estado "web". A varredura de alvos menores que 48px em 360 só achou elementos ocultos.
+
+**Perguntas objetivas.**
+(c1) Confirmação curta da P3: os 9 problemas foram resolvidos? Responda sim/não por item e diga o que sobrou.
+(c2) Erros: a hierarquia herói → filtros → lista e o fluxo de revisão estão claros? O estado vazio basta?
+(c3) Plano: a lista por semana, a linha de 68dp e a sheet de detalhe funcionam bem num celular de 320px? O menu ⋮ esconde ações demais?
+(c4) Progresso: as três métricas e o mapa de calor são legíveis em 360/320? O que corta para reduzir a rolagem?
+Responda no formato VEREDITO / PROBLEMAS / MELHORIAS (prioridade + esforço) / COMPARAÇÃO (Anki, Duolingo, Forest ou Quizlet) / FONTES.
