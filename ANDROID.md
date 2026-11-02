@@ -722,6 +722,38 @@ que levam ao caderno, o contorno de hoje em tela pequena, a rolagem até o fim
 sem a barra de navegação cobrir o último cartão e o estado vazio com o CTA
 **Ir para Hoje**.
 
+## Correções P5
+
+- **Importar:** em paisagem baixa (largura ≥ 600px) a prévia vira um grid
+  `1fr 280px` com gap de 16px. À esquerda ficam a lista rolável de dias
+  (`max-height: 220px`) e **Ajustar colunas**; à direita, o resumo, o aviso de
+  substituição e **Importar** (48px) / **Cancelar**.
+- **Plano (detalhe do dia):** a folha usa `max-height: 90dvh` em coluna; alça,
+  data e **X** de 48px ficam fixos, os blocos rolam no meio e o rodapé com
+  **Estudar este bloco**, **Editar dia** e **Excluir dia** fica sempre visível
+  em 320×568 e em paisagem (na horizontal, os três botões dividem a linha).
+- **Progresso:** `resolveSubject` deriva a matéria do bloco A/B/R do dia do
+  plano quando a sessão/questão não traz `subject`; só cai em “Bloco A/B”
+  quando o plano não tem aquele dia. A sequência passou a contar dias
+  consecutivos com estudo terminando hoje (ou ontem), com a mesma chave de data
+  do heatmap — 7 dias pintados valem 7 na métrica.
+- **Erros (revisão):** a revisão um a um pede o mesmo modo foco da Sessão
+  (`usePageFocus`), ocultando NavigationBar e NavigationRail, mantendo
+  **Voltar ao caderno** (48px) e o voltar do Android por `useBackOverlay`.
+- **Nomenclatura:** o arquivo é **planilha**; a agenda continua **Plano**.
+  “PLANO ATUAL” virou **PLANILHA ATUAL** em Importar e o apoio de Ajustes diz
+  “substitui a planilha atual”.
+- **Chips:** as faixas de filtros de Erros e de sugestões do Professor ganharam
+  `mask-image` com fade em 88% e `padding-right` de 24px.
+- **Professor/Sessão:** placeholder curto “Pergunte sobre a matéria…”; na
+  coluna esquerda da Sessão em paisagem, “N de M min estudados” sem truncar.
+
+Testes novos: `src/lib/ui/page-focus.test.ts`, casos de matéria/sequência em
+`progress-dashboard.test.ts` e a sub-linha de paisagem em
+`session-timer.test.ts`. `npm run typecheck`, os 475 testes do app e
+`npm run build:cap` passam. Toque, teclado, TalkBack e o gesto voltar nativo
+continuam dependendo de validação em aparelho.
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**
