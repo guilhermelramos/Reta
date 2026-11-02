@@ -1,5 +1,5 @@
-import { addDays, daysBetween, formatShortDate } from "@/lib/study/time";
-import type { Mistake } from "@/lib/study/types";
+import { addDays, daysBetween, formatShortDate } from "./time.ts";
+import type { Mistake } from "./types.ts";
 
 /** Quantos passos de retenção o caderno guarda antes de considerar dominado. */
 export const SRS_MAX_STAGE = 5;
