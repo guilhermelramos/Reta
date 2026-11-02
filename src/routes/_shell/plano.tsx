@@ -177,7 +177,8 @@ function PlanPage() {
     try {
       const moved = preview.moves.length;
       const minutes = formatMin(preview.summary.minutes);
-      await importDays(preview.days);
+      // Mantém o nome da planilha ativa: reagendar não troca a origem do plano.
+      await importDays(preview.days, sheetName);
       setPreview(null);
       setNotice(
         moved === 1
@@ -195,6 +196,8 @@ function PlanPage() {
     setOpenDate(null);
     setError(null);
     setNotice("");
+    // A prévia foi calculada sobre o plano antigo; excluir um dia a invalida.
+    setPreview(null);
     setDeleteDate(day.date);
   }
 
