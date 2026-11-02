@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { MoreVertical } from "lucide-react";
+import { Download, FileUp, MoreVertical } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useBackOverlay } from "@/lib/android/use-back-overlay";
@@ -11,9 +11,11 @@ import { useStudy } from "@/lib/study/store";
 import {
   blockState,
   emptyBlocksLine,
+  isLatePending,
   loadBlocks,
   nextAction,
   prepSuggestionVisible,
+  showsShortSession,
   studiedMinutesFor,
   weekKey,
   type BlockState,
@@ -36,6 +38,10 @@ export const Route = createFileRoute("/_shell/")({
   component: TodayPage,
 });
 
+/** Filled tonal M3: âmbar sobre o fundo tonal, sem competir com o CTA do herói. */
+const TONAL_BUTTON =
+  "border-[1.5px] border-primary bg-primary-tonal text-primary hover:bg-primary-tonal";
+
 function TodayPage() {
   const study = useStudy();
   const today = saoPauloToday();
@@ -50,12 +56,9 @@ function TodayPage() {
   const emptyLine = day ? emptyBlocksLine(day.blocks) : null;
   const load = day ? dayLoad(day) : 0;
   const dueMistakes = study.mistakes.filter((mistake) => isDueToday(mistake, today));
-  const pending =
-    day?.blocks.find(
-      (b) => b.plannedMin > 0 && blockState(study.sessions, today, b.kind) === "idle",
-    ) ?? null;
-  const nag =
-    !study.settings.quiet && study.settings.alerts.pending && pending && nowMin >= studyMin + 45;
+  // O antigo banner virou o badge "Atrasado" no próprio cartão; ele respeita
+  // os mesmos ajustes de aviso de bloco pendente e modo silencioso.
+  const lateAlerts = !study.settings.quiet && study.settings.alerts.pending;
 
   return (
     <div className="mx-auto flex w-full max-w-[600px] flex-col gap-3">
@@ -89,33 +92,32 @@ function TodayPage() {
               action={action}
               spent={studiedMinutesFor(study.sessions, day.date, action.block.kind)}
               hasPackage={Boolean(study.packageFor(day.date, action.block.kind))}
+              late={lateAlerts && isLatePending(action.state, nowMin, studyMin)}
             />
           ) : (
             <RestCard due={dueMistakes.length} allDone={load > 0} />
           )}
 
-          {nag && pending ? (
-            <p className="no-print rounded-xl border border-primary/40 bg-surface px-4 py-3 text-sm">
-              Bloco de hoje ainda não iniciado: {KIND_LABEL[pending.kind]} ·{" "}
-              {formatMin(pending.plannedMin)}
-            </p>
-          ) : null}
-
           {others.length ? (
-            <section aria-labelledby="blocos-hoje" className="flex flex-col gap-3">
+            /* 16px entre o cartão acima e o subtítulo: gap de 12px + 4px. */
+            <section aria-labelledby="blocos-hoje" className="mt-1 flex flex-col gap-3">
               <h2 id="blocos-hoje" className="text-lg">
                 Blocos de hoje
               </h2>
               <ul className="flex flex-col gap-3">
-                {others.map((block) => (
-                  <BlockCard
-                    key={block.kind}
-                    date={day.date}
-                    block={block}
-                    state={blockState(study.sessions, day.date, block.kind)}
-                    spent={studiedMinutesFor(study.sessions, day.date, block.kind)}
-                  />
-                ))}
+                {others.map((block) => {
+                  const state = blockState(study.sessions, day.date, block.kind);
+                  return (
+                    <BlockCard
+                      key={block.kind}
+                      date={day.date}
+                      block={block}
+                      state={state}
+                      spent={studiedMinutesFor(study.sessions, day.date, block.kind)}
+                      late={lateAlerts && isLatePending(state, nowMin, studyMin)}
+                    />
+                  );
+                })}
               </ul>
             </section>
           ) : null}
@@ -181,15 +183,17 @@ function TodayMenu() {
           <DropdownMenu.Item asChild>
             <Link
               to="/importar"
-              className="flex min-h-12 items-center rounded-lg px-3 text-sm text-fg outline-none data-[highlighted]:bg-surface"
+              className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm text-fg outline-none data-[highlighted]:bg-surface"
             >
+              <FileUp className="size-5 shrink-0" aria-hidden />
               Trocar planilha
             </Link>
           </DropdownMenu.Item>
           <DropdownMenu.Item
             onSelect={() => window.setTimeout(() => window.print(), 0)}
-            className="flex min-h-12 items-center rounded-lg px-3 text-sm text-fg outline-none data-[highlighted]:bg-surface"
+            className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm text-fg outline-none data-[highlighted]:bg-surface"
           >
+            <Download className="size-5 shrink-0" aria-hidden />
             Exportar resumo
           </DropdownMenu.Item>
         </DropdownMenu.Content>
@@ -203,11 +207,13 @@ function HeroCard({
   action,
   spent,
   hasPackage,
+  late,
 }: {
   date: string;
   action: { block: PlanBlock; state: "idle" | "active" };
   spent: number;
   hasPackage: boolean;
+  late: boolean;
 }) {
   const { block, state } = action;
   return (
@@ -215,7 +221,10 @@ function HeroCard({
       aria-label="Próxima ação"
       className="rounded-xl border border-primary bg-surface-2 p-5"
     >
-      <p className="text-sm font-semibold text-primary">{KIND_LABEL[block.kind]}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-semibold text-primary">{KIND_LABEL[block.kind]}</p>
+        {late ? <StateChip state="idle" late /> : null}
+      </div>
       <h2 className="mt-1 text-2xl leading-snug">{topicLine(block.content, 140)}</h2>
       <p className="mt-2 text-sm text-muted">
         {state === "active" ? "Em andamento · " : ""}
@@ -229,8 +238,8 @@ function HeroCard({
             {state === "active" ? "Continuar" : "Começar bloco"}
           </Link>
         </Button>
-        {block.plannedMin > 15 ? (
-          <Button variant="ghost" asChild>
+        {showsShortSession(state, block.plannedMin) ? (
+          <Button variant="ghost" className="text-muted" asChild>
             <Link to="/sessao" search={{ dia: date, bloco: block.kind, modo: "15", auto: 1 }}>
               Só 15 min
             </Link>
@@ -246,11 +255,13 @@ function BlockCard({
   block,
   state,
   spent,
+  late,
 }: {
   date: string;
   block: PlanBlock;
   state: BlockState;
   spent: number;
+  late: boolean;
 }) {
   return (
     <li className="rounded-xl border border-border bg-surface p-4">
@@ -259,43 +270,40 @@ function BlockCard({
           <p className="text-sm text-muted">{KIND_LABEL[block.kind]}</p>
           <h3 className="mt-1 text-lg leading-snug">{topicLine(block.content, 110)}</h3>
         </div>
-        <StateChip state={state} />
+        <StateChip state={state} late={late} />
       </div>
       <p className="mt-2 text-sm text-muted">
         {formatMin(block.plannedMin)}
         {spent > 0 ? ` · ${spent} min estudados` : ""}
       </p>
       <div className="no-print mt-3 flex flex-wrap gap-2">
-        <Button variant="surface" asChild>
+        <Button className={TONAL_BUTTON} asChild>
           <Link to="/sessao" search={{ dia: date, bloco: block.kind, modo: "cheio", auto: 1 }}>
             {state === "active" ? "Continuar" : state === "done" ? "Reabrir" : "Iniciar"}
           </Link>
         </Button>
-        {block.plannedMin > 15 ? (
-          <Button variant="ghost" asChild>
-            <Link to="/sessao" search={{ dia: date, bloco: block.kind, modo: "15", auto: 1 }}>
-              Só 15 min
-            </Link>
-          </Button>
-        ) : null}
       </div>
     </li>
   );
 }
 
-function StateChip({ state }: { state: BlockState }) {
+function StateChip({ state, late = false }: { state: BlockState; late?: boolean }) {
+  const label = state === "active" ? "Em andamento" : state === "done" ? "Concluído" : "Pendente";
+  const isLate = state === "idle" && late;
   return (
     <span
       className={cn(
         "shrink-0 rounded-full border px-2 py-1 text-xs",
-        state === "active"
-          ? "border-primary/50 text-primary"
-          : state === "done"
-            ? "border-border bg-surface-2 text-muted"
-            : "border-border text-muted",
+        isLate
+          ? "border-clay/50 text-clay-text"
+          : state === "active"
+            ? "border-primary/50 text-primary"
+            : state === "done"
+              ? "border-border bg-surface-2 text-muted"
+              : "border-border text-muted",
       )}
     >
-      {state === "active" ? "Em andamento" : state === "done" ? "Concluído" : "Pendente"}
+      {isLate ? "Atrasado" : label}
     </span>
   );
 }
@@ -350,7 +358,7 @@ function PrepSuggestion({ today }: { today: string }) {
         </>
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant={finished ? "surface" : "primary"} onClick={() => startPrep(today)}>
+          <Button className={TONAL_BUTTON} onClick={() => startPrep(today)}>
             {prep.failures.length ? "Tentar de novo" : "Preparar"}
           </Button>
           <Button variant="ghost" onClick={() => void dismissPrepWeek(weekKey(today))}>

@@ -89,7 +89,8 @@ function Frame() {
       >
         Ir para o conteúdo
       </a>
-      <div className={focusMode ? undefined : "mx-auto flex w-full max-w-[680px]"}>
+      {/* Em ≥600px a coluna de conteúdo centraliza na área à direita do rail. */}
+      <div className={focusMode ? undefined : "flex w-full"}>
         {focusMode ? null : (
           /* Navigation rail M3: 80dp, ícone + rótulo e indicador em pílula. */
           <aside className="no-print sticky top-0 hidden h-screen w-20 shrink-0 flex-col items-center gap-6 border-r border-border px-1 py-6 min-[600px]:flex">
@@ -137,7 +138,7 @@ function Frame() {
             className={
               focusMode
                 ? undefined
-                : "px-4 py-6 pb-[calc(6rem_+_env(safe-area-inset-bottom))] min-[600px]:py-8 min-[600px]:pb-12"
+                : "px-4 py-6 pb-[calc(6rem_+_env(safe-area-inset-bottom))] min-[600px]:px-6 min-[600px]:py-8 min-[600px]:pb-12"
             }
           >
             <Outlet />
