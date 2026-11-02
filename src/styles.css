@@ -12,6 +12,8 @@
   --color-primary-tonal: #262016;
   --color-clay: #c4654a;
   --color-clay-text: #f0c2b6;
+  /* Verde de conclusão: check do estado "Feito" na lista do Plano. */
+  --color-success: #81c784;
   --color-border: #343c31;
   --font-sans: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Fraunces", ui-serif, Georgia, serif;

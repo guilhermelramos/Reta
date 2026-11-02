@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, CircleDot, Moon } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Moon } from "lucide-react";
 import {
   dayMonth,
   PLAN_DAY_STATE_LABEL,
@@ -12,12 +12,25 @@ import { cn } from "@/lib/cn";
 
 const STATE_ICON: Record<PlanDayState, typeof CheckCircle2> = {
   feito: CheckCircle2,
-  parcial: CircleDot,
+  parcial: Clock,
   pendente: Circle,
   descanso: Moon,
 };
 
-/** Linha de lista M3 de 68dp: data/dia, assuntos, minutos e estado. */
+/** Cor de cada estado: verde concluído, âmbar em andamento, cinza o resto. */
+const STATE_ICON_COLOR: Record<PlanDayState, string> = {
+  feito: "text-success",
+  parcial: "text-primary",
+  pendente: "text-muted",
+  descanso: "text-muted",
+};
+
+/**
+ * Linha de lista M3 de 72dp: data/dia, assuntos em até duas linhas e, à
+ * direita, o total de minutos sobre o ícone do estado. O texto do estado
+ * (Feito/Parcial/Pendente/Descanso) fica no `aria-label`/`title` do ícone,
+ * liberando a coluna central para as matérias.
+ */
 export function PlanDayRow({
   day,
   sessions,
@@ -33,6 +46,7 @@ export function PlanDayRow({
   const { title, detail } = planDayTopics(day);
   const load = day.blocks.reduce((sum, block) => sum + block.plannedMin, 0);
   const Icon = STATE_ICON[state];
+  const stateLabel = PLAN_DAY_STATE_LABEL[state];
   const isToday = day.date === today;
 
   return (
@@ -42,9 +56,9 @@ export function PlanDayRow({
       aria-current={isToday ? "date" : undefined}
       aria-label={`${formatWeekday(day.date)}, ${dayMonth(day.date)}. ${title}. ${
         load > 0 ? formatMin(load) : "Sem carga"
-      }. ${PLAN_DAY_STATE_LABEL[state]}.`}
+      }. ${stateLabel}.`}
       className={cn(
-        "flex min-h-[68px] w-full items-center gap-3 rounded-xl border bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-2",
+        "flex min-h-[72px] w-full items-center gap-3 rounded-xl border bg-surface px-4 py-3 text-left transition-colors hover:bg-surface-2",
         isToday ? "border-primary" : "border-border",
       )}
     >
@@ -62,14 +76,12 @@ export function PlanDayRow({
         <span className="text-xs tabular-nums text-muted">
           {load > 0 ? formatMin(load) : "Sem carga"}
         </span>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 text-xs font-medium",
-            state === "feito" ? "text-primary" : state === "parcial" ? "text-fg" : "text-muted",
-          )}
-        >
-          <Icon className="size-4" aria-hidden />
-          {PLAN_DAY_STATE_LABEL[state]}
+        <span className="flex size-5 items-center justify-center" title={stateLabel}>
+          <Icon
+            className={cn("size-5", STATE_ICON_COLOR[state])}
+            role="img"
+            aria-label={stateLabel}
+          />
         </span>
       </span>
     </button>
