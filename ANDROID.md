@@ -385,26 +385,50 @@ introdução continuam nos mesmos serviços.
 
 | Elemento | Comportamento |
 | --- | --- |
-| Professor IA | Linha "Chave xAI" com status **Conectada / Não configurada**; campo de 48dp; **Salvar/Atualizar chave**, **Remover chave** (cofre seguro) e **Testar conexão** (idle, testando, conexão ok e erro com `InlineError`). **Avançado** recolhe as chaves opcionais de Perplexity/Gemini/Claude |
-| Notificações | Status da permissão (ativadas/bloqueadas/não ativadas), **Ativar lembretes**, status do **alarme exato** com **Abrir configurações** quando negado, e a linha **Avisos atrasando? Toque aqui**, que abre a tela de otimização de bateria do Android (nunca bloqueia; na web mostra a orientação) |
-| Switches | Componente M3 com `role="switch"`/`aria-checked` (Radix), trilho de 52×32dp, polegar de 24/28dp e a **linha inteira** clicável (56dp+, rótulo à esquerda, apoio de 14px e switch à direita). Substituem todos os checkboxes |
-| Horário de estudo | Inputs de hora/minuto com `<label for>` e 48dp; switches e horário gravam na hora por `saveSettings` (fila local evita que uma gravação sobrescreva a outra) |
-| Aparência | Só informativo: "Tema escuro" (o modo claro continua no `MELHORIAS.md`; o app não segue o tema do sistema) |
-| Dados | Armazenamento persistente com uso/quota, exportar/restaurar backup `.json` (Filesystem + Share no APK) e **Trocar planilha** |
+| Professor IA | Linha "Chave xAI" com status **Conectada / Não configurada**; campo de 48dp; **Salvar/Atualizar chave** (desabilitado com o campo vazio), **Remover chave** (cofre seguro) e **Testar conexão** (idle, testando, conexão ok e erro com `InlineError`). **Avançado** recolhe **Quem monta o pacote**, a pesquisa na web e as chaves opcionais de Perplexity/Gemini/Claude |
+| Notificações | Um único cartão **Permissão de notificações** com badge **Ativadas / Bloqueadas / Não pedida**, a frase "Ative para receber os avisos do timer e do horário de estudo." e um botão tonal (**Ativar notificações** ou **Abrir configurações**; some quando concedida), além do status do **alarme exato** e da linha **Avisos atrasando? Toque aqui** (otimização de bateria do Android; nunca bloqueia) |
+| Switches | Componente M3 com `role="switch"`/`aria-checked` (Radix), trilho de 52×32dp, polegar de 24/28dp e a **linha inteira** clicável (56dp+, rótulo à esquerda, apoio de 14px e switch à direita). Os lembretes dependentes ficam `disabled` + `aria-disabled` e opacidade 0,38 sem permissão ou no modo silencioso, sem apagar o valor salvo |
+| Horário de estudo | Campo de texto de 48dp no formato 24 h (`14:00`, minuto sempre com dois dígitos; digitar `1400` vira `14:00`), sem mudar `studyHour`/`studyMinute`; também desabilitado quando a permissão falta ou o modo silencioso está ativo. Switches e horário gravam na hora por `saveSettings` |
+| Plano e dados | **Trocar planilha**, exportar e restaurar backup `.json` (Filesystem + Share no APK). Restaurar pede confirmação antes de aplicar. **Avançado** recolhe o uso local e o armazenamento persistente com os botões de diagnóstico |
 | Sobre | **Rever introdução** e versão (injetada no build a partir do `package.json` por `__APP_VERSION__`) |
 
 Os rótulos e estados são puros em
 [`src/lib/ui/settings-status.ts`](./src/lib/ui/settings-status.ts) (chave,
-permissão, alarme exato, bateria, teste de conexão, armazenamento e versão) e
-testados em `settings-status.test.ts`, incluído em `npm test`. Os componentes de
-lista/switch ficam em `src/components/settings/` e são usados só por Ajustes.
+permissão, travas, horário, alarme exato, bateria, teste de conexão,
+armazenamento e versão) e testados em `settings-status.test.ts`, incluído em
+`npm test`. Os componentes de lista/switch/acordeão/diálogo ficam em
+`src/components/settings/` e são usados só por Ajustes.
 Erros continuam usando `InlineError` com os textos padronizados de
 `src/lib/feedback`.
 
-Para validar no aparelho: abrir a tela de alarmes exatos e de otimização de
-bateria e ver o status mudar ao voltar, remover a chave xAI do Keystore, a
-permissão real do Android 13+ refletida na linha "Lembretes" e o TalkBack lendo
-cada switch como "ativado/desativado" com a linha inteira como alvo.
+### Correções P3 na tela Ajustes
+
+A revisão P3 do Consultor reordenou a tela em **Estudo e notificações**,
+**Plano e dados**, **Professor IA** e **Sobre**, e removeu a seção **Aparência**
+(que só anunciava o modo claro do backlog). As três repetições do aviso de
+permissão viraram um cartão único com badge do estado real e um só botão tonal.
+Os quatro lembretes dependentes e o horário ficam visualmente desabilitados
+(opacidade 0,38, `aria-disabled`, não clicáveis) enquanto a permissão não está
+concedida ou o modo silencioso está ligado; o valor salvo nunca é apagado.
+
+A chave xAI só habilita **Salvar** com texto no campo (trim). Remover ou
+substituir uma chave já salva abre um `alertdialog` M3 (`role="alertdialog"`,
+foco preso pelo Radix, fecha com Esc e com o voltar do Android via
+`useBackOverlay`, ação em cor de erro). Restaurar backup segue o mesmo padrão:
+escolhe o arquivo primeiro e só aplica depois de **Substituir todos os dados?**.
+
+O app chama `navigator.storage.persist()` sozinho ao gravar plano/importar,
+salvar chave ou restaurar backup, quando a API existe e o estado ainda não é
+persistente (`src/lib/study/storage.ts`, testado em `storage.test.ts`). O cartão
+de diagnóstico continua disponível em **Plano e dados → Avançado**.
+
+Para validar no aparelho: o seletor de permissão do Android 13+ (Ativar →
+conceder/negar e ver o cartão e os switches mudarem), a abertura da tela de
+configurações do app quando negada, o botão voltar fechando os três diálogos, a
+leitura do `alertdialog` pelo TalkBack, o teclado numérico do campo de horário e
+o resultado real de `navigator.storage.persist()` no WebView. Também: abrir a
+tela de alarmes exatos e de otimização de bateria e ver o status mudar ao voltar,
+e remover/sobrescrever a chave xAI do Keystore.
 
 ## Redesign da tela Importar (Material 3)
 
