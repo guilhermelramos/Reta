@@ -10,6 +10,8 @@ const buttonVariants = cva(
       variant: {
         primary: "bg-primary text-primary-fg hover:bg-primary/90",
         surface: "border border-border bg-surface-2 text-fg hover:border-primary/50",
+        tonal: "border-[1.5px] border-primary bg-primary-tonal text-primary hover:bg-primary/10",
+        destructive: "border border-clay/60 bg-clay/15 text-clay-text hover:bg-clay/25",
         ghost: "bg-transparent text-fg hover:bg-surface-2",
         clay: "border border-clay/40 text-clay-text hover:bg-clay/10",
       },

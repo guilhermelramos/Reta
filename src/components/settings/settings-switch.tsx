@@ -28,9 +28,10 @@ export function SettingsSwitchRow({
       checked={checked}
       onCheckedChange={onCheckedChange}
       disabled={disabled}
+      aria-disabled={disabled || undefined}
       className={cn(
         "group flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left transition-colors",
-        "hover:bg-surface-2 focus-visible:outline-offset-[-2px] disabled:opacity-50",
+        "hover:bg-surface-2 focus-visible:outline-offset-[-2px] disabled:opacity-[0.38]",
         "first:rounded-t-2xl last:rounded-b-2xl",
         className,
       )}

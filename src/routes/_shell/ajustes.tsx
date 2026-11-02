@@ -3,16 +3,12 @@ import {
   AlarmClock,
   BatteryCharging,
   Bell,
-  BellRing,
   BookOpen,
-  ChevronRight,
   Cog,
   Database,
   Download,
   FileSpreadsheet,
   KeyRound,
-  Moon,
-  SlidersHorizontal,
   Upload,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -20,6 +16,8 @@ import { ZodError } from "zod";
 import { Button } from "@/components/ui/button";
 import { ButtonSpinner } from "@/components/feedback/button-spinner";
 import { InlineError } from "@/components/feedback/inline-error";
+import { ConfirmDialog } from "@/components/settings/confirm-dialog";
+import { SettingsAccordion } from "@/components/settings/settings-accordion";
 import {
   SettingsBlock,
   SettingsButtonRow,
@@ -29,12 +27,7 @@ import {
 import { SettingsSection } from "@/components/settings/settings-section";
 import { SettingsSwitchRow } from "@/components/settings/settings-switch";
 import { pingAiClient } from "@/lib/ai/xai-client";
-import {
-  describeError,
-  genericCopy,
-  notificationsDeniedCopy,
-  type ErrorCopy,
-} from "@/lib/feedback/error-copy";
+import { describeError, genericCopy, type ErrorCopy } from "@/lib/feedback/error-copy";
 import { openBatteryOptimizationSettings } from "@/lib/native/battery";
 import { saveAndShare } from "@/lib/native/files";
 import {
@@ -49,19 +42,28 @@ import {
 import { openAppSettings } from "@/lib/native/settings";
 import type { KeyValues } from "@/lib/secure/keys";
 import { exportAll, importAll, parseBackupText } from "@/lib/study/db";
+import { ensurePersistentStorage } from "@/lib/study/storage";
 import { useStudy } from "@/lib/study/store";
 import type { ResearcherId, Settings } from "@/lib/study/types";
 import { cn } from "@/lib/cn";
 import {
+  alertLock,
+  alertLockHint,
   appVersionLabel,
   batteryStatus,
+  canSaveKey,
   exactAlarmStatus,
+  formatStudyTimeTyping,
   keySaveLabel,
+  keySaveNeedsConfirm,
   keyStatus,
-  remindersStatus,
+  notificationsCard,
+  parseStudyTime,
   storageStatus,
+  studyTimeValue,
   testConnectionLabel,
   testConnectionMessage,
+  type NotificationsCard as NotificationsCardCopy,
   type ReminderPermission,
   type StatusCopy,
   type StatusTone,
@@ -106,6 +108,15 @@ const LOADING_STATUS: StatusCopy = {
 
 const LOADING_SETTINGS_STATUS = { ...LOADING_STATUS, opensSettings: false };
 
+const LOADING_NOTIFICATIONS: NotificationsCardCopy = {
+  ...LOADING_STATUS,
+  action: null,
+  actionLabel: null,
+};
+
+/** Qual ação destrutiva está esperando confirmação no diálogo M3. */
+type KeyConfirm = "remove" | "replace";
+
 function SettingsPage() {
   const { settings, keys, saveSettings, days, sessions, notifyLog } = useStudy();
   // O shell só monta as telas depois de ler o IndexedDB e o cofre de chaves,
@@ -113,6 +124,11 @@ function SettingsPage() {
   // cópia local: as edições são gravadas pelo serviço existente (`saveSettings`).
   const [draft, setDraft] = useState<Settings>(settings);
   const draftRef = useRef(draft);
+  // Texto do campo de horário: mostra sempre "14:00" (24 h), independente do
+  // locale do aparelho. O modelo continua em `studyHour`/`studyMinute`.
+  const [timeDraft, setTimeDraft] = useState(() =>
+    studyTimeValue(settings.studyHour, settings.studyMinute),
+  );
   const [keyDraft, setKeyDraft] = useState<KeyValues>(keys);
   // Último conjunto de chaves que o formulário pediu para gravar. Os switches
   // gravam ajustes e chaves na mesma chamada; sem esta referência, alternar um
@@ -120,12 +136,12 @@ function SettingsPage() {
   const keysRef = useRef<KeyValues>(keys);
   const [note, setNote] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
+  const [keyConfirm, setKeyConfirm] = useState<KeyConfirm | null>(null);
   const [testing, setTesting] = useState(false);
   const [testState, setTestState] = useState<TestState>("idle");
   const [testError, setTestError] = useState<ErrorCopy | null>(null);
   const [saveError, setSaveError] = useState<ErrorCopy | null>(null);
   const [reminder, setReminder] = useState<ReminderState | null>(null);
-  const [notificationError, setNotificationError] = useState<ErrorCopy | null>(null);
   const [batteryNote, setBatteryNote] = useState("");
   const [storage, setStorage] = useState<StorageState>({
     supported: false,
@@ -138,6 +154,8 @@ function SettingsPage() {
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupNote, setBackupNote] = useState("");
   const [backupError, setBackupError] = useState<ErrorCopy | null>(null);
+  // Arquivo escolhido que só é aplicado depois do "Substituir dados".
+  const [pendingRestore, setPendingRestore] = useState<File | null>(null);
   const restoreInput = useRef<HTMLInputElement>(null);
   // Gravações em fila: alternar dois switches rápido não deixa a primeira
   // escrita sobrescrever a segunda.
@@ -159,9 +177,7 @@ function SettingsPage() {
   useEffect(() => {
     let live = true;
     void readReminderState().then((next) => {
-      if (!live) return;
-      setReminder(next);
-      if (next.permission === "denied") setNotificationError(notificationsDeniedCopy());
+      if (live) setReminder(next);
     });
     return () => {
       live = false;
@@ -173,10 +189,7 @@ function SettingsPage() {
   useEffect(() => {
     const refresh = () => {
       if (document.visibilityState !== "visible") return;
-      void readReminderState().then((next) => {
-        setReminder(next);
-        if (next.permission !== "denied") setNotificationError(null);
-      });
+      void readReminderState().then(setReminder);
     };
     document.addEventListener("visibilitychange", refresh);
     return () => document.removeEventListener("visibilitychange", refresh);
@@ -210,24 +223,68 @@ function SettingsPage() {
     void enqueueSave(next, keysRef.current, SETTINGS_SAVE_ERROR);
   }
 
+  /** Digitação do horário: formata "1400" → "14:00" e grava quando completo. */
+  function editStudyTime(raw: string) {
+    const text = formatStudyTimeTyping(raw);
+    setTimeDraft(text);
+    const parsed = parseStudyTime(text);
+    if (parsed) patch({ studyHour: parsed.hour, studyMinute: parsed.minute });
+  }
+
+  /** Ao sair do campo, volta ao valor salvo quando o texto está incompleto. */
+  function commitStudyTime() {
+    const parsed = parseStudyTime(timeDraft);
+    if (parsed) {
+      setTimeDraft(studyTimeValue(parsed.hour, parsed.minute));
+      return;
+    }
+    setTimeDraft(studyTimeValue(draftRef.current.studyHour, draftRef.current.studyMinute));
+  }
+
   function retrySave() {
     const pending = lastSave.current;
     if (!pending) return;
     void enqueueSave(pending.settings, pending.keys, pending.message);
   }
 
-  async function saveKeys() {
+  /**
+   * `scope: "all"` grava também a chave xAI; o "Salvar chaves" do acordeão
+   * grava só as chaves opcionais e nunca apaga a xAI por acidente.
+   */
+  async function saveKeys(scope: "all" | "others" = "all") {
     setKeyBusy(true);
     setNote("");
-    const nextKeys = { ...keyDraft };
+    const nextKeys: KeyValues =
+      scope === "all"
+        ? { ...keyDraft }
+        : {
+            ...keysRef.current,
+            perplexity: keyDraft.perplexity,
+            gemini: keyDraft.gemini,
+            claude: keyDraft.claude,
+          };
     keysRef.current = nextKeys;
     const ok = await enqueueSave({ ...draftRef.current }, nextKeys, KEYS_SAVE_ERROR);
     if (ok) {
       setNote(
-        nextKeys.xai.trim() ? "Guardado só neste aparelho." : "Chave removida deste aparelho.",
+        scope === "others"
+          ? "Chaves guardadas só neste aparelho."
+          : nextKeys.xai.trim()
+            ? "Guardado só neste aparelho."
+            : "Chave removida deste aparelho.",
       );
     }
     setKeyBusy(false);
+  }
+
+  /** O botão principal só chama o diálogo quando a chave salva vai mudar. */
+  function requestSaveKeys() {
+    if (!canSaveKey(keyDraft.xai)) return;
+    if (keySaveNeedsConfirm(keys.xai, keyDraft.xai)) {
+      setKeyConfirm("replace");
+      return;
+    }
+    void saveKeys("all");
   }
 
   async function removeXaiKey() {
@@ -243,6 +300,13 @@ function SettingsPage() {
       setTestError(null);
     }
     setKeyBusy(false);
+  }
+
+  async function confirmKeyAction() {
+    const action = keyConfirm;
+    setKeyConfirm(null);
+    if (action === "remove") await removeXaiKey();
+    if (action === "replace") await saveKeys("all");
   }
 
   function online(): boolean {
@@ -305,12 +369,10 @@ function SettingsPage() {
   async function refreshReminder(): Promise<ReminderState> {
     const next = await readReminderState();
     setReminder(next);
-    if (next.permission !== "denied") setNotificationError(null);
     return next;
   }
 
   async function allowNotes(options?: { askExact?: boolean }) {
-    setNotificationError(null);
     setBatteryNote("");
     setNote("");
     if (isNativeNotificationService()) {
@@ -324,8 +386,6 @@ function SettingsPage() {
         );
       } else if (status.error) {
         setNote(`Não consegui ligar as notificações: ${status.error}`);
-      } else {
-        setNotificationError(notificationsDeniedCopy());
       }
       await syncNativeNotifications({ settings: draftRef.current, days, sessions, log: notifyLog });
       return;
@@ -342,12 +402,7 @@ function SettingsPage() {
       return;
     }
     const permission = await requestNotificationPermission();
-    if (permission === "granted") {
-      setNote("Notificações ligadas.");
-      await refreshReminder();
-      return;
-    }
-    setNotificationError(notificationsDeniedCopy());
+    if (permission === "granted") setNote("Notificações ligadas.");
     await refreshReminder();
   }
 
@@ -438,6 +493,9 @@ function SettingsPage() {
       const text = await file.text();
       const backup = parseBackupText(text);
       await importAll(backup);
+      // Restaurar também é uma gravação grande: pede o armazenamento
+      // persistente antes de recarregar a página.
+      void ensurePersistentStorage();
       setBackupNote(`Backup restaurado (${backup.days.length} dias). Recarregando…`);
       window.setTimeout(() => window.location.reload(), 900);
     } catch (err) {
@@ -455,7 +513,9 @@ function SettingsPage() {
         setBackupError(restoreFailure("O arquivo não é um JSON válido."));
       } else {
         setBackupError(
-          restoreFailure(err instanceof Error ? err.message : "Não consegui restaurar esse backup."),
+          restoreFailure(
+            err instanceof Error ? err.message : "Não consegui restaurar esse backup.",
+          ),
         );
       }
       setBackupBusy(false);
@@ -470,7 +530,12 @@ function SettingsPage() {
 
   const key = keyStatus(keys.xai);
   const configured = key.configured;
-  const reminders = reminder ? remindersStatus(reminder.permission, reminder.native) : LOADING_STATUS;
+  const native = reminder?.native ?? isNativeNotificationService();
+  const notifications = reminder
+    ? notificationsCard(reminder.permission, reminder.native)
+    : LOADING_NOTIFICATIONS;
+  const lock = reminder ? alertLock(reminder.permission, draft.quiet) : "permission";
+  const lockHint = alertLockHint(lock);
   const exact = reminder
     ? exactAlarmStatus(reminder.exactAlarms, reminder.native)
     : LOADING_SETTINGS_STATUS;
@@ -488,7 +553,7 @@ function SettingsPage() {
         <p className="text-sm text-muted">Só neste aparelho</p>
         <h1 className="mt-1 text-3xl leading-tight">Ajustes</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted">
-          Horário, alertas e chaves. Nada disso vai para um servidor nosso.
+          Horário, avisos, chaves e backup. Nada disso vai para um servidor nosso.
         </p>
       </header>
 
@@ -501,6 +566,12 @@ function SettingsPage() {
         />
       ) : null}
 
+      {note ? (
+        <p className="text-sm leading-relaxed text-muted" role="status">
+          {note}
+        </p>
+      ) : null}
+
       <input
         ref={restoreInput}
         className="sr-only"
@@ -510,154 +581,105 @@ function SettingsPage() {
         onChange={(e) => {
           const file = e.currentTarget.files?.[0];
           e.currentTarget.value = "";
-          if (file) void restoreBackup(file);
+          // Confirma depois de escolher o arquivo e só então aplica: o seletor
+          // do Android não fica esperando um diálogo do app.
+          if (file) setPendingRestore(file);
         }}
       />
 
-      <SettingsSection id="professor" title="Professor IA">
-        <SettingsRow
-          icon={KeyRound}
-          label="Chave xAI"
-          support={key.hint}
-          trailing={<StatusText status={key} />}
-        />
-
-        <SettingsBlock className="flex flex-col gap-3">
-          <label htmlFor="xai-key" className="text-sm font-medium text-fg">
-            {configured ? "Colar ou trocar a chave" : "Colar a chave"}
+      <SettingsSection id="estudo" title="Estudo e notificações">
+        <SettingsBlock className="flex flex-col gap-2">
+          <label htmlFor="study-time" className="text-base font-medium text-fg">
+            Horário de estudo
           </label>
           <input
-            id="xai-key"
-            className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg placeholder:text-muted"
-            type="password"
+            id="study-time"
+            className={cn(
+              "h-12 w-full max-w-[14rem] rounded-xl border border-border bg-surface-2 px-3 text-base tabular-nums text-fg",
+              lock ? "opacity-[0.38]" : null,
+            )}
+            type="text"
+            inputMode="numeric"
             autoComplete="off"
             spellCheck={false}
-            placeholder="xai-…"
-            value={keyDraft.xai}
-            onChange={(e) => setKeyDraft({ ...keyDraft, xai: e.target.value })}
+            placeholder="14:00"
+            maxLength={5}
+            aria-disabled={lock ? true : undefined}
+            disabled={lock != null}
+            value={timeDraft}
+            onBlur={commitStudyTime}
+            onChange={(e) => editStudyTime(e.currentTarget.value)}
           />
-          <p className="text-xs leading-relaxed text-muted">
-            No Android a chave fica no Keystore do aparelho. O uso é cobrado na sua conta xAI.
+          <p className="text-sm leading-relaxed text-muted">
+            Formato 24 h, por exemplo 14:00. É o horário que os lembretes do dia usam.
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={keyBusy} onClick={() => void saveKeys()}>
-              {keyBusy ? "Guardando…" : keySaveLabel(configured)}
-            </Button>
-            {configured ? (
-              <Button variant="clay" disabled={keyBusy} onClick={() => void removeXaiKey()}>
-                Remover chave
-              </Button>
-            ) : null}
-            <Button variant="surface" disabled={testing} onClick={() => void test()}>
-              {testing ? (
-                <>
-                  <ButtonSpinner />
-                  {testConnectionLabel("loading")}
-                </>
-              ) : (
-                testConnectionLabel(testState)
-              )}
-            </Button>
-          </div>
-          {testError ? <InlineError copy={testError} onAction={testAction} /> : null}
-          {note ? (
-            <p className="text-sm leading-relaxed text-muted" role="status">
-              {note}
+          {lockHint ? <p className="text-sm leading-relaxed text-muted">{lockHint}</p> : null}
+        </SettingsBlock>
+
+        <SettingsBlock className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-2 text-base font-semibold text-fg">
+              <Bell className="size-5 shrink-0 text-muted" aria-hidden />
+              Permissão de notificações
             </p>
+            <span
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                badgeClass(notifications.tone),
+              )}
+            >
+              {notifications.label}
+            </span>
+          </div>
+          <p className="text-sm leading-relaxed text-muted">{notifications.hint}</p>
+          {notifications.actionLabel ? (
+            <Button
+              variant="tonal"
+              className="self-start"
+              onClick={() => {
+                if (notifications.action === "request") void allowNotes();
+                if (notifications.action === "settings") void notificationAction();
+              }}
+            >
+              {notifications.actionLabel}
+            </Button>
           ) : null}
         </SettingsBlock>
 
-        <SettingsBlock className="flex flex-col gap-2">
-          <label htmlFor="researcher" className="text-sm font-medium text-fg">
-            Quem monta o pacote
-          </label>
-          <select
-            id="researcher"
-            className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg"
-            value={draft.researcher}
-            onChange={(e) => patch({ researcher: e.target.value as ResearcherId })}
-          >
-            {PROVIDERS.map((provider) => (
-              <option key={provider.id} value={provider.id}>
-                {provider.label}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs leading-relaxed text-muted">
-            O Grok é o tutor: pergunta e corrige só com o pacote já pronto, sem buscar na web na
-            sessão. O pesquisador monta o pacote antes. Sem chave pessoal, o Grok usa a chave do
-            app.
-          </p>
-        </SettingsBlock>
-
         <SettingsSwitchRow
-          label="Pesquisar na web ao montar o pacote"
-          support="Mais lento e gasta mais da sua cota."
-          checked={draft.webSearch}
-          onCheckedChange={(webSearch) => patch({ webSearch })}
+          label="Lembrete de início"
+          support="Com o tema do dia."
+          checked={draft.alerts.start}
+          disabled={lock != null}
+          onCheckedChange={(start) => patch({ alerts: { ...draft.alerts, start } })}
         />
-
-        <details className="group">
-          <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-4 py-2 text-left [&::-webkit-details-marker]:hidden hover:bg-surface-2 focus-visible:outline-offset-[-2px] first:rounded-t-2xl last:rounded-b-2xl">
-            <SlidersHorizontal className="size-6 shrink-0 text-muted" aria-hidden />
-            <span className="min-w-0 flex-1">
-              <span className="block text-base text-fg">Avançado</span>
-              <span className="mt-0.5 block text-sm text-muted">
-                Chaves dos outros pesquisadores.
-              </span>
-            </span>
-            <ChevronRight
-              className="size-5 shrink-0 text-muted transition-transform group-open:rotate-90"
-              aria-hidden
-            />
-          </summary>
-          <div className="flex flex-col gap-4 border-t border-border px-4 py-4">
-            {OTHER_PROVIDERS.map((provider) => (
-              <div key={provider.id} className="flex flex-col gap-1.5">
-                <label htmlFor={`key-${provider.id}`} className="text-sm font-medium text-fg">
-                  Chave {provider.label}
-                </label>
-                <input
-                  id={`key-${provider.id}`}
-                  className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg placeholder:text-muted"
-                  type="password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="Opcional"
-                  value={keyDraft[provider.id]}
-                  onChange={(e) =>
-                    setKeyDraft({ ...keyDraft, [provider.id]: e.target.value } as KeyValues)
-                  }
-                />
-              </div>
-            ))}
-            <Button variant="surface" disabled={keyBusy} onClick={() => void saveKeys()}>
-              {keyBusy ? "Guardando…" : "Salvar chaves"}
-            </Button>
-          </div>
-        </details>
-      </SettingsSection>
-
-      <SettingsSection id="notificacoes" title="Notificações">
-        <SettingsRow
-          icon={Bell}
-          label="Lembretes"
-          support={reminders.hint}
-          trailing={<StatusText status={reminders} />}
+        <SettingsSwitchRow
+          label="Alerta para resolver questões"
+          support="Na hora das questões do bloco."
+          checked={draft.alerts.questions}
+          disabled={lock != null}
+          onCheckedChange={(questions) => patch({ alerts: { ...draft.alerts, questions } })}
         />
-
-        <SettingsButtonRow
-          icon={BellRing}
-          label="Ativar lembretes"
-          support="Pede a permissão do sistema; você pode negar depois."
-          onClick={() => void allowNotes()}
+        <SettingsSwitchRow
+          label="Alerta de revisão"
+          support="Quando a revisão do dia começa."
+          checked={draft.alerts.review}
+          disabled={lock != null}
+          onCheckedChange={(review) => patch({ alerts: { ...draft.alerts, review } })}
         />
-
-        {notificationError ? (
-          <SettingsBlock className="py-3">
-            <InlineError copy={notificationError} onAction={() => void notificationAction()} />
-          </SettingsBlock>
-        ) : null}
+        <SettingsSwitchRow
+          label="Aviso se o bloco ainda não começou"
+          support="Depois de 45 min do horário de estudo."
+          checked={draft.alerts.pending}
+          disabled={lock != null}
+          onCheckedChange={(pending) => patch({ alerts: { ...draft.alerts, pending } })}
+        />
+        <SettingsSwitchRow
+          label="Modo silencioso"
+          support="Não agenda lembretes nem avisos."
+          checked={draft.quiet}
+          onCheckedChange={(quiet) => patch({ quiet })}
+        />
 
         <SettingsRow
           icon={AlarmClock}
@@ -693,134 +715,25 @@ function SettingsPage() {
           </SettingsBlock>
         ) : null}
 
-        <SettingsBlock className="flex flex-col gap-3">
-          <p className="text-sm font-medium text-fg">Horário de estudo</p>
-          <div className="flex gap-3">
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <label htmlFor="study-hour" className="text-xs text-muted">
-                Hora
-              </label>
-              <input
-                id="study-hour"
-                className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base tabular-nums text-fg"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={23}
-                value={draft.studyHour}
-                onChange={(e) => patch({ studyHour: clampHour(e.target.value) })}
-              />
-            </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <label htmlFor="study-minute" className="text-xs text-muted">
-                Minuto
-              </label>
-              <input
-                id="study-minute"
-                className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base tabular-nums text-fg"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={59}
-                value={draft.studyMinute}
-                onChange={(e) => patch({ studyMinute: clampMin(e.target.value) })}
-              />
-            </div>
-          </div>
-        </SettingsBlock>
-
-        <SettingsSwitchRow
-          label="Lembrete de início"
-          support="Com o tema do dia."
-          checked={draft.alerts.start}
-          onCheckedChange={(start) => patch({ alerts: { ...draft.alerts, start } })}
-        />
-        <SettingsSwitchRow
-          label="Alerta para resolver questões"
-          support="Na hora das questões do bloco."
-          checked={draft.alerts.questions}
-          onCheckedChange={(questions) => patch({ alerts: { ...draft.alerts, questions } })}
-        />
-        <SettingsSwitchRow
-          label="Alerta de revisão"
-          support="Quando a revisão do dia começa."
-          checked={draft.alerts.review}
-          onCheckedChange={(review) => patch({ alerts: { ...draft.alerts, review } })}
-        />
-        <SettingsSwitchRow
-          label="Aviso se o bloco ainda não começou"
-          support="Depois de 45 min do horário de estudo."
-          checked={draft.alerts.pending}
-          onCheckedChange={(pending) => patch({ alerts: { ...draft.alerts, pending } })}
-        />
-        <SettingsSwitchRow
-          label="Modo silencioso"
-          support="Não agenda lembretes nem avisos."
-          checked={draft.quiet}
-          onCheckedChange={(quiet) => patch({ quiet })}
-        />
-
-        <SettingsBlock>
-          <p className="text-sm leading-relaxed text-muted">
-            {isNativeNotificationService()
-              ? "No app Android os lembretes são agendados no próprio aparelho e chegam mesmo com o app fechado. Se o Android negar alarmes exatos, o aviso pode atrasar alguns minutos."
-              : "No Android, no iPhone e no Windows o lembrete sai com o app aberto ou instalado enquanto o navegador segue ativo. Fechado de verdade, o alarme local não dispara: iOS só entrega push de servidor, e Chrome ou Edge não guardam o timer depois que o processo morre."}
-          </p>
-        </SettingsBlock>
-      </SettingsSection>
-
-      <SettingsSection id="aparencia" title="Aparência">
-        <SettingsRow
-          icon={Moon}
-          label="Tema escuro"
-          support="Sempre escuro. O modo claro está no backlog; o Reta não segue o tema do sistema."
-        />
-      </SettingsSection>
-
-      <SettingsSection id="dados" title="Dados">
-        <SettingsRow
-          icon={Database}
-          label="Armazenamento persistente"
-          support={
-            <>
-              {storageCopy.hint}
-              {storageUsage ? ` ${storageUsage}` : ""}
-            </>
-          }
-          trailing={<StatusText status={storageCopy} />}
-        />
-
-        <SettingsBlock className="flex flex-wrap gap-2">
-          <Button
-            variant="surface"
-            disabled={storageBusy || !storage.supported || storage.persisted === true}
-            onClick={() => void requestPersist()}
-          >
-            {storage.persisted
-              ? "Armazenamento persistente ativo"
-              : storageBusy
-                ? "Pedindo…"
-                : "Tornar armazenamento persistente"}
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() =>
-              void readStorageState().then((next) => {
-                setStorage(next);
-                setStorageNote("");
-              })
-            }
-          >
-            Atualizar status
-          </Button>
-        </SettingsBlock>
-        {storageNote ? (
-          <SettingsBlock className="py-3">
-            <p className="text-sm leading-relaxed text-muted" role="status">
-              {storageNote}
+        {!native ? (
+          <SettingsBlock>
+            <p className="text-sm leading-relaxed text-muted">
+              No Android, no iPhone e no Windows o lembrete sai com o app aberto ou instalado
+              enquanto o navegador segue ativo. Fechado de verdade, o alarme local não dispara: iOS
+              só entrega push de servidor, e Chrome ou Edge não guardam o timer depois que o
+              processo morre.
             </p>
           </SettingsBlock>
         ) : null}
+      </SettingsSection>
+
+      <SettingsSection id="dados" title="Plano e dados">
+        <SettingsLinkRow
+          to="/importar"
+          icon={FileSpreadsheet}
+          label="Trocar planilha"
+          support="Importar outra planilha substitui o plano atual."
+        />
 
         <SettingsButtonRow
           icon={Download}
@@ -859,12 +772,171 @@ function SettingsPage() {
           </p>
         </SettingsBlock>
 
-        <SettingsLinkRow
-          to="/importar"
-          icon={FileSpreadsheet}
-          label="Trocar planilha"
-          support="Importar outra planilha substitui o plano atual."
+        <SettingsAccordion
+          icon={Database}
+          title="Avançado"
+          support="Uso local e armazenamento persistente."
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-base text-fg">Armazenamento persistente</p>
+              <p className="mt-0.5 text-sm leading-relaxed text-muted">
+                {storageCopy.hint}
+                {storageUsage ? ` ${storageUsage}` : ""}
+              </p>
+            </div>
+            <span className="shrink-0 text-sm text-muted">
+              <StatusText status={storageCopy} />
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="surface"
+              disabled={storageBusy || !storage.supported || storage.persisted === true}
+              onClick={() => void requestPersist()}
+            >
+              {storage.persisted
+                ? "Armazenamento persistente ativo"
+                : storageBusy
+                  ? "Pedindo…"
+                  : "Tornar armazenamento persistente"}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() =>
+                void readStorageState().then((next) => {
+                  setStorage(next);
+                  setStorageNote("");
+                })
+              }
+            >
+              Atualizar status
+            </Button>
+          </div>
+          {storageNote ? (
+            <p className="text-sm leading-relaxed text-muted" role="status">
+              {storageNote}
+            </p>
+          ) : null}
+        </SettingsAccordion>
+      </SettingsSection>
+
+      <SettingsSection id="professor" title="Professor IA">
+        <SettingsRow
+          icon={KeyRound}
+          label="Chave xAI"
+          support={key.hint}
+          trailing={<StatusText status={key} />}
         />
+
+        <SettingsBlock className="flex flex-col gap-3">
+          <label htmlFor="xai-key" className="text-sm font-medium text-fg">
+            {configured ? "Colar ou trocar a chave" : "Colar a chave"}
+          </label>
+          <input
+            id="xai-key"
+            className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg placeholder:text-muted"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="xai-…"
+            value={keyDraft.xai}
+            onChange={(e) => setKeyDraft({ ...keyDraft, xai: e.target.value })}
+          />
+          <p className="text-xs leading-relaxed text-muted">
+            No Android a chave fica no Keystore do aparelho. O uso é cobrado na sua conta xAI.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={keyBusy || !canSaveKey(keyDraft.xai)}
+              className="disabled:bg-fg/[0.12] disabled:text-fg/[0.38] disabled:opacity-100"
+              onClick={requestSaveKeys}
+            >
+              {keyBusy ? "Guardando…" : keySaveLabel(configured)}
+            </Button>
+            {configured ? (
+              <Button variant="clay" disabled={keyBusy} onClick={() => setKeyConfirm("remove")}>
+                Remover chave
+              </Button>
+            ) : null}
+            <Button variant="surface" disabled={testing} onClick={() => void test()}>
+              {testing ? (
+                <>
+                  <ButtonSpinner />
+                  {testConnectionLabel("loading")}
+                </>
+              ) : (
+                testConnectionLabel(testState)
+              )}
+            </Button>
+          </div>
+          {testError ? <InlineError copy={testError} onAction={testAction} /> : null}
+        </SettingsBlock>
+
+        <SettingsAccordion
+          title="Avançado"
+          support="Quem monta o pacote e as chaves dos outros pesquisadores."
+        >
+          <div className="flex flex-col gap-2">
+            <label htmlFor="researcher" className="text-sm font-medium text-fg">
+              Quem monta o pacote
+            </label>
+            <select
+              id="researcher"
+              className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg"
+              value={draft.researcher}
+              onChange={(e) => patch({ researcher: e.target.value as ResearcherId })}
+            >
+              {PROVIDERS.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs leading-relaxed text-muted">
+              O Grok é o tutor: pergunta e corrige só com o pacote já pronto, sem buscar na web na
+              sessão. O pesquisador monta o pacote antes. Sem chave pessoal, o Grok usa a chave do
+              app.
+            </p>
+          </div>
+
+          <SettingsSwitchRow
+            className="px-0"
+            label="Pesquisar na web ao montar o pacote"
+            support="Mais lento e gasta mais da sua cota."
+            checked={draft.webSearch}
+            onCheckedChange={(webSearch) => patch({ webSearch })}
+          />
+
+          {OTHER_PROVIDERS.map((provider) => (
+            <div key={provider.id} className="flex flex-col gap-1.5">
+              <label htmlFor={`key-${provider.id}`} className="text-sm font-medium text-fg">
+                Chave {provider.label}
+              </label>
+              <input
+                id={`key-${provider.id}`}
+                className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg placeholder:text-muted"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="Opcional"
+                value={keyDraft[provider.id]}
+                onChange={(e) =>
+                  setKeyDraft({ ...keyDraft, [provider.id]: e.target.value } as KeyValues)
+                }
+              />
+            </div>
+          ))}
+          <Button
+            variant="surface"
+            className="self-start"
+            disabled={keyBusy}
+            onClick={() => void saveKeys("others")}
+          >
+            {keyBusy ? "Guardando…" : "Salvar chaves"}
+          </Button>
+        </SettingsAccordion>
       </SettingsSection>
 
       <SettingsSection id="sobre" title="Sobre">
@@ -880,21 +952,60 @@ function SettingsPage() {
           trailing={appVersionLabel(__APP_VERSION__)}
         />
       </SettingsSection>
+
+      <ConfirmDialog
+        open={keyConfirm === "remove"}
+        title="Remover a chave xAI?"
+        description="Os recursos de IA deixam de funcionar até você colar outra chave. O resto dos seus dados continua neste aparelho."
+        confirmLabel="Remover chave"
+        busy={keyBusy}
+        onCancel={() => setKeyConfirm(null)}
+        onConfirm={() => void confirmKeyAction()}
+      />
+
+      <ConfirmDialog
+        open={keyConfirm === "replace"}
+        title="Substituir a chave salva?"
+        description="A chave atual será trocada pela que está no campo. O uso continua sendo cobrado na sua conta xAI."
+        confirmLabel="Substituir chave"
+        busy={keyBusy}
+        onCancel={() => setKeyConfirm(null)}
+        onConfirm={() => void confirmKeyAction()}
+      />
+
+      <ConfirmDialog
+        open={pendingRestore != null}
+        title="Substituir todos os dados?"
+        description="O plano atual, as sessões e os erros deste aparelho serão substituídos pelo backup."
+        confirmLabel="Substituir dados"
+        busy={backupBusy}
+        onCancel={() => setPendingRestore(null)}
+        onConfirm={() => {
+          const file = pendingRestore;
+          setPendingRestore(null);
+          if (file) void restoreBackup(file);
+        }}
+      />
     </div>
   );
 }
 
 /** Status em texto à direita da linha, na cor do tom (ok/aviso/neutro). */
 function StatusText({ status }: { status: StatusCopy }) {
-  return (
-    <span className={cn("font-semibold", toneClass(status.tone))}>{status.label}</span>
-  );
+  return <span className={cn("font-semibold", toneClass(status.tone))}>{status.label}</span>;
 }
 
 function toneClass(tone: StatusTone): string {
   if (tone === "ok") return "text-primary";
   if (tone === "warn") return "text-clay-text";
   return "text-muted";
+}
+
+/** Badge do cartão de permissão: fundo tonal conforme o estado real. */
+function badgeClass(tone: StatusTone): string {
+  if (tone === "ok") return "border-primary/60 bg-primary-tonal text-primary";
+  if (tone === "warn") return "border-clay/60 bg-clay/15 text-clay-text";
+  return "border-border bg-surface-2 text-muted";
 }
 
 type StorageState = {
@@ -952,16 +1063,4 @@ function formatBytes(value: number | null): string {
     i += 1;
   }
   return `${n.toFixed(i === 0 || n >= 10 ? 0 : 1)} ${units[i]}`;
-}
-
-function clampHour(value: string): number {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.min(23, Math.max(0, Math.round(n)));
-}
-
-function clampMin(value: string): number {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.min(59, Math.max(0, Math.round(n)));
 }
