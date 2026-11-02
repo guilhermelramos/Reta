@@ -1,5 +1,5 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
-import { getKey, type KeyName } from "../secure/keys.ts";
+import { getKey, getOpenRouterKey, type KeyName } from "../secure/keys.ts";
 import type { ResearcherId } from "../study/types.ts";
 import { generateBlockPackage } from "./package.functions.ts";
 import type { AiResult, CoreDeps, TextRequest } from "./core.ts";
@@ -24,26 +24,42 @@ import {
 } from "./errors.ts";
 import { commonsImages, type JsonFetcher } from "./images.ts";
 import { FAST_MODEL, SEARCH_MODEL } from "./models.ts";
-import type { PackageBody } from "./parse.ts";
+import type { PackageBody, ResearchAddition } from "./parse.ts";
+import type { AiBlockPackage } from "./block-package.ts";
+import type { QuizItem } from "../study/types.ts";
+import {
+  normalizeAiRequestOptions,
+  professorMessagesWithImages,
+  promptMessage,
+  providerChat,
+  type AiRequestOptions,
+  type ProviderMessage,
+} from "./provider.ts";
 import {
   buildProfessorSystemPrompt,
   normalizeProfessorHistory,
   type ProfessorMessage,
 } from "./prompts.ts";
 import { generatePackage, pingAi, researchAdd, tutorTurn } from "./study.functions.ts";
+import { capacitorTransport, fetchTransport } from "./openrouter/transport.ts";
 
 /**
  * Cliente de IA do app.
  *
- * - Web/Vercel: continua chamando as server functions (a chave de ambiente
- *   fica no servidor).
- * - APK/Android: não existe servidor, então o mesmo `core.ts` roda no cliente
- *   e fala direto com a xAI por `CapacitorHttp`, com a chave do cofre seguro
- *   (`src/lib/secure/keys.ts`).
+ * - Web/Vercel: a xAI continua chamando as server functions (a chave de
+ *   ambiente fica no servidor). O OpenRouter, que é BYOK, usa `fetch` direto
+ *   do navegador — a chave vem do cofre (IndexedDB na web).
+ * - APK/Android: não existe servidor. A xAI continua no `CapacitorHttp` e o
+ *   OpenRouter também passa por ele (o `fetch` da WebView bloqueia
+ *   `HTTP-Referer`); a chave vem do Keystore.
+ *
+ * Quem escolhe o provedor é `provider.ts`. Os prompts e o parse são os mesmos
+ * em qualquer caminho.
  *
  * Limitação documentada: CapacitorHttp não entrega resposta em stream. O chat
  * do professor no APK recebe a resposta completa de uma vez (`stream: false`);
- * na web o caminho com `/api/professor` continua em streaming.
+ * na web o caminho xAI com `/api/professor` continua em streaming. No
+ * OpenRouter a resposta também chega completa (o transporte não usa SSE).
  */
 
 const LABELS: Record<ResearcherId, string> = {
@@ -95,6 +111,12 @@ async function nativeKey(provider: ResearcherId, userKey?: string): Promise<stri
   } catch {
     return "";
   }
+}
+
+function openRouterKey(options: AiRequestOptions): Promise<string> {
+  const direct = (options.openRouterKey ?? "").trim();
+  if (direct) return Promise.resolve(direct);
+  return getOpenRouterKey().catch(() => "");
 }
 
 type NativeResponse = { status: number; data: unknown; headers: Record<string, string> };
@@ -165,6 +187,7 @@ function requireOk(response: NativeResponse, provider: ResearcherId): void {
   throw httpError(response.status, bodyText(response.data), {
     retryAfter: response.headers["retry-after"],
     providerLabel: LABELS[provider],
+    provider: provider === "grok" ? "xai" : undefined,
   });
 }
 
@@ -175,7 +198,7 @@ function textFromChat(data: unknown): string {
 
 async function xaiChat(options: {
   key: string;
-  messages: { role: "system" | "user" | "assistant"; content: string }[];
+  messages: ProviderMessage[];
   maxTokens: number;
   temperature?: number;
   json?: boolean;
@@ -202,6 +225,54 @@ async function xaiChat(options: {
   const text = textFromChat(response.data);
   if (!text.trim()) throw emptyError();
   return text;
+}
+
+/**
+ * Caminho xAI na web **só** quando há anexo de imagem (o `/api/professor`
+ * antigo não transporta partes). Sem imagem, a web continua na server function.
+ */
+async function webXaiChat(options: {
+  key: string;
+  messages: ProviderMessage[];
+  maxTokens: number;
+  temperature?: number;
+  json?: boolean;
+  readTimeout?: number;
+}): Promise<string> {
+  const timeout = options.readTimeout ?? (options.maxTokens > 1500 ? GENERATE_TIMEOUT : QUICK_TIMEOUT);
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = setTimeout(() => controller?.abort(), Math.max(1000, timeout));
+  try {
+    const response = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: authHeader(options.key),
+      body: JSON.stringify({
+        model: FAST_MODEL,
+        temperature: options.temperature ?? 0.3,
+        max_tokens: options.maxTokens,
+        ...(options.json === false ? {} : { response_format: { type: "json_object" } }),
+        stream: false,
+        messages: options.messages,
+      }),
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+    const body = await response.text().catch(() => "");
+    if (!response.ok) {
+      throw httpError(response.status, body, {
+        retryAfter: response.headers.get("retry-after"),
+        providerLabel: "xAI",
+        provider: "xai",
+      });
+    }
+    const parsed = body.trim().startsWith("{") ? JSON.parse(body) : null;
+    const text = textFromChat(parsed);
+    if (!text.trim()) throw emptyError();
+    return text;
+  } catch (error) {
+    throw transportFailure(error, { online: isOnline() });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function xaiSearch(key: string, prompt: string): Promise<string> {
@@ -305,20 +376,62 @@ async function nativeProviderChat(
   return text;
 }
 
-async function nativeText(request: TextRequest): Promise<{ text: string; webSearch: boolean }> {
-  if (request.webSearch) {
+/** Texto no caminho nativo, com o provedor escolhido pela camada de rota. */
+async function routedText(
+  request: TextRequest,
+  transport: "capacitor" | "fetch",
+): Promise<{ text: string; webSearch: boolean }> {
+  const ai = normalizeAiRequestOptions(request.ai);
+  const xai = (input: {
+    messages: ProviderMessage[];
+    maxTokens: number;
+    temperature?: number;
+    json?: boolean;
+    timeoutMs?: number;
+  }) => {
+    const call = {
+      key: request.key,
+      messages: input.messages,
+      maxTokens: input.maxTokens,
+      temperature: input.temperature,
+      json: input.json,
+      readTimeout: input.timeoutMs,
+    };
+    return transport === "capacitor" ? xaiChat(call) : webXaiChat(call);
+  };
+
+  if (ai.preferences.provider === "openrouter") {
+    const text = await providerChat(
+      {
+        ...ai,
+        openRouterKey: request.key,
+        transport: transport === "capacitor" ? capacitorTransport : fetchTransport,
+      },
+      {
+        messages: [promptMessage(request.prompt, request.images ?? [])],
+        maxTokens: request.maxTokens,
+        temperature: 0.3,
+        json: request.json === true,
+        timeoutMs: request.maxTokens > 1500 ? GENERATE_TIMEOUT : QUICK_TIMEOUT,
+      },
+      xai,
+    );
+    return { text, webSearch: false };
+  }
+
+  if (request.webSearch && !request.images?.length) {
     try {
       return { text: await xaiSearch(request.key, request.prompt), webSearch: true };
     } catch {
       // Se a pesquisa falhar, mantém o comportamento antigo: tenta o chat.
     }
   }
-  if (request.provider === "grok") {
+  if (request.provider === "grok" || request.images?.length) {
     return {
-      text: await xaiChat({
-        key: request.key,
-        messages: [{ role: "user", content: request.prompt }],
+      text: await xai({
+        messages: [promptMessage(request.prompt, request.images ?? [])],
         maxTokens: request.maxTokens,
+        json: request.json !== false,
       }),
       webSearch: false,
     };
@@ -342,16 +455,39 @@ const nativeGetJson: JsonFetcher = async (url, timeoutMs) => {
   return response.data;
 };
 
-const nativeDeps: CoreDeps = {
-  resolveKey: (_provider, userKey) => userKey.trim() || null,
-  noKeyMessage: (provider) =>
-    provider === "grok"
-      ? "Sem chave da xAI. Cole a sua chave em Ajustes."
-      : `Sem chave do ${LABELS[provider]}. Coloque a chave em Ajustes.`,
-  text: nativeText,
-  images: (queries) => commonsImages(queries, nativeGetJson).catch(() => []),
-  isOnline,
+const webGetJson: JsonFetcher = async (url, timeoutMs) => {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = setTimeout(() => controller?.abort(), Math.max(1000, timeoutMs));
+  try {
+    const response = await fetch(url, controller ? { signal: controller.signal } : {});
+    if (!response.ok) {
+      throw httpError(response.status, "", { providerLabel: "Wikimedia" });
+    }
+    return (await response.json()) as unknown;
+  } catch (error) {
+    throw transportFailure(error, { online: isOnline() });
+  } finally {
+    clearTimeout(timer);
+  }
 };
+
+function depsFor(transport: "capacitor" | "fetch"): CoreDeps {
+  const native = transport === "capacitor";
+  return {
+    resolveKey: (_provider, userKey) => userKey.trim() || null,
+    noKeyMessage: (provider) =>
+      provider === "grok"
+        ? "Sem chave da xAI. Cole a sua chave em Ajustes."
+        : `Sem chave do ${LABELS[provider]}. Coloque a chave em Ajustes.`,
+    text: (request) => routedText(request, transport),
+    images: (queries) =>
+      commonsImages(queries, native ? nativeGetJson : webGetJson).catch(() => []),
+    isOnline,
+  };
+}
+
+const nativeDeps: CoreDeps = depsFor("capacitor");
+const webDeps: CoreDeps = depsFor("fetch");
 
 /* ------------------------------ API usada pela UI ------------------------------ */
 
@@ -368,36 +504,98 @@ async function webResult<T>(call: () => Promise<AiResult<T>>): Promise<AiResult<
   }
 }
 
+/** Preferências + chave efetiva do provedor ativo. */
+function aiOptions(input: { ai?: AiRequestOptions }): AiRequestOptions {
+  return normalizeAiRequestOptions(input.ai);
+}
+
+/** O caminho de servidor da xAI não precisa receber preferências/catálogo/chave extra. */
+function withoutAi<T extends { ai?: unknown }>(input: T): Omit<T, "ai"> {
+  const { ai: _ai, ...rest } = input;
+  return rest;
+}
+
+function wantsOpenRouter(options: AiRequestOptions): boolean {
+  return options.preferences.provider === "openrouter";
+}
+
+async function effectiveKey(
+  options: AiRequestOptions,
+  provider: ResearcherId,
+  userKey?: string,
+): Promise<string> {
+  if (wantsOpenRouter(options)) return openRouterKey(options);
+  return nativeKey(provider, userKey);
+}
+
+function localDeps(options: AiRequestOptions): CoreDeps {
+  return wantsOpenRouter(options) ? (isNativeAi() ? nativeDeps : webDeps) : nativeDeps;
+}
+
+/** Falha de configuração do OpenRouter antes de qualquer chamada de rede. */
+function missingOpenRouter<T>(): AiResult<T> {
+  const message = "Sem chave do OpenRouter. Cole a sua chave (sk-or-…) em Ajustes.";
+  return {
+    ok: false,
+    error: message,
+    failure: { kind: "missing-key", message, retryAfterSeconds: null, provider: "openrouter" },
+  };
+}
+
 export async function generatePackageClient(
   input: GeneratePackageInput,
 ): Promise<AiResult<PackageBody>> {
-  if (!isNativeAi()) return webResult(() => generatePackage({ data: input }));
-  const userKey = await nativeKey(input.provider, input.userKey);
-  return runGeneratePackage({ ...input, userKey }, nativeDeps);
+  const options = aiOptions(input);
+  if (!wantsOpenRouter(options) && !isNativeAi()) {
+    return webResult(() => generatePackage({ data: withoutAi(input) }));
+  }
+  const userKey = await effectiveKey(options, input.provider, input.userKey);
+  if (wantsOpenRouter(options) && !userKey) return missingOpenRouter<PackageBody>();
+  return runGeneratePackage({ ...input, userKey, ai: options }, localDeps(options));
 }
 
-export async function generateBlockPackageClient(input: GenerateBlockInput) {
-  if (!isNativeAi()) return webResult(() => generateBlockPackage({ data: input }));
-  const userKey = await nativeKey("grok", input.userKey);
-  return runGenerateBlockPackage({ ...input, userKey }, nativeDeps);
+export async function generateBlockPackageClient(
+  input: GenerateBlockInput,
+): Promise<AiResult<AiBlockPackage>> {
+  const options = aiOptions(input);
+  if (!wantsOpenRouter(options) && !isNativeAi()) {
+    return webResult(() => generateBlockPackage({ data: withoutAi(input) }));
+  }
+  const userKey = await effectiveKey(options, "grok", input.userKey);
+  if (wantsOpenRouter(options) && !userKey) return missingOpenRouter();
+  return runGenerateBlockPackage({ ...input, userKey, ai: options }, localDeps(options));
 }
 
-export async function researchAddClient(input: ResearchInput) {
-  if (!isNativeAi()) return webResult(() => researchAdd({ data: input }));
-  const userKey = await nativeKey("grok", input.userKey);
-  return runResearchAdd({ ...input, userKey }, nativeDeps);
+export async function researchAddClient(input: ResearchInput): Promise<AiResult<ResearchAddition>> {
+  const options = aiOptions(input);
+  if (!wantsOpenRouter(options) && !isNativeAi()) {
+    return webResult(() => researchAdd({ data: withoutAi(input) }));
+  }
+  const userKey = await effectiveKey(options, "grok", input.userKey);
+  if (wantsOpenRouter(options) && !userKey) return missingOpenRouter();
+  return runResearchAdd({ ...input, userKey, ai: options }, localDeps(options));
 }
 
-export async function pingAiClient(input: PingInput) {
-  if (!isNativeAi()) return webResult(() => pingAi({ data: input }));
-  const userKey = await nativeKey(input.provider, input.userKey);
-  return runPingAi({ ...input, userKey }, nativeDeps);
+export async function pingAiClient(input: PingInput): Promise<AiResult<{ text: string }>> {
+  const options = aiOptions(input);
+  if (!wantsOpenRouter(options) && !isNativeAi()) {
+    return webResult(() => pingAi({ data: withoutAi(input) }));
+  }
+  const userKey = await effectiveKey(options, input.provider, input.userKey);
+  if (wantsOpenRouter(options) && !userKey) return missingOpenRouter();
+  return runPingAi({ ...input, userKey, ai: options }, localDeps(options));
 }
 
-export async function tutorTurnClient(input: TutorInput) {
-  if (!isNativeAi()) return webResult(() => tutorTurn({ data: input }));
-  const userKey = await nativeKey("grok", input.userKey);
-  return runTutorTurn({ ...input, userKey }, nativeDeps);
+export async function tutorTurnClient(
+  input: TutorInput,
+): Promise<AiResult<{ item?: QuizItem; text?: string }>> {
+  const options = aiOptions(input);
+  if (!wantsOpenRouter(options) && !isNativeAi()) {
+    return webResult(() => tutorTurn({ data: withoutAi(input) }));
+  }
+  const userKey = await effectiveKey(options, "grok", input.userKey);
+  if (wantsOpenRouter(options) && !userKey) return missingOpenRouter();
+  return runTutorTurn({ ...input, userKey, ai: options }, localDeps(options));
 }
 
 /* ------------------------------ Chat do professor ------------------------------ */
@@ -411,24 +609,75 @@ export type ProfessorInput = {
   mistakes: string[];
   userKey: string;
   messages: ProfessorMessage[];
+  /** Imagens (data URL/base64) anexadas à última pergunta. */
+  images?: string[];
+  /** Provedor ativo, modelo e catálogo. Ausente = xAI, como sempre. */
+  ai?: AiRequestOptions;
 };
 
 /**
- * Resposta completa (sem stream) do professor no APK. A UI aplica o mesmo
- * `present()` da web depois de receber o texto inteiro.
+ * Resposta completa (sem stream) do professor no provedor ativo. A UI aplica
+ * o mesmo `present()` da web depois de receber o texto inteiro.
  */
-export async function nativeProfessorReply(input: ProfessorInput): Promise<string> {
-  const key = await nativeKey("grok", input.userKey);
-  if (!key)
-    throw new AiRequestError("Sem chave da xAI. Cole a sua chave em Ajustes.", "missing-key");
+export async function providerProfessorReply(
+  input: ProfessorInput,
+  transport: "capacitor" | "fetch" = isNativeAi() ? "capacitor" : "fetch",
+): Promise<string> {
+  const options = aiOptions(input);
+  const key = await effectiveKey(options, "grok", input.userKey);
+  if (!key) {
+    const message =
+      options.preferences.provider === "openrouter"
+        ? "Sem chave do OpenRouter. Cole a sua chave (sk-or-…) em Ajustes."
+        : "Sem chave da xAI. Cole a sua chave em Ajustes.";
+    throw new AiRequestError(message, "missing-key", {
+      provider: options.preferences.provider === "openrouter" ? "openrouter" : "xai",
+    });
+  }
   const history = normalizeProfessorHistory(input.messages);
   if (!history.length) throw new AiRequestError("Escreva a dúvida primeiro.", "bad-request");
-  return xaiChat({
-    key,
-    messages: [{ role: "system", content: buildProfessorSystemPrompt(input) }, ...history],
-    maxTokens: 700,
-    temperature: 0.3,
-    json: false,
-    readTimeout: PROFESSOR_TIMEOUT,
-  });
+
+  const messages = professorMessagesWithImages(
+    [{ role: "system", content: buildProfessorSystemPrompt(input) }, ...history],
+    input.images ?? [],
+  );
+
+  const xai = (request: {
+    messages: ProviderMessage[];
+    maxTokens: number;
+    temperature?: number;
+    json?: boolean;
+    timeoutMs?: number;
+  }) => {
+    const call = {
+      key,
+      messages: request.messages,
+      maxTokens: request.maxTokens,
+      temperature: request.temperature,
+      json: request.json,
+      readTimeout: request.timeoutMs,
+    };
+    return transport === "capacitor" ? xaiChat(call) : webXaiChat(call);
+  };
+
+  return providerChat(
+    {
+      ...options,
+      openRouterKey: options.preferences.provider === "openrouter" ? key : options.openRouterKey,
+      transport: transport === "capacitor" ? capacitorTransport : fetchTransport,
+    },
+    {
+      messages,
+      maxTokens: 700,
+      temperature: 0.3,
+      json: false,
+      timeoutMs: PROFESSOR_TIMEOUT,
+    },
+    xai,
+  );
+}
+
+/** Compatibilidade com o caminho nativo antigo. */
+export async function nativeProfessorReply(input: ProfessorInput): Promise<string> {
+  return providerProfessorReply(input, "capacitor");
 }

@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { ButtonSpinner } from "@/components/feedback/button-spinner";
 import { InlineError } from "@/components/feedback/inline-error";
 import { generateBlockPackageClient } from "@/lib/ai/xai-client";
+import { aiOptionsFor, withPreset, type AiPreferences } from "@/lib/ai/provider";
+import { loadCachedModels } from "@/lib/ai/openrouter/model-cache";
 import { toStudyPackage } from "@/lib/ai/package.functions";
 import { describeError, type ErrorCopy } from "@/lib/feedback/error-copy";
 import { useStudy } from "@/lib/study/store";
@@ -44,7 +46,15 @@ export function GeneratePackage({
   const [error, setError] = useState<ErrorCopy | null>(null);
   const busy = state === "loading";
 
-  async function generate() {
+  function currentAi() {
+    return aiOptionsFor(
+      study.settings,
+      study.keys.openrouter,
+      loadCachedModels() ?? undefined,
+    );
+  }
+
+  async function generate(preferences?: AiPreferences) {
     if (busy) return;
     setError(null);
     if (!online()) {
@@ -54,7 +64,14 @@ export function GeneratePackage({
     }
     setState("loading");
     try {
-      const res = await generateBlockPackageClient({ topic, minutes, userKey: study.keys.xai });
+      const ai = currentAi();
+      if (preferences) ai.preferences = preferences;
+      const res = await generateBlockPackageClient({
+        topic,
+        minutes,
+        userKey: study.keys.xai,
+        ai,
+      });
       if (!res.ok) {
         setState("error");
         setError(describeError(res.failure ?? res.error, { online: online() }));
@@ -67,6 +84,37 @@ export function GeneratePackage({
       setState("error");
       setError(describeError(err, { online: online() }));
     }
+  }
+
+  async function handleErrorAction(action: {
+    id: string;
+    preset?: "fast-free" | "vision";
+    externalUrl?: string;
+  }) {
+    // "Recarregar" já abriu a página de créditos no componente do botão.
+    if (action.externalUrl) return;
+    if (action.preset) {
+      const ai = currentAi();
+      const next = withPreset(ai.preferences, action.preset, ai.catalog ?? []);
+      if (next.choice) {
+        try {
+          await study.saveSettings(
+            {
+              ...study.settings,
+              aiProvider: next.preferences.provider,
+              openRouterModel: next.preferences.openRouterModel,
+              openRouterFallbacks: next.preferences.openRouterFallbacks,
+            },
+            study.keys,
+          );
+        } catch {
+          // Sem gravar, a próxima tentativa usa o modelo antigo.
+        }
+        await generate(next.preferences);
+        return;
+      }
+    }
+    await generate();
   }
 
   return (
@@ -122,7 +170,11 @@ export function GeneratePackage({
         </p>
       ) : null}
       {error ? (
-        <InlineError className="mt-3" copy={error} onAction={() => void generate()} />
+        <InlineError
+          className="mt-3"
+          copy={error}
+          onAction={(action) => void handleErrorAction(action)}
+        />
       ) : null}
     </section>
   );

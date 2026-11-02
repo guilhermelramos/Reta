@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, BookOpen, Mic, X } from "lucide-react";
+import { ArrowUp, BookOpen, ImagePlus, Mic, X } from "lucide-react";
 import { Drawer } from "vaul";
 import { useBackOverlay } from "@/lib/android/use-back-overlay";
 import { useVisualViewportVars } from "@/lib/android/visual-viewport";
@@ -9,9 +9,18 @@ import { ButtonSpinner } from "@/components/feedback/button-spinner";
 import { InlineError } from "@/components/feedback/inline-error";
 import { askProfessor } from "@/lib/ai/professor-client";
 import { researchAddClient } from "@/lib/ai/xai-client";
+import {
+  aiOptionsFor,
+  visionAttachmentGate,
+  withPreset,
+  withVisionPreset,
+  type AiRequestOptions,
+} from "@/lib/ai/provider";
+import { loadCachedModels } from "@/lib/ai/openrouter/model-cache";
+import { useStudy } from "@/lib/study/store";
 import { canSendMessage } from "@/lib/study/chat-ui";
 import { professorChips } from "@/lib/study/professor-chips";
-import { describeError, type ErrorCopy } from "@/lib/feedback/error-copy";
+import { describeError, visionUnsupportedCopy, type ErrorCopy } from "@/lib/feedback/error-copy";
 import { validateDiagram } from "@/lib/study/diagrams";
 import { mergeAddition } from "@/lib/study/outline";
 import { sanitizeSvg } from "@/lib/study/svg";
@@ -162,12 +171,24 @@ export function TeacherChat({
   timerClock,
   timerExpired,
 }: TeacherChatProps) {
+  const study = useStudy();
+  const ai = aiOptionsFor(
+    study.settings,
+    study.keys.openrouter,
+    loadCachedModels() ?? undefined,
+  );
+  const aiRef = useRef<AiRequestOptions>(ai);
+  aiRef.current = ai;
   useVisualViewportVars(open);
   const [draft, setDraft] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyKind, setBusyKind] = useState<"chat" | "research" | null>(null);
   const [error, setError] = useState<ErrorCopy | null>(null);
+  const [images, setImages] = useState<string[]>([]);
+  const [imageError, setImageError] = useState<ErrorCopy | null>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const pendingImage = useRef<string | null>(null);
   const retry = useRef<(() => void) | null>(null);
   const [tab, setTab] = useState<"chat" | "caderno">("chat");
   const [test, setTest] = useState<QuizItem | null>(null);
@@ -239,9 +260,99 @@ export function TeacherChat({
     return created;
   }
 
+  function readImage(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(reader.error ?? new Error("Não consegui ler a foto."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function attachImage(file: File) {
+    setImageError(null);
+    if (file.size > 4 * 1024 * 1024) {
+      setImageError(describeError("A foto é grande demais (máximo 4 MB)."));
+      return;
+    }
+    try {
+      const url = await readImage(file);
+      if (!url) return;
+      // Gate antes do envio: modelo conhecido sem visão não chega à rede.
+      const gate = visionAttachmentGate(ai);
+      if (!gate.allowed) {
+        pendingImage.current = url;
+        setImageError(visionUnsupportedCopy());
+        return;
+      }
+      pendingImage.current = null;
+      setImages([url]);
+    } catch (error) {
+      setImageError(describeError(error));
+    }
+  }
+
+  async function imageErrorAction() {
+    const choice = withVisionPreset(ai.preferences, ai.catalog ?? []);
+    if (!choice.choice) {
+      setImageError(describeError("Atualize a lista de modelos em Ajustes para usar visão."));
+      return;
+    }
+    try {
+      await study.saveSettings(
+        {
+          ...study.settings,
+          aiProvider: choice.preferences.provider,
+          openRouterModel: choice.preferences.openRouterModel,
+          openRouterFallbacks: choice.preferences.openRouterFallbacks,
+        },
+        study.keys,
+      );
+      const pending = pendingImage.current;
+      setImageError(null);
+      if (pending) {
+        setImages([pending]);
+        pendingImage.current = null;
+      }
+    } catch {
+      setImageError(describeError("Não consegui trocar de modelo agora. Tente de novo."));
+    }
+  }
+
+  async function handleErrorAction(action: { id: string; preset?: "fast-free" | "vision"; externalUrl?: string }) {
+    if (action.externalUrl) return;
+    if (action.preset) {
+      const next = withPreset(
+        aiRef.current.preferences,
+        action.preset,
+        aiRef.current.catalog ?? [],
+      );
+      if (next.choice) {
+        aiRef.current = { ...aiRef.current, preferences: next.preferences };
+        try {
+          await study.saveSettings(
+            {
+              ...study.settings,
+              aiProvider: next.preferences.provider,
+              openRouterModel: next.preferences.openRouterModel,
+              openRouterFallbacks: next.preferences.openRouterFallbacks,
+            },
+            study.keys,
+          );
+        } catch {
+          // Sem gravar, o retry continua com o modelo antigo e mostra o erro.
+        }
+        retry.current?.();
+        return;
+      }
+    }
+    retry.current?.();
+  }
+
   /** Pergunta a partir da conversa já salva — o retry não duplica a mensagem. */
   async function answer(doubt: Doubt) {
     if (busy) return;
+    const activeAi = aiRef.current;
     const history = doubt.messages;
     if (!online()) {
       showError(describeError(null, { online: false }), () => void answer(doubt));
@@ -263,6 +374,8 @@ export function TeacherChat({
           question,
           mistakes,
           userKey,
+          images,
+          ai: activeAi,
         },
         (raw) => {
           const view = present(raw);
@@ -284,6 +397,7 @@ export function TeacherChat({
         },
       );
       clearError();
+      setImages([]);
     } catch (err) {
       showError(describeError(err, { online: online() }), () => void answer(doubt));
     } finally {
@@ -293,8 +407,9 @@ export function TeacherChat({
   }
 
   async function send(text: string) {
-    const content = text.trim();
-    if (!content || busy) return;
+    const typed = text.trim();
+    if ((!typed && !images.length) || busy) return;
+    const content = typed || "Explique a foto e resolva a questão nela.";
     clearError();
     setDraft("");
     const base = ensureDoubt(content);
@@ -352,7 +467,12 @@ export function TeacherChat({
     setBusy(true);
     setBusyKind("research");
     try {
-      const res = await researchAddClient({ question: last.text, topic: title, userKey });
+      const res = await researchAddClient({
+        question: last.text,
+        topic: title,
+        userKey,
+        ai: aiRef.current,
+      });
       if (!res.ok) {
         showError(
           describeError(res.failure ?? res.error, { online: online() }),
@@ -551,7 +671,12 @@ export function TeacherChat({
                   ) : null}
                 </div>
               ) : null}
-              {error ? <InlineError copy={error} onAction={() => retry.current?.()} /> : null}
+              {error ? (
+                <InlineError
+                  copy={error}
+                  onAction={(action) => void handleErrorAction(action)}
+                />
+              ) : null}
               {active?.messages.some((msg) => msg.outside) ? (
                 <Button variant="surface" disabled={busy} onClick={() => void research()}>
                   {busy && busyKind === "research" ? (
@@ -599,6 +724,33 @@ export function TeacherChat({
                     Sem microfone neste navegador: digite a dúvida.
                   </p>
                 ) : null}
+                {imageError ? (
+                  <InlineError
+                    className="mb-2"
+                    copy={imageError}
+                    onAction={() => void imageErrorAction()}
+                  />
+                ) : null}
+                {images.length ? (
+                  <div className="mb-2 flex items-center gap-2 rounded-xl border border-border bg-surface-2 p-2">
+                    <img
+                      src={images[0]}
+                      alt="Foto anexada à pergunta"
+                      className="h-12 w-12 rounded-lg object-cover"
+                    />
+                    <p className="min-w-0 flex-1 text-xs text-muted">
+                      A foto vai junto com a pergunta para o professor.
+                    </p>
+                    <button
+                      type="button"
+                      className="grid size-12 shrink-0 place-items-center rounded-full"
+                      aria-label="Remover foto"
+                      onClick={() => setImages([])}
+                    >
+                      <X className="size-4" aria-hidden />
+                    </button>
+                  </div>
+                ) : null}
                 <form
                   className="flex items-center gap-2"
                   onSubmit={(event) => {
@@ -606,6 +758,28 @@ export function TeacherChat({
                     void send(draft);
                   }}
                 >
+                  <input
+                    ref={imageInput}
+                    className="sr-only"
+                    type="file"
+                    accept="image/*"
+                    aria-label="Escolher foto da questão"
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0];
+                      event.currentTarget.value = "";
+                      if (file) void attachImage(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="grid size-12 shrink-0 place-items-center rounded-xl border border-border"
+                    aria-label="Anexar foto"
+                    title="Anexar foto"
+                    disabled={busy}
+                    onClick={() => imageInput.current?.click()}
+                  >
+                    <ImagePlus className="size-4" aria-hidden />
+                  </button>
                   {speech ? (
                     <button
                       type="button"
@@ -626,7 +800,7 @@ export function TeacherChat({
                   <button
                     type="submit"
                     aria-label="Enviar"
-                    disabled={!canSendMessage(draft, busy)}
+                    disabled={(!canSendMessage(draft, busy) && !images.length) || busy}
                     className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-primary-fg disabled:bg-surface-2 disabled:text-muted"
                   >
                     {busy && busyKind === "chat" ? (

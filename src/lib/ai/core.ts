@@ -13,7 +13,7 @@ import {
   type PackageBody,
   type ResearchAddition,
 } from "./parse.ts";
-import { BLOCK_MODEL, FAST_MODEL } from "./models.ts";
+import { BLOCK_MODEL } from "./models.ts";
 import {
   buildBlockPackagePrompt,
   buildResearchPrompt,
@@ -23,6 +23,7 @@ import {
   PING_PROMPT,
 } from "./prompts.ts";
 import { clip } from "./text.ts";
+import { routedModels, type AiRequestOptions } from "./provider.ts";
 
 /**
  * Orquestração compartilhada dos fluxos de IA: prompt → chamada → parse →
@@ -41,6 +42,12 @@ export type TextRequest = {
   prompt: string;
   maxTokens: number;
   webSearch: boolean;
+  /** Imagens (data URL/base64) anexadas à última fala, quando houver. */
+  images?: string[];
+  /** Provedor ativo/modelo/fallbacks e catálogo para o roteamento. */
+  ai?: AiRequestOptions;
+  /** `false` só no chat do professor, que responde texto livre. */
+  json?: boolean;
 };
 
 export type CoreDeps = {
@@ -59,11 +66,22 @@ export type GeneratePackageInput = {
   userKey?: string;
   webSearch?: boolean;
   gaps?: string;
+  ai?: AiRequestOptions;
 };
 
-export type GenerateBlockInput = { topic: string; minutes?: number; userKey?: string };
+export type GenerateBlockInput = {
+  topic: string;
+  minutes?: number;
+  userKey?: string;
+  ai?: AiRequestOptions;
+};
 
-export type ResearchInput = { question: string; topic: string; userKey?: string };
+export type ResearchInput = {
+  question: string;
+  topic: string;
+  userKey?: string;
+  ai?: AiRequestOptions;
+};
 
 export type TutorInput = {
   topic: string;
@@ -73,9 +91,14 @@ export type TutorInput = {
   avoid?: string[];
   userKey?: string;
   previous?: string;
+  ai?: AiRequestOptions;
 };
 
-export type PingInput = { provider: ResearcherId; userKey?: string };
+export type PingInput = {
+  provider: ResearcherId;
+  userKey?: string;
+  ai?: AiRequestOptions;
+};
 
 const PROVIDERS: ResearcherId[] = ["grok", "perplexity", "gemini", "claude"];
 
@@ -141,9 +164,12 @@ export async function runGeneratePackage(
       prompt: buildStudyPackagePrompt({ topic, minutes, gaps }),
       maxTokens: 3200,
       webSearch,
+      ...(input.ai ? { ai: input.ai } : {}),
     });
     const parsed = extractJson(text);
-    const pack = coercePackage(parsed, usedWeb ? "grok-web" : input.provider, usedWeb);
+    const routedProvider =
+      input.ai?.preferences.provider === "openrouter" ? "openrouter" : input.provider;
+    const pack = coercePackage(parsed, usedWeb ? "grok-web" : routedProvider, usedWeb);
     if (!pack)
       return { ok: false, error: "O pacote veio incompleto. Tente gerar de novo só este bloco." };
 
@@ -188,6 +214,7 @@ export async function runGenerateBlockPackage(
         prompt: buildBlockPackagePrompt(topic, minutes, attempt === 0 ? undefined : rejection),
         maxTokens: 4000,
         webSearch: false,
+        ...(input.ai ? { ai: input.ai } : {}),
       });
       text = response.text;
     } catch (error) {
@@ -206,9 +233,12 @@ export async function runGenerateBlockPackage(
           pitfalls: parsed.pitfalls,
           flashcards: parsed.flashcards,
           questions: parsed.questions,
-          provider: "grok",
+          provider: input.ai?.preferences.provider === "openrouter" ? "openrouter" : "grok",
           webSearch: false,
-          model: BLOCK_MODEL,
+          model:
+            input.ai?.preferences.provider === "openrouter"
+              ? routedModels(input.ai.preferences)[0] ?? BLOCK_MODEL
+              : BLOCK_MODEL,
         },
       };
     }
@@ -236,6 +266,7 @@ export async function runResearchAdd(
       prompt: buildResearchPrompt({ topic, question }),
       maxTokens: 3500,
       webSearch: true,
+      ...(input.ai ? { ai: input.ai } : {}),
     });
     const research = coerceResearch(extractJson(text));
     if (!research) return { ok: false, error: "A pesquisa não trouxe um texto utilizável." };
@@ -273,6 +304,7 @@ export async function runTutorTurn(
         prompt: buildTutorReexplainPrompt({ topic, brief, previous }),
         maxTokens: 400,
         webSearch: false,
+        ...(input.ai ? { ai: input.ai } : {}),
       });
       const out = tutorText(extractJson(text));
       if (!out) return { ok: false, error: "Não consegui outra explicação." };
@@ -290,6 +322,7 @@ export async function runTutorTurn(
       }),
       maxTokens: 900,
       webSearch: false,
+      ...(input.ai ? { ai: input.ai } : {}),
     });
     const item = asQuiz(extractJson(text), difficulty, `live-${newId()}`);
     if (!item) return { ok: false, error: "A questão veio incompleta. Tente de novo." };
@@ -314,6 +347,7 @@ export async function runPingAi(
       prompt: PING_PROMPT,
       maxTokens: 40,
       webSearch: false,
+      ...(input.ai ? { ai: input.ai } : {}),
     });
     if (!text.trim()) return { ok: false, error: "A IA voltou vazia. Confira a chave em Ajustes." };
     return { ok: true, data: { text: text.slice(0, 80) } };

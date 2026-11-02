@@ -109,14 +109,14 @@ describe("normalizeModel", () => {
 });
 
 describe("buildChatBody", () => {
-  it("manda model quando não há fallback", () => {
+  it("manda sempre models, mesmo com um único modelo", () => {
     const body = callBody({ model: "openrouter/auto" });
-    assert.equal(body.model, "openrouter/auto");
-    assert.equal("models" in body, false);
+    assert.deepEqual(body.models, ["openrouter/auto"]);
+    assert.equal("model" in body, false);
     assert.equal(body.stream, false);
   });
 
-  it("com fallback manda models e omite model", () => {
+  it("com fallback manda models na ordem e omite model", () => {
     const body = callBody({
       model: "principal/modelo",
       fallbacks: ["fallback/um", "fallback/dois", "principal/modelo", " "],
@@ -280,7 +280,7 @@ describe("chatCompletion", () => {
       kind: string;
       message: RegExp;
     }[] = [
-      { status: 401, kind: "unauthorized", message: /chave do OpenRouter foi recusada/i },
+      { status: 401, kind: "unauthorized", message: /Chave do OpenRouter inválida ou revogada/i },
       { status: 402, kind: "no-credits", message: /Sem créditos/i },
       { status: 403, kind: "unauthorized", message: /bloqueada ou atingiu o limite/i },
       { status: 429, headers: { "retry-after": "12" }, kind: "rate-limit", message: /12 s/ },

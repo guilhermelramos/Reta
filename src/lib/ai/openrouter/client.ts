@@ -164,6 +164,7 @@ export function visionUnsupportedError(model: string): AiRequestError {
   return new AiRequestError(
     `O modelo ${model} não lê imagens. Escolha um modelo com visão em Ajustes ou envie só o texto.`,
     "vision",
+    { provider: "openrouter" },
   );
 }
 
@@ -243,28 +244,29 @@ export function openRouterHttpError(
 ): AiRequestError {
   if (status === 401) {
     return new AiRequestError(
-      "A chave do OpenRouter foi recusada. Confira a chave em Ajustes.",
+      "Chave do OpenRouter inválida ou revogada. Cole uma nova em Ajustes.",
       "unauthorized",
-      { status },
+      { status, provider: "openrouter" },
     );
   }
   if (status === 402) {
     return new AiRequestError(
-      "Sem créditos no OpenRouter para este modelo. Adicione créditos ou escolha um modelo grátis (:free).",
+      "Sem créditos no OpenRouter. Escolha um modelo grátis ou recarregue.",
       "no-credits",
-      { status },
+      { status, provider: "openrouter" },
     );
   }
   if (status === 403) {
     return new AiRequestError(
       "Sua chave do OpenRouter foi bloqueada ou atingiu o limite de uso. Confira a chave em Ajustes.",
       "unauthorized",
-      { status },
+      { status, provider: "openrouter" },
     );
   }
   return httpError(status, openRouterErrorMessage(data), {
     retryAfter: options.retryAfter ?? null,
     providerLabel: OPENROUTER_PROVIDER_LABEL,
+    provider: "openrouter",
     ...(options.now != null ? { now: options.now } : {}),
   });
 }
@@ -296,8 +298,9 @@ export type ChatCompletionResult = {
 /**
  * Corpo de `POST /chat/completions`.
  *
- * Com fallback, envia `models: [principal, …]` e **omite** `model` (o
- * OpenRouter aceita as duas formas; omitir evita divergência entre os campos).
+ * Envia **sempre** `models: [principal, …fallbacks]` e omite `model`: é o
+ * campo de fallback nativo documentado pelo OpenRouter e vale também para um
+ * único modelo (ex.: `["openrouter/auto"]`). O `model` não é duplicado.
  */
 export function buildChatBody(request: ChatCompletionRequest): Record<string, unknown> {
   const model = request.model.trim();
@@ -307,7 +310,7 @@ export function buildChatBody(request: ChatCompletionRequest): Record<string, un
     messages: request.messages,
     // CapacitorHttp não entrega SSE: a resposta chega completa nos dois caminhos.
     stream: false,
-    ...(models.length > 1 ? { models } : { model }),
+    models,
   };
   if (request.maxTokens != null && Number.isFinite(request.maxTokens)) {
     body.max_tokens = Math.max(1, Math.round(request.maxTokens));
@@ -342,16 +345,21 @@ export async function chatCompletion(
 ): Promise<ChatCompletionResult> {
   const model = request.model.trim();
   if (!model)
-    throw new AiRequestError("Escolha um modelo do OpenRouter em Ajustes.", "bad-request");
+    throw new AiRequestError("Escolha um modelo do OpenRouter em Ajustes.", "bad-request", {
+      provider: "openrouter",
+    });
   const key = request.key.trim();
   if (!key) {
     throw new AiRequestError(
       "Sem chave do OpenRouter. Cole a sua chave (sk-or-…) em Ajustes.",
       "missing-key",
+      { provider: "openrouter" },
     );
   }
   if (!request.messages.length) {
-    throw new AiRequestError("Nada para enviar ao OpenRouter.", "bad-request");
+    throw new AiRequestError("Nada para enviar ao OpenRouter.", "bad-request", {
+      provider: "openrouter",
+    });
   }
   // Antes da rede: imagem + modelo sem visão é um erro de configuração.
   assertVisionSupport(model, request.messages, request.catalog);
@@ -415,7 +423,9 @@ export async function listModels(
 
   const rows = (response.data as { data?: unknown } | null)?.data;
   if (!Array.isArray(rows)) {
-    throw new AiRequestError("A lista de modelos do OpenRouter veio vazia.", "empty");
+    throw new AiRequestError("A lista de modelos do OpenRouter veio vazia.", "empty", {
+      provider: "openrouter",
+    });
   }
   const models: OpenRouterModel[] = [];
   for (const row of rows) {
@@ -423,7 +433,9 @@ export async function listModels(
     if (model) models.push(model);
   }
   if (!models.length) {
-    throw new AiRequestError("A lista de modelos do OpenRouter veio vazia.", "empty");
+    throw new AiRequestError("A lista de modelos do OpenRouter veio vazia.", "empty", {
+      provider: "openrouter",
+    });
   }
   return models;
 }
