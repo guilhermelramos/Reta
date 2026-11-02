@@ -548,6 +548,31 @@ no WebView, o TalkBack anunciando o acordeão com `aria-expanded` e o snackbar
 **Desfazer** durante os 8 s (o retrato é em memória; depois do prazo, ou de
 fechar/reabrir o app, a importação já é definitiva).
 
+### Correções P4 na tela Importar (nome da planilha e prévia)
+
+- **Nome salvo:** ao importar, `meta.activeSheet` recebe o nome do arquivo sem
+  extensão (`enem-reta-final.xlsx` → `enem-reta-final`), não mais o nome da aba
+  do workbook (`"Plano"`). Sem nome de arquivo, grava **Minha planilha**. O
+  passo 2 do onboarding usa o mesmo `sheetNameFromFile`.
+- Planos já gravados com `"Plano"` continuam intactos no IndexedDB e aparecem
+  como **Minha planilha** no cartão **Plano atual** e em **Planilha:** no topo
+  da aba Plano (só exibição, sem migração).
+- **Prévia:** o cabeçalho introdutório (`Importar planilha` + colunas usadas)
+  sai de cena quando o arquivo já foi lido; o título passa a ser **Confira antes
+  de importar** e o rótulo da prévia fica só **PRÉ-VISUALIZAÇÃO** (11px,
+  maiúsculas), sem o nome truncado. O cartão limita a altura à viewport, a
+  lista rola dentro dele e **Importar/Cancelar** ficam lado a lado, inteiros
+  acima da barra de navegação em 360×640 e 320×568; o aviso de erro abre a
+  área rolável, nunca escondido.
+- A regra de nome é pura em
+  [`src/lib/study/sheet-name.ts`](./src/lib/study/sheet-name.ts), com
+  `sheet-name.test.ts` em `npm test`; exibição e ordem da prévia continuam
+  cobertas por `import-preview.test.ts` e `plan-schedule.test.ts`.
+
+Para validar no aparelho: o nome vindo do seletor de arquivos do WebView, a
+rolagem interna da prévia em tela pequena e o TalkBack anunciando os botões
+**Importar** e **Cancelar** lado a lado.
+
 ## Redesign da tela Erros (Material 3)
 
 O `/erros` virou um caderno de leitura rápida: coluna de 600dp, 16dp nas
