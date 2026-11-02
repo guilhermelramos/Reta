@@ -301,10 +301,11 @@
   gap: 0.5rem;
   overflow-x: auto;
   padding-inline: 1rem;
+  padding-right: 1.5rem;
   scroll-padding-inline: 1rem;
   scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to right, #000 88%, transparent 100%);
-  mask-image: linear-gradient(to right, #000 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 88%, transparent 100%);
+  mask-image: linear-gradient(to right, black 88%, transparent 100%);
 }
 
 .session-chips::-webkit-scrollbar {
@@ -347,7 +348,10 @@
   gap: 0.5rem;
   overflow-x: auto;
   padding-bottom: 0.25rem;
+  padding-right: 1.5rem;
   scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, black 88%, transparent 100%);
+  mask-image: linear-gradient(to right, black 88%, transparent 100%);
 }
 
 .notebook-chips::-webkit-scrollbar {
