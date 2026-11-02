@@ -57,6 +57,22 @@ describe("auditA11ySource: metadados", () => {
   it("aceita text-xs (12px)", () => {
     assert.deepEqual(ruleIds('<span className="text-xs" />'), []);
   });
+
+  it("aceita uma exceção explícita na mesma tag", () => {
+    const source = [
+      '<p',
+      '  data-a11y-allow="metadata-size"',
+      '  className="text-[11px] uppercase"',
+      '/>',
+    ].join("\n");
+    assert.deepEqual(ruleIds(source), []);
+  });
+
+  it("a exceção não vale para alvo de toque nem opacidade", () => {
+    const source =
+      '<button data-a11y-allow="metadata-size" className="min-h-11 text-muted/60 text-[11px]" />';
+    assert.deepEqual(ruleIds(source), ["touch-target", "text-opacity"]);
+  });
 });
 
 describe("código-fonte do app", () => {

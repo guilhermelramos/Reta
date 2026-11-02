@@ -313,13 +313,17 @@ function ImportPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[600px] flex-col gap-5">
-      <header>
-        <p className="text-sm text-muted">Plano de estudo</p>
-        <h1 className="mt-1 text-3xl leading-tight">Importar planilha</h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted">
-          Colunas usadas: Data, Bloco A, Bloco B, Revisão e os minutos de cada um.
-        </p>
-      </header>
+      {/* Com o arquivo já lido, "Confira antes de importar" assume o papel de
+          título da tela: o cabeçalho introdutório só empurrava a prévia. */}
+      {!previewing ? (
+        <header>
+          <p className="text-sm text-muted">Plano de estudo</p>
+          <h1 className="mt-1 text-3xl leading-tight">Importar planilha</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            Colunas usadas: Data, Bloco A, Bloco B, Revisão e os minutos de cada um.
+          </p>
+        </header>
+      ) : null}
 
       {/*
         O seletor fica sempre montado: na prévia ele é acionado pelo botão
@@ -406,7 +410,7 @@ function ImportPage() {
         </>
       ) : null}
 
-      {fileError ? (
+      {fileError && !previewing ? (
         <InlineError
           copy={fileError}
           onAction={handleErrorAction}
@@ -418,18 +422,15 @@ function ImportPage() {
         <section
           ref={previewRef}
           aria-labelledby="previa-planilha"
-          className="flex scroll-mt-2 flex-col gap-2.5 rounded-2xl border border-border bg-surface p-4"
+          className="flex max-h-[calc(100dvh-6.5rem-env(safe-area-inset-bottom))] scroll-mt-2 flex-col gap-2 rounded-2xl border border-border bg-surface p-4 min-[600px]:max-h-[calc(100dvh-8rem)]"
         >
           <div className="flex items-center justify-between gap-3">
+            {/* 11px é o tamanho pedido na revisão P4 para este rótulo. */}
             <p
-              title={sheet.name}
-              className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-primary"
+              data-a11y-allow="metadata-size"
+              className="text-[11px] font-semibold uppercase tracking-wide text-primary"
             >
               Pré-visualização
-              <span className="font-normal normal-case tracking-normal text-muted">
-                {" · "}
-                {sheet.name}
-              </span>
             </p>
             <Button
               variant="surface"
@@ -441,93 +442,106 @@ function ImportPage() {
               Trocar arquivo
             </Button>
           </div>
-          <h2 id="previa-planilha" className="text-2xl leading-snug">
+          <h1 id="previa-planilha" className="text-xl leading-snug">
             Confira antes de importar
-          </h2>
+          </h1>
 
-          {previewError ? (
-            <InlineError
-              copy={previewError}
-              onAction={handleErrorAction}
-              secondaryAction={previewError.secondaryAction}
-            />
-          ) : null}
+          {/* O conteúdo rola dentro do cartão em telas curtas; o aviso de erro
+              abre a lista (nada é escondido) e as ações ficam fixas embaixo,
+              sempre inteiras acima da dobra. */}
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain">
+            {fileError ? (
+              <InlineError
+                copy={fileError}
+                onAction={handleErrorAction}
+                secondaryAction={fileError.secondaryAction}
+              />
+            ) : null}
+            {previewError ? (
+              <InlineError
+                copy={previewError}
+                onAction={handleErrorAction}
+                secondaryAction={previewError.secondaryAction}
+              />
+            ) : null}
 
-          {summary ? (
-            <p className="rounded-xl bg-surface-2 px-3 py-2 text-sm font-semibold leading-snug text-fg">
-              {summary.label}
-            </p>
-          ) : null}
+            {summary ? (
+              <p className="rounded-xl bg-surface-2 px-3 py-2 text-sm font-semibold leading-snug text-fg">
+                {summary.label}
+              </p>
+            ) : null}
 
-          {previewItems.length ? (
-            <ul className="flex flex-col gap-2">
-              {previewItems.map((item) => (
-                <PreviewItemRow key={item.key} item={item} />
-              ))}
-            </ul>
-          ) : null}
-          {extraDays > 0 ? (
-            <p className="text-xs text-muted">
-              e mais {extraDays} {extraDays === 1 ? "dia" : "dias"}
-            </p>
-          ) : null}
+            {previewItems.length ? (
+              <ul className="flex flex-col gap-2">
+                {previewItems.map((item) => (
+                  <PreviewItemRow key={item.key} item={item} />
+                ))}
+              </ul>
+            ) : null}
+            {extraDays > 0 ? (
+              <p className="text-xs text-muted">
+                e mais {extraDays} {extraDays === 1 ? "dia" : "dias"}
+              </p>
+            ) : null}
 
-          <details
-            className="group border-t border-border"
-            open={columnsOpen}
-            onToggle={(event) => setColumnsOpen(event.currentTarget.open)}
-          >
-            <summary
-              aria-expanded={columnsOpen}
-              className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-0.5 [&::-webkit-details-marker]:hidden"
+            <details
+              className="group border-t border-border"
+              open={columnsOpen}
+              onToggle={(event) => setColumnsOpen(event.currentTarget.open)}
             >
-              <span className="min-w-0">
-                <span className="block text-sm font-medium leading-tight text-fg">
-                  Ajustar colunas
+              <summary
+                aria-expanded={columnsOpen}
+                className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-0.5 [&::-webkit-details-marker]:hidden"
+              >
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium leading-tight text-fg">
+                    Ajustar colunas
+                  </span>
+                  <span
+                    className={cn(
+                      "mt-0.5 block text-xs leading-tight",
+                      manual ? "text-clay-text" : "text-muted",
+                    )}
+                  >
+                    {manual
+                      ? "Cabeçalhos não reconhecidos · escolha as colunas"
+                      : recognized.label}
+                  </span>
                 </span>
-                <span
+                <ChevronDown
                   className={cn(
-                    "mt-0.5 block text-xs leading-tight",
-                    manual ? "text-clay-text" : "text-muted",
+                    "size-6 shrink-0 text-muted transition-transform duration-200",
+                    columnsOpen && "rotate-180",
                   )}
-                >
-                  {manual
-                    ? "Cabeçalhos não reconhecidos · escolha as colunas"
-                    : recognized.label}
-                </span>
-              </span>
-              <ChevronDown
-                className={cn(
-                  "size-6 shrink-0 text-muted transition-transform duration-200",
-                  columnsOpen && "rotate-180",
-                )}
-                aria-hidden
-              />
-            </summary>
-            <div className="pb-3 pt-2">
-              <ColumnControls
-                sheet={sheet}
-                sheets={sheets}
-                sheetName={sheetName}
-                manual={manual}
-                map={map}
-                labels={labels}
-                onChangeSheet={changeSheet}
-                onChangeMap={(key, value) => setMap({ ...map, [key]: value })}
-              />
-            </div>
-          </details>
+                  aria-hidden
+                />
+              </summary>
+              <div className="pb-3 pt-2">
+                <ColumnControls
+                  sheet={sheet}
+                  sheets={sheets}
+                  sheetName={sheetName}
+                  manual={manual}
+                  map={map}
+                  labels={labels}
+                  onChangeSheet={changeSheet}
+                  onChangeMap={(key, value) => setMap({ ...map, [key]: value })}
+                />
+              </div>
+            </details>
 
-          <div className="flex flex-col gap-2 border-t border-border pt-3">
             {planDays.length ? (
               <p className="text-xs leading-relaxed text-muted">
                 Ao importar, esta planilha substitui o plano atual. O histórico de sessões e erros
                 continua aqui.
               </p>
             ) : null}
-            <div className="flex flex-col gap-2 sm:flex-row-reverse">
+          </div>
+
+          <div className="flex flex-none border-t border-border pt-2">
+            <div className="flex w-full flex-row-reverse gap-2">
               <Button
-                className="sm:flex-1"
+                className="flex-1"
                 disabled={busy || reading || !canImport}
                 onClick={() => void confirm()}
               >
@@ -542,7 +556,7 @@ function ImportPage() {
               </Button>
               <Button
                 variant="ghost"
-                className="sm:flex-1"
+                className="flex-1"
                 disabled={busy || reading}
                 onClick={resetSelection}
               >
@@ -621,16 +635,16 @@ function PreviewProblem({ row, message }: { row: number; message: string }) {
 
 function PreviewDay({ row }: { row: PreviewRow }) {
   return (
-    <li className="rounded-xl border border-border bg-surface-2 px-3 py-1.5">
+    <li className="rounded-xl border border-border bg-surface-2 px-2.5 py-1.5">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm font-semibold tabular-nums text-fg">{row.label}</span>
-        <span className="shrink-0 text-xs text-muted">
+        <span className="text-xs font-semibold tabular-nums text-fg">{row.label}</span>
+        <span className="shrink-0 text-xs leading-tight text-muted">
           {row.blockCountLabel} · {row.totalLabel}
         </span>
       </div>
-      <ul className="mt-0.5 flex flex-col">
+      <ul className="flex flex-col">
         {row.blocks.map((block) => (
-          <li key={block.kind} className="truncate text-xs leading-snug text-muted">
+          <li key={block.kind} className="truncate text-xs leading-tight text-muted">
             <span className="text-fg">{block.label}</span> · {block.minutes} · {block.content}
           </li>
         ))}

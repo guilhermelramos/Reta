@@ -4,7 +4,9 @@
  * O APK roda no WebView do Android, então o alvo de toque efetivo é o mesmo
  * que o CSS declara. Estas regras impedem que alguém volte a introduzir alvos
  * de 44px (classes terminadas em 11), texto com opacidade abaixo de 80% ou
- * metadados menores que 12px.
+ * metadados menores que 12px. A única saída é a marca explícita
+ * `a11y-allow="metadata-size"` na mesma tag, para um tamanho pedido por uma
+ * revisão de design; ela não vale para as outras duas regras.
  */
 
 export type A11yRule = "touch-target" | "text-opacity" | "metadata-size";
@@ -27,13 +29,27 @@ const TEXT_OPACITY = /\btext-[a-z0-9-]+\/(\d{1,3})\b/g;
 const SMALL_TEXT = /\btext-\[(?:[0-9]|1[0-1])px\]/g;
 
 /**
+ * Exceção pontual e explícita para uma revisão de design que pede um rótulo
+ * menor que o padrão (ex.: "PRÉ-VISUALIZAÇÃO" em 11px). Não abre exceção para
+ * alvo de toque nem para opacidade de texto.
+ */
+const METADATA_SIZE_ALLOWED = /\ba11y-allow=["']metadata-size["']/;
+
+/**
  * Audita um arquivo-fonte e devolve os problemas encontrados, com a linha
  * original. Função pura para poder ser testada sem tocar no disco.
  */
 export function auditA11ySource(file: string, source: string): A11yIssue[] {
   const issues: A11yIssue[] = [];
+  const lines = source.split(/\r?\n/);
+  const lineOffsets: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    lineOffsets.push(offset);
+    offset += line.length + 1;
+  }
 
-  source.split(/\r?\n/).forEach((line, index) => {
+  lines.forEach((line, index) => {
     const lineNumber = index + 1;
 
     for (const match of line.matchAll(TOUCH_TARGET_44)) {
@@ -59,6 +75,12 @@ export function auditA11ySource(file: string, source: string): A11yIssue[] {
     }
 
     for (const match of line.matchAll(SMALL_TEXT)) {
+      // A marca pode estar em outra linha da mesma tag JSX; confere o trecho
+      // desde o `<` que abre o elemento até a classe de fonte.
+      const absolute = (lineOffsets[index] ?? 0) + (match.index ?? 0);
+      const tagStart = source.lastIndexOf("<", absolute);
+      const openingTag = tagStart >= 0 ? source.slice(tagStart, absolute) : "";
+      if (METADATA_SIZE_ALLOWED.test(openingTag)) continue;
       issues.push({
         file,
         line: lineNumber,
