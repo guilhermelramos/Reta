@@ -1,6 +1,6 @@
-import { addDays, dayLoad, daysBetween, examDate } from "@/lib/study/time";
-import type { ErrorReason, Mistake, PlanDay, StudySession } from "@/lib/study/types";
-import { ERROR_REASON_LABEL, KIND_LABEL } from "@/lib/study/types";
+import { addDays, dayLoad, daysBetween, examDate } from "./time.ts";
+import type { ErrorReason, Mistake, PlanDay, StudySession } from "./types.ts";
+import { ERROR_REASON_LABEL, KIND_LABEL } from "./types.ts";
 
 /**
  * Métricas do painel de progresso. Tudo aqui é função pura: a data de hoje
@@ -185,7 +185,7 @@ export function planTopicLabel(content: string): string {
   return label.length > 48 ? `${label.slice(0, 47).trimEnd()}…` : label;
 }
 
-function labelKey(label: string): string {
+export function labelKey(label: string): string {
   return label
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
