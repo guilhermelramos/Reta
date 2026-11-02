@@ -1,0 +1,32 @@
+Você é consultor de UI/UX e estratégia mobile (Android first) do app de estudos Reta. Responda em pt-BR, pesquisando fontes (Material Design 3, developer.android.com, Anki, Duolingo, Forest, Quizlet). Não invente: sem fonte, diga 'sem fonte'. Formato obrigatório: VEREDITO (1-2 frases); PROBLEMAS (numerada: onde, por quê, COMO CORRIGIR com componente, dp, cor, espaçamento, fluxo); MELHORIAS (numerada, prioridade alta/média/baixa, esforço P/M/G); COMPARAÇÃO (2-3 concorrentes); FONTES (links). As 10 imagens anexas são screenshots do app.
+
+## P3 — momento (c) revisão por tela: Onboarding + Sessão (pós-P2) + Hoje + Ajustes + Importar — 2026-11-01 (UTC-3)
+
+**Contexto.** Branch `integracao-fase2` (fora da main). A sua P2 foi registrada em `DECISOES.md` (alta ou esforço P aplicados; cronômetro nativo na notificação e chave xAI "lazy" foram para `MELHORIAS.md`). Desde a P2:
+- **Onboarding** (`ui/p2-onboarding`): passo 2 com "Agora não" que avança só um passo ("Pular" segue encerrando tudo); "N dias no plano" só aparece depois de importar; chevron no expansor da chave; "Verificar chave" desabilitado com campo vazio; título do passo 4 ajustado a 320px; frase duplicada removida; 2 colunas em paisagem.
+- **Sessão** (`ui/p2-sessao`): o número principal agora é o tempo **restante** (vira `+MM:SS` no estouro), igual ao chip do sheet; ← de 48dp na app bar no lugar do link "Hoje"; Pausar tonal × Iniciar filled; progresso de 6dp; um só cartão vazio com CTA "Gerar material com IA" em 1 linha; sheet do professor com chips em linha rolável com fade e Enviar 48dp desabilitado se vazio; em paisagem, split view (timer à esquerda, conteúdo à direita) sem navegação lateral e sem FAB sobre o título.
+- **Hoje** (`ui/hoje`, P1 prob. 4 / melh. 1 e 8): topo com data, "O que estudar agora" e "Faltam N dias"; Trocar planilha/Exportar resumo num menu de overflow (⋮ 48dp, `role=menu`); cartão herói com a próxima ação ("Começar bloco"/"Continuar" + "Só 15 min"); blocos com carga em cartões compactos com estado; blocos vazios numa linha; "Preparar semana" como sugestão com Preparar/Dispensar (dispensa semanal); coluna de 600dp e navigation rail M3 de 80dp a partir de 600dp.
+- **Ajustes** (`ui/ajustes`, P1 melh. 9 / prob. 3 e 11): seções Professor IA, Notificações, Aparência, Dados, Sobre; listas de 56dp; switches M3 52×32dp com a linha inteira clicável; status da chave, permissão, alarme exato (com "Abrir configurações") e linha de bateria não bloqueante; versão do app.
+- **Importar** (`ui/importar`): cartão do plano atual (ou "Nenhuma planilha importada"), área tocável de 120dp com borda tracejada para escolher o .xlsx, "Baixar modelo", pré-visualização (N dias, período, 3 primeiras linhas, avisos), "Ajustar colunas" recolhido quando os cabeçalhos são reconhecidos, texto de substituição sem diálogo extra, snackbar "Plano importado · N dias" com "Ir para Hoje".
+
+Typecheck ok, 299/299 testes do app passando, `build:cap` + `assembleDebug` ok (APK em `/workspace/apk/reta-integracao-fase2-debug.apk`).
+
+**Método dos screenshots** (o mesmo da P2): bundle `dist-cap` do APK servido sem API e renderizado no Playwright (viewport de celular, `isMobile`, toque, DPR 2), plano de 7 dias importado pelo passo 2. Script: `consultor/shots/p3/shots3.mjs`; log: `consultor/shots/p3/log.txt`.
+
+**Screenshots** (`/workspace/reta-android/consultor/shots/p3/`), sufixo `-{light|dark}-{360|320|paisagem}.png`:
+- `onboarding-1..4-*`, `onboarding-3-chave-aberta-*`
+- `sessao-*`, `sessao-timer-rodando-*`, `sessao-chat-*`, `sessao-encerrar-dialogo-*`
+- `hoje-*`, `hoje-menu-*` (overflow aberto)
+- `ajustes-*`
+- `importar-*` (estado inicial) e `importar-previa-*` (após escolher o arquivo)
+
+**Limitações conhecidas dos shots:** (1) o app só tem tema escuro, então `light` = `dark`; (2) sem plugins nativos no navegador: o passo 4 mostra a variante web, alarme exato/bateria/permissão aparecem no estado "web" em Ajustes; (3) os shots `fullPage` desenham a barra inferior fixa no meio da página longa (artefato da captura, não do app); (4) notificação, háptico, voltar do Android e seletor de arquivos do WebView só no aparelho.
+
+**Observações automáticas:** na varredura de alvos < 48px em 360 só sobraram elementos visualmente ocultos (link "Ir para o conteúdo" e os `input[type=file]` escondidos), em /sessao, /, /ajustes e /importar.
+
+**Perguntas objetivas.**
+(c1) Onboarding e Sessão: as correções da P2 resolveram os problemas 1–10? O que ainda falta (em especial o split view em paisagem e o sheet do professor)?
+(c2) Hoje: a hierarquia cartão herói → blocos → sugestão "Preparar semana" está certa? O aviso "Bloco de hoje ainda não iniciado" entre o herói e a lista é redundante? "Só 15 min" como ação secundária em todo cartão faz sentido? O menu de overflow e o rail ≥600dp estão adequados?
+(c3) Ajustes: a ordem das seções, os textos de status e a linha de bateria estão claros? Algo deveria sair, ir para "Avançado" ou ganhar confirmação (ex.: remover chave, restaurar backup)?
+(c4) Importar: o fluxo escolher → pré-visualizar → confirmar está claro para quem nunca viu a planilha modelo? A substituição do plano sem diálogo é segura o bastante? A pré-visualização (3 linhas) e os erros são suficientes?
+Responda no formato VEREDITO / PROBLEMAS / MELHORIAS (prioridade + esforço) / COMPARAÇÃO (Anki, Duolingo, Forest ou Quizlet) / FONTES.
