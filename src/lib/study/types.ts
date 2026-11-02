@@ -1,3 +1,5 @@
+import type { AiProvider } from "../ai/provider.ts";
+
 export type BlockKind = "A" | "B" | "R" | "L";
 
 export type PlanBlock = {
@@ -220,6 +222,12 @@ export type Settings = {
   quiet: boolean;
   researcher: ResearcherId;
   webSearch: boolean;
+  /** Provedor de IA ativo. A xAI continua sendo o padrão. */
+  aiProvider: AiProvider;
+  /** Modelo do OpenRouter escolhido à mão (`""` = usar o preset). */
+  openRouterModel: string;
+  /** Modelos que o OpenRouter tenta em ordem se o principal falhar. */
+  openRouterFallbacks: string[];
 };
 
 /**
@@ -283,4 +291,7 @@ export const EMPTY_SETTINGS: Settings = {
   quiet: false,
   researcher: "grok",
   webSearch: false,
+  aiProvider: "xai",
+  openRouterModel: "",
+  openRouterFallbacks: [],
 };

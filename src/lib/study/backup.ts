@@ -41,6 +41,12 @@ const backupSettingsSchema = z.looseObject({
     .optional(),
   quiet: z.boolean().optional(),
   researcher: z.enum(["grok", "perplexity", "gemini", "claude"]).optional(),
+  /** Provedor de IA ativo (xAI é o padrão quando ausente). */
+  aiProvider: z.enum(["xai", "openrouter"]).optional(),
+  /** Modelo do OpenRouter escolhido (`""` = preset). */
+  openRouterModel: z.string().optional(),
+  /** Fallbacks tentados pelo OpenRouter, em ordem. */
+  openRouterFallbacks: z.array(z.string()).optional(),
   /**
    * Aceito na leitura por compatibilidade com backups antigos, mas nunca
    * escrito: `serializeBackup`/`buildBackupFile` removem as chaves.
@@ -48,6 +54,7 @@ const backupSettingsSchema = z.looseObject({
   keys: z
     .looseObject({
       xai: z.string().optional(),
+      openrouter: z.string().optional(),
       perplexity: z.string().optional(),
       gemini: z.string().optional(),
       claude: z.string().optional(),
