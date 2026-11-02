@@ -30,7 +30,7 @@ export function HeatmapCard({ heatmap }: { heatmap: Heatmap }) {
     <section className="rounded-xl border border-border bg-surface p-4">
       <h2 className="text-xl">Últimos 28 dias</h2>
       <p className="mt-1 text-xs leading-relaxed text-muted">
-        Dias livres não quebram a sequência.
+        Cada quadrado é um dia de estudo.
       </p>
 
       <div className="mx-auto mt-3 w-full max-w-[340px]">

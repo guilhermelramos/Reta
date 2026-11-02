@@ -1,5 +1,5 @@
 import { addDays, dayLoad, daysBetween, examDate } from "./time.ts";
-import type { ErrorReason, Mistake, PlanDay, StudySession } from "./types.ts";
+import type { BlockKind, ErrorReason, Mistake, PlanDay, StudySession } from "./types.ts";
 import { ERROR_REASON_LABEL, KIND_LABEL } from "./types.ts";
 
 /**
@@ -63,11 +63,11 @@ export type RetaCoverage = {
 };
 
 /**
- * Datas com algum tempo realmente estudado (mesma regra usada na página).
+ * Datas com algum tempo realmente estudado.
  *
  * Abrir um bloco cria uma sessão com `elapsedSec: 0`; ela não pode contar como
- * dia estudado nem alimentar a sequência. Só entra quem já acumulou segundos,
- * independentemente de a sessão estar ativa ou concluída.
+ * dia estudado. Só entra quem já acumulou segundos, independentemente de a
+ * sessão estar ativa ou concluída.
  */
 export function studiedDates(sessions: StudySession[]): Set<string> {
   return new Set(
@@ -91,21 +91,25 @@ export function sessionMinutesByDate(sessions: StudySession[]): Map<string, numb
 }
 
 /**
- * Sequência atual: dias de estudo seguidos. Dias sem carga no plano não
- * quebram a conta (mesma regra exibida no cabeçalho da página).
+ * Sequência atual: dias consecutivos com minutos estudados, terminando hoje
+ * (ou ontem, quando hoje ainda não tem estudo).
+ *
+ * Usa a mesma fonte e a mesma chave de data do mapa de calor
+ * (`sessionMinutesByDate` + `YYYY-MM-DD`), então sete quadrados pintados em
+ * sequência valem exatamente sete na métrica. O plano não entra na conta:
+ * dias fora dele também aparecem no heatmap.
  */
-export function currentStreak(days: PlanDay[], sessions: StudySession[], today: string): number {
-  const hit = studiedDates(sessions);
-  let cursor = hit.has(today) ? today : addDays(today, -1);
+export function currentStreak(
+  _days: PlanDay[],
+  sessions: StudySession[],
+  today: string,
+): number {
+  const minutes = sessionMinutesByDate(sessions);
+  const studied = (date: string) => (minutes.get(date) ?? 0) > 0;
+  let cursor = studied(today) ? today : addDays(today, -1);
   let count = 0;
-  for (let i = 0; i < 80; i += 1) {
-    const day = days.find((d) => d.date === cursor);
-    if (!day) break;
-    if (dayLoad(day) <= 0) {
-      cursor = addDays(cursor, -1);
-      continue;
-    }
-    if (!hit.has(cursor)) break;
+  for (let i = 0; i < 3650; i += 1) {
+    if (!studied(cursor)) break;
     count += 1;
     cursor = addDays(cursor, -1);
   }
@@ -201,6 +205,39 @@ export function labelKey(label: string): string {
     .trim();
 }
 
+/**
+ * Matéria do bloco correspondente (A/B/R) no dia do plano, ou `null` quando o
+ * plano não tem esse dia/bloco com conteúdo.
+ */
+export function planBlockSubject(
+  days: PlanDay[],
+  date: string,
+  kind: BlockKind,
+): string | null {
+  const day = days.find((item) => item.date === date);
+  if (!day) return null;
+  const block = day.blocks.find((item) => item.kind === kind);
+  if (!block) return null;
+  const label = planTopicLabel(block.content);
+  return label && label !== "Bloco" ? label : null;
+}
+
+/**
+ * Matéria de uma sessão/questão: a própria, quando existe, ou a do bloco do
+ * plano na mesma data. O rótulo do tipo ("Bloco A", "Bloco B") é o último
+ * recurso, só quando o plano não tem aquele dia.
+ */
+export function resolveSubject(input: {
+  days: PlanDay[];
+  date: string;
+  kind: BlockKind;
+  own?: string;
+}): string {
+  const own = input.own?.trim();
+  if (own) return own;
+  return planBlockSubject(input.days, input.date, input.kind) ?? KIND_LABEL[input.kind] ?? "Bloco";
+}
+
 type TopicAccumulator = { label: string; correct: number; wrong: number };
 
 /**
@@ -220,14 +257,6 @@ export function weakTopicRanking(input: {
   const { days, sessions, mistakes } = input;
   const limit = Math.max(1, Math.round(input.limit ?? 5));
 
-  const blockLabels = new Map<string, string>();
-  for (const day of days) {
-    for (const block of day.blocks) {
-      if (block.plannedMin <= 0) continue;
-      blockLabels.set(`${day.date}:${block.kind}`, planTopicLabel(block.content));
-    }
-  }
-
   const groups = new Map<string, TopicAccumulator>();
   const add = (label: string, correct: number, wrong: number) => {
     const clean = label.trim();
@@ -245,17 +274,24 @@ export function weakTopicRanking(input: {
     seenSessions.add(session.id);
     const total = (session.correct ?? 0) + (session.wrong ?? 0);
     if (total <= 0) continue;
-    const label =
-      blockLabels.get(`${session.date}:${session.kind}`) ?? KIND_LABEL[session.kind] ?? "Bloco";
+    const label = resolveSubject({
+      days,
+      date: session.date,
+      kind: session.kind,
+      own: session.subject,
+    });
     add(label, session.correct ?? 0, session.wrong ?? 0);
   }
 
   for (const mistake of mistakes) {
     const external = mistake.sessionId === "externo" || mistake.source === "externo";
     if (!external && seenSessions.has(mistake.sessionId)) continue;
-    const label = external
-      ? mistake.subject?.trim() || planTopicLabel(mistake.topic || "Erro externo")
-      : planTopicLabel(mistake.topic || "Sem tópico");
+    const label = resolveSubject({
+      days,
+      date: mistake.date,
+      kind: mistake.kind,
+      own: mistake.subject,
+    });
     add(label, 0, 1);
   }
 

@@ -165,6 +165,11 @@ export type StudySession = {
    * fonte de verdade para reagendar o alarme depois de reabrir o app.
    */
   endsAt?: number | null;
+  /**
+   * Matéria informada pelo registro (importações antigas podem trazê-la).
+   * Quando ausente, o Progresso deriva do bloco correspondente no plano.
+   */
+  subject?: string;
   flow?: SessionFlow;
 };
 

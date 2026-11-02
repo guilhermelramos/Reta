@@ -5,6 +5,7 @@ import {
   errorReasonDistribution,
   labelKey,
   planTopicLabel,
+  resolveSubject,
   retaCoverage,
   sessionMinutesByDate,
   weakTopicRanking,
@@ -14,7 +15,6 @@ import {
 } from "./progress-metrics.ts";
 import { addDays, dayLoad, daysBetween, examDate } from "./time.ts";
 import type { Mistake, PlanDay, StudySession } from "./types.ts";
-import { KIND_LABEL } from "./types.ts";
 
 /**
  * Leitura pura da tela Progresso.
@@ -299,7 +299,6 @@ export function planVsReal(input: {
   limit?: number;
 }): PlanRealRow[] {
   const limit = Math.max(1, Math.round(input.limit ?? 5));
-  const labelByBlock = new Map<string, string>();
   const display = new Map<string, string>();
   const planned = new Map<string, number>();
   const studied = new Map<string, number>();
@@ -310,7 +309,6 @@ export function planVsReal(input: {
       const label = planTopicLabel(block.content);
       const key = labelKey(label);
       if (!key) continue;
-      labelByBlock.set(`${day.date}:${block.kind}`, label);
       display.set(key, display.get(key) ?? label);
       planned.set(key, (planned.get(key) ?? 0) + block.plannedMin);
     }
@@ -319,8 +317,12 @@ export function planVsReal(input: {
   for (const session of input.sessions) {
     const seconds = Number.isFinite(session.elapsedSec) ? Math.max(0, session.elapsedSec) : 0;
     if (!(session.status === "done" || session.status === "active" || seconds >= 60)) continue;
-    const label =
-      labelByBlock.get(`${session.date}:${session.kind}`) ?? KIND_LABEL[session.kind] ?? "Bloco";
+    const label = resolveSubject({
+      days: input.days,
+      date: session.date,
+      kind: session.kind,
+      own: session.subject,
+    });
     const key = labelKey(label);
     if (!key) continue;
     display.set(key, display.get(key) ?? label);

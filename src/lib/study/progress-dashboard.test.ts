@@ -15,6 +15,7 @@ import {
   reasonRows,
   totalAnsweredQuestions,
   totalStudiedSeconds,
+  weakTopics,
   weekEnd,
   weekProgress,
   weekStart,
@@ -284,6 +285,95 @@ describe("planVsReal: tempo por assunto do plano", () => {
       [["Bloco B", 0, 20]],
     );
   });
+
+  it("deriva a matéria do bloco do plano quando a sessão não tem matéria", () => {
+    const days = [
+      day("2026-11-01", [
+        block("A", 60, "Matemática: funções"),
+        block("B", 0, "Física: leis"),
+      ]),
+    ];
+    const sessions = [
+      session({
+        id: "a",
+        kind: "A",
+        status: "done",
+        date: "2026-11-01",
+        elapsedSec: 3600,
+      }),
+      session({
+        id: "b",
+        kind: "B",
+        status: "done",
+        date: "2026-11-01",
+        elapsedSec: 600,
+      }),
+      session({
+        id: "a-biologia",
+        kind: "A",
+        status: "done",
+        date: "2026-11-01",
+        elapsedSec: 1200,
+        subject: "Biologia",
+      }),
+    ];
+
+    const rows = planVsReal({ days, sessions });
+    assert.deepEqual(
+      rows.map((row) => [row.label, row.plannedMin, row.studiedMin]),
+      [
+        ["Matemática", 60, 60],
+        ["Biologia", 0, 20],
+        ["Física", 0, 10],
+      ],
+    );
+    assert.ok(rows.every((row) => !row.label.startsWith("Bloco")));
+  });
+});
+
+describe("weakTopics: matérias do plano em vez de rótulo de bloco", () => {
+  it("cruza a sessão e a questão com o bloco do dia do plano", () => {
+    const days = [
+      day("2026-11-01", [
+        block("A", 60, "Matemática: funções"),
+        block("B", 30, "Física: leis"),
+      ]),
+    ];
+    const sessions = [
+      session({
+        id: "s-a",
+        kind: "A",
+        status: "done",
+        date: "2026-11-01",
+        elapsedSec: 600,
+        correct: 1,
+        wrong: 1,
+      }),
+      session({
+        id: "s-b",
+        kind: "B",
+        status: "done",
+        date: "2026-11-01",
+        elapsedSec: 600,
+        correct: 2,
+        wrong: 0,
+      }),
+    ];
+    const mistakes = [
+      mistake({
+        id: "externa",
+        sessionId: "externo",
+        date: "2026-11-01",
+        kind: "A",
+        subject: "Biologia",
+      }),
+      mistake({ id: "sem-sessao", sessionId: "sumiu", date: "2026-11-01", kind: "B" }),
+    ];
+
+    const labels = weakTopics({ days, sessions, mistakes }).map((topic) => topic.label);
+    assert.deepEqual([...labels].sort(), ["Biologia", "Física", "Matemática"]);
+    assert.ok(labels.every((label) => !label.startsWith("Bloco")));
+  });
 });
 
 describe("reasonRows: motivos dos erros", () => {
@@ -373,6 +463,59 @@ describe("currentStreak: só conta dia com tempo estudado", () => {
     ];
 
     assert.equal(currentStreak(days, sessions, TODAY), 2);
+  });
+
+  it("sete dias pintados no heatmap valem sete na sequência, mesmo fora do plano", () => {
+    const dates = [
+      "2026-10-26",
+      "2026-10-27",
+      "2026-10-28",
+      "2026-10-29",
+      "2026-10-30",
+      "2026-10-31",
+      "2026-11-01",
+    ];
+    const sessions = dates.map((date, index) =>
+      session({
+        id: `dia-${index}`,
+        kind: "A",
+        status: "done",
+        date,
+        elapsedSec: 1800,
+      }),
+    );
+
+    const heatmap = buildHeatmap({ days: [], sessions, today: TODAY });
+    const painted = heatmap.weeks
+      .flatMap((week) => week.cells)
+      .filter((cell) => cell && cell.level > 0).length;
+
+    assert.equal(painted, 7);
+    assert.equal(currentStreak([], sessions, TODAY), 7);
+    assert.equal(firstFoldMetrics({ days: [], sessions, today: TODAY })[0].value, "7");
+  });
+
+  it("termina ontem quando hoje ainda não tem estudo", () => {
+    const dates = [
+      "2026-10-25",
+      "2026-10-26",
+      "2026-10-27",
+      "2026-10-28",
+      "2026-10-29",
+      "2026-10-30",
+      "2026-10-31",
+    ];
+    const sessions = dates.map((date, index) =>
+      session({
+        id: `ontem-${index}`,
+        kind: "A",
+        status: "done",
+        date,
+        elapsedSec: 1800,
+      }),
+    );
+
+    assert.equal(currentStreak([], sessions, TODAY), 7);
   });
 });
 
