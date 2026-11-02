@@ -4,6 +4,7 @@ import { generatePackageClient } from "@/lib/ai/xai-client";
 import { EMPTY_KEYS, loadKeys, setKeys, type KeyValues } from "@/lib/secure/keys";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
 import { loadSnapshot, saveDays, saveMeta, saveMistake, savePackage, saveSession } from "@/lib/study/db";
+import { restorePlan, type PlanUndo } from "@/lib/study/import-undo";
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
 import { SEED_DAYS } from "@/lib/study/seed";
 import { scheduleReview, type SrsOutcome } from "@/lib/study/srs";
@@ -44,6 +45,12 @@ type StudyApi = Snapshot & {
   loadError: string;
   prep: PrepState;
   importDays: (days: PlanDay[], sheetName?: string) => Promise<void>;
+  /**
+   * Desfaz uma importação: grava de volta o plano anterior e o
+   * `meta.activeSheet`/`meta.seeded` guardados no snapshot. Sessões, pacotes e
+   * erros ficam intactos.
+   */
+  undoImport: (undo: PlanUndo) => Promise<void>;
   /** Cria ou substitui um dia inteiro (usado pela edição manual do plano). */
   upsertDay: (day: PlanDay) => Promise<void>;
   saveSettings: (settings: Settings, keys: KeyValues) => Promise<void>;
@@ -159,6 +166,21 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     await saveMeta("activeSheet", sheetName);
     await saveMeta("seeded", false);
     setSnap((s) => ({ ...s, days, sheetName, seeded: false }));
+  }, []);
+
+  /** Restaura o retrato guardado pela tela Importar (snackbar Desfazer). */
+  const undoImport = useCallback(async (undo: PlanUndo) => {
+    void ensurePersistentStorage();
+    const restored = restorePlan(undo);
+    await saveDays(restored.days);
+    await saveMeta("activeSheet", restored.sheetName);
+    await saveMeta("seeded", restored.seeded);
+    setSnap((s) => ({
+      ...s,
+      days: restored.days,
+      sheetName: restored.sheetName,
+      seeded: restored.seeded,
+    }));
   }, []);
 
   /**
@@ -348,6 +370,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       loadError,
       prep,
       importDays,
+      undoImport,
       upsertDay,
       saveSettings,
       completeOnboarding,
@@ -365,7 +388,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       cancelPrep,
       dismissPrepWeek,
     }),
-    [snap, ready, loadError, prep, importDays, upsertDay, saveSettings, completeOnboarding, rememberNotify, upsertSession, addMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep, dismissPrepWeek],
+    [snap, ready, loadError, prep, importDays, undoImport, upsertDay, saveSettings, completeOnboarding, rememberNotify, upsertSession, addMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep, dismissPrepWeek],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
