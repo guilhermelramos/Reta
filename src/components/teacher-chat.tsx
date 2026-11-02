@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowUp, BookOpen, Mic, X } from "lucide-react";
 import { Drawer } from "vaul";
 import { useBackOverlay } from "@/lib/android/use-back-overlay";
+import { useVisualViewportVars } from "@/lib/android/visual-viewport";
 import { QuestionCard } from "@/components/study-view";
 import { Button } from "@/components/ui/button";
 import { ButtonSpinner } from "@/components/feedback/button-spinner";
@@ -73,7 +74,18 @@ function SheetFrame({
     >
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex h-[90dvh] max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-border bg-surface outline-none">
+        <Drawer.Content
+          className="fixed inset-x-0 z-50 mx-auto flex w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-border bg-surface outline-none"
+          style={{
+            // Sobe acima do teclado quando o Android só encolhe a
+            // visualViewport e limita a altura à área realmente visível: o
+            // cabeçalho "Professor IA" e o campo de texto nunca ficam atrás do
+            // IME (o `90dvh` sozinho não acompanha o resize animado).
+            bottom: "var(--reta-keyboard-inset, 0px)",
+            height: "min(90dvh, calc(var(--reta-vvh, 100dvh) * 0.92))",
+            maxHeight: "min(90dvh, calc(var(--reta-vvh, 100dvh) * 0.92))",
+          }}
+        >
           <Drawer.Title className="sr-only">Professor</Drawer.Title>
           <Drawer.Description className="sr-only">
             Converse sobre a questão aberta. O cronômetro continua contando enquanto a folha está
@@ -150,6 +162,7 @@ export function TeacherChat({
   timerClock,
   timerExpired,
 }: TeacherChatProps) {
+  useVisualViewportVars(open);
   const [draft, setDraft] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
