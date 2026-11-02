@@ -4,6 +4,7 @@ import {
   completedSnackbarText,
   endDialogTitle,
   sessionTimerView,
+  studiedLandscapeSubline,
   studiedMinutes,
   studiedSubline,
   timerHeadline,
@@ -208,6 +209,14 @@ describe("session-timer: sub-linha estudado de meta", () => {
       now: NOW,
     });
     assert.equal(view.subline, "15 min estudados de 40 min");
+    assert.equal(view.landscapeSubline, "15 de 40 min estudados");
+  });
+
+  it("a coluna em paisagem usa 'N de M min estudados' sem truncar", () => {
+    assert.equal(studiedLandscapeSubline(0, 60), "0 de 60 min estudados");
+    assert.equal(studiedLandscapeSubline(12, 60), "12 de 60 min estudados");
+    assert.equal(studiedLandscapeSubline(3, 0), "3 min estudados");
+    assert.equal(studiedLandscapeSubline(Number.NaN, -5), "0 min estudados");
   });
 });
 

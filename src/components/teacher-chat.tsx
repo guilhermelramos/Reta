@@ -606,7 +606,7 @@ export function TeacherChat({
                   <input
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
-                    placeholder="Pergunte sobre este trecho"
+                    placeholder="Pergunte sobre a matéria…"
                     aria-label="Mensagem para o professor"
                     className="min-h-12 min-w-0 flex-1 rounded-[24px] border border-border bg-bg px-4 text-base"
                   />

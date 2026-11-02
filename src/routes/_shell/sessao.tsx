@@ -817,7 +817,7 @@ function SessionPage() {
     });
   }
 
-  const studiedToggle = (chevron: boolean) =>
+  const studiedToggle = (chevron: boolean, landscape = false) =>
     timerView ? (
       <button
         type="button"
@@ -826,7 +826,9 @@ function SessionPage() {
         title="Opções do timer"
         onClick={toggleExtras}
       >
-        <span className="truncate">{timerView.subline}</span>
+        <span className={landscape ? "whitespace-nowrap" : "truncate"}>
+          {landscape ? timerView.landscapeSubline : timerView.subline}
+        </span>
         {chevron ? (
           <ChevronDown
             className={cn(
@@ -981,7 +983,7 @@ function SessionPage() {
               </p>
               {progressBar}
               <div className="flex items-center justify-between gap-2">
-                {studiedToggle(true)}
+                {studiedToggle(true, true)}
                 {endButton}
               </div>
               {timerToggle("w-full")}

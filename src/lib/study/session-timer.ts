@@ -28,6 +28,8 @@ export type SessionTimerView = {
   overtimeMs: number;
   /** "N min estudado(s) de M min" da sub-linha. */
   subline: string;
+  /** Variante curta da coluna esquerda em paisagem: "N de M min estudados". */
+  landscapeSubline: string;
   studiedMin: number;
   state: "paused" | "running" | "expired";
 };
@@ -91,6 +93,17 @@ export function studiedSubline(studiedMin: number, budgetMin: number): string {
   return budget > 0 ? `${studiedText} de ${budget} min` : studiedText;
 }
 
+/**
+ * Variante curta da coluna esquerda em paisagem: "12 de 60 min estudados".
+ * Cabe nos 260px do rail sem truncar, inclusive com 0 min.
+ */
+export function studiedLandscapeSubline(studiedMin: number, budgetMin: number): string {
+  const studied = Number.isFinite(studiedMin) ? Math.max(0, Math.floor(studiedMin)) : 0;
+  const budget = Number.isFinite(budgetMin) ? Math.max(0, Math.round(budgetMin)) : 0;
+  const studiedText = budget > 0 ? `${studied} de ${budget} min estudados` : `${studied} min estudados`;
+  return studiedText;
+}
+
 /** Rótulo acessível do número principal, coerente com o estado mostrado. */
 export function timerHeadlineAria(headline: { label: string; state: TimerHeadlineState }): string {
   if (headline.state === "overtime") return `Tempo estourado: ${headline.label}`;
@@ -131,6 +144,7 @@ export function sessionTimerView(input: {
     headlineState: headline.state,
     overtimeMs: headline.overtimeMs,
     subline: studiedSubline(studiedMin, input.budgetMin),
+    landscapeSubline: studiedLandscapeSubline(studiedMin, input.budgetMin),
     studiedMin,
     state: expired ? "expired" : input.timer.startedAt != null ? "running" : "paused",
   };
