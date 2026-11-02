@@ -100,8 +100,7 @@ export function studiedSubline(studiedMin: number, budgetMin: number): string {
 export function studiedLandscapeSubline(studiedMin: number, budgetMin: number): string {
   const studied = Number.isFinite(studiedMin) ? Math.max(0, Math.floor(studiedMin)) : 0;
   const budget = Number.isFinite(budgetMin) ? Math.max(0, Math.round(budgetMin)) : 0;
-  const studiedText = budget > 0 ? `${studied} de ${budget} min estudados` : `${studied} min estudados`;
-  return studiedText;
+  return budget > 0 ? `${studied} de ${budget} min estudados` : `${studied} min estudados`;
 }
 
 /** Rótulo acessível do número principal, coerente com o estado mostrado. */
