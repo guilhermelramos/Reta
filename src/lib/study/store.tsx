@@ -7,6 +7,7 @@ import { loadSnapshot, saveDays, saveMeta, saveMistake, savePackage, saveSession
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
 import { SEED_DAYS } from "@/lib/study/seed";
 import { scheduleReview, type SrsOutcome } from "@/lib/study/srs";
+import { ensurePersistentStorage } from "@/lib/study/storage";
 import { addDays, saoPauloToday } from "@/lib/study/time";
 import type { BlockKind, Doubt, ErrorReason, Mistake, PlanDay, ResearcherId, Settings, StudyPackage, StudySession } from "@/lib/study/types";
 import { EMPTY_SETTINGS, KIND_LABEL } from "@/lib/study/types";
@@ -104,14 +105,10 @@ export function StudyProvider({ children }: { children: ReactNode }) {
   snapRef.current = snap;
 
   // Pede ao navegador para não despejar o IndexedDB por inatividade (iOS e
-  // Android). Silencioso quando a API não existe ou o navegador nega.
+  // Android). Silencioso quando a API não existe, já é persistente ou o
+  // navegador nega; é repetido ao gravar plano/chave.
   useEffect(() => {
-    try {
-      const request = navigator.storage?.persist?.();
-      if (request) void request.catch(() => undefined);
-    } catch {
-      // Storage API indisponível: o backup manual continua sendo a proteção.
-    }
+    void ensurePersistentStorage();
   }, []);
 
   useEffect(() => {
@@ -155,6 +152,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const importDays = useCallback(async (days: PlanDay[], sheetName = "") => {
+    void ensurePersistentStorage();
     await saveDays(days);
     // Guarda o nome da aba para a tela Importar mostrar qual planilha está ativa
     // e limpa a flag do plano de exemplo (o onboarding usa as duas informações).
@@ -178,6 +176,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
   const saveSettings = useCallback(async (settings: Settings, keys: KeyValues) => {
     // Ajustes vão sem chaves para o IndexedDB; as chaves passam pelo serviço
     // (Keystore no Android, `settings.keys` no IndexedDB da web).
+    void ensurePersistentStorage();
     await saveMeta("settings", settings);
     await setKeys(keys);
     setSnap((s) => ({ ...s, settings, keys }));
