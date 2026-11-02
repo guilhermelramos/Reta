@@ -1,0 +1,16 @@
+light/360 após onboarding url=http://127.0.0.1:8099/
+light/360 botoes sessao: 0 min estudados de 60 min / Encerrar / Iniciar / Professor / Iniciar / 0 min estudados de 60 min / Encerrar / Gerar material com IA / Montar esta aula / Professor
+light alvos<48px /sessao: 1 Ir para o conteúdo 1x1
+light alvos<48px /: 1 Ir para o conteúdo 1x1
+light alvos<48px /ajustes: 2 Ir para o conteúdo 1x1 | Escolher arquivo de backup par 1x1
+light alvos<48px /importar: 2 Ir para o conteúdo 1x1 | INPUT 1x1
+light/320 após onboarding url=http://127.0.0.1:8099/
+light/320 botoes sessao: 0 min estudados de 60 min / Encerrar / Iniciar / Professor / Iniciar / 0 min estudados de 60 min / Encerrar / Gerar material com IA / Montar esta aula / Professor
+light/paisagem após onboarding url=http://127.0.0.1:8099/
+light/paisagem botoes sessao: 0 min estudados de 60 min / Encerrar / Iniciar / Professor / Iniciar / 0 min estudados de 60 min / Encerrar / Gerar material com IA / Montar esta aula / Professor
+dark/360 após onboarding url=http://127.0.0.1:8099/
+dark/360 botoes sessao: 0 min estudados de 60 min / Encerrar / Iniciar / Professor / Iniciar / 0 min estudados de 60 min / Encerrar / Gerar material com IA / Montar esta aula / Professor
+dark alvos<48px /sessao: 1 Ir para o conteúdo 1x1
+dark alvos<48px /: 1 Ir para o conteúdo 1x1
+dark alvos<48px /ajustes: 2 Ir para o conteúdo 1x1 | Escolher arquivo de backup par 1x1
+dark alvos<48px /importar: 2 Ir para o conteúdo 1x1 | INPUT 1x1
