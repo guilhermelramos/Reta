@@ -19,8 +19,9 @@ function Frame() {
   const { ready, loadError, settings, days, sessions, notifyLog, keys, seeded, onboardingDone, rememberNotify } = useStudy();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
-  // Modo foco: a sessão de estudo esconde a navegação inferior para o timer
-  // ocupar a tela inteira (qualquer subrota de /sessao continua em foco).
+  // Modo foco: a sessão de estudo esconde a navegação inferior e a barra
+  // lateral (em qualquer largura) para o timer ocupar a tela inteira; a
+  // paisagem usa o split view da própria sessão.
   const focusMode = path === "/sessao" || path.startsWith("/sessao/");
 
   // Primeira abertura (ou revisão pendente): a introdução mora fora da barra
@@ -88,37 +89,45 @@ function Frame() {
       >
         Ir para o conteúdo
       </a>
-      <div className="mx-auto flex max-w-6xl">
-        <aside className="no-print sticky top-0 hidden h-screen w-56 shrink-0 flex-col gap-8 border-r border-border px-5 py-8 md:flex">
-          <Link to="/" className="flex min-h-12 items-center gap-2">
-            <span className="size-3 rounded-sm bg-primary" aria-hidden />
-            <span className="font-display text-3xl leading-none">Reta</span>
-          </Link>
-          <nav className="flex flex-col gap-1" aria-label="Seções">
-            {NAV.map((item) => {
-              const active = item.to === "/" ? path === "/" : path.startsWith(item.to);
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={cn(
-                    "flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm",
-                    active ? "bg-surface-2 text-primary" : "text-muted hover:bg-surface hover:text-fg",
-                  )}
-                >
-                  <Icon className="size-4" aria-hidden />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-        </aside>
+      <div className={focusMode ? undefined : "mx-auto flex max-w-6xl"}>
+        {focusMode ? null : (
+          <aside className="no-print sticky top-0 hidden h-screen w-56 shrink-0 flex-col gap-8 border-r border-border px-5 py-8 md:flex">
+            <Link to="/" className="flex min-h-12 items-center gap-2">
+              <span className="size-3 rounded-sm bg-primary" aria-hidden />
+              <span className="font-display text-3xl leading-none">Reta</span>
+            </Link>
+            <nav className="flex flex-col gap-1" aria-label="Seções">
+              {NAV.map((item) => {
+                const active = item.to === "/" ? path === "/" : path.startsWith(item.to);
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={cn(
+                      "flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm",
+                      active
+                        ? "bg-surface-2 text-primary"
+                        : "text-muted hover:bg-surface hover:text-fg",
+                    )}
+                  >
+                    <Icon className="size-4" aria-hidden />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </aside>
+        )}
         <div className="min-w-0 flex-1">
           {loadError ? <p className="px-5 pt-4 text-sm text-clay-text">{loadError}</p> : null}
           <main
             id="conteudo"
-            className="px-4 py-6 pb-[calc(6rem_+_env(safe-area-inset-bottom))] md:px-8 md:py-8 md:pb-20"
+            className={
+              focusMode
+                ? undefined
+                : "px-4 py-6 pb-[calc(6rem_+_env(safe-area-inset-bottom))] md:px-8 md:py-8 md:pb-20"
+            }
           >
             <Outlet />
           </main>
@@ -147,7 +156,10 @@ function Frame() {
                         active ? "bg-primary/25" : "bg-transparent",
                       )}
                     >
-                      <Icon className={cn("size-6", active ? "text-fg" : "text-muted")} aria-hidden />
+                      <Icon
+                        className={cn("size-6", active ? "text-fg" : "text-muted")}
+                        aria-hidden
+                      />
                     </span>
                     <span className={active ? "text-fg" : "text-muted"}>{item.label}</span>
                   </Link>
