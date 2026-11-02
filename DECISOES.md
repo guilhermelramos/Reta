@@ -68,3 +68,23 @@ Resposta em `consultor/respostas.md` (## P2), gerada pelo Gemini a pedido do Gui
 | Prob. 9 — alarme exato no 1º Iniciar | — | Já aplicado (confirmado pelo Consultor) | — |
 | Melh. 6 — notificação com cronômetro regressivo nativo (`setChronometerCountDown`) | média, M | **MELHORIAS.md** | — |
 | Melh. 9 — chave xAI "lazy" em bottom sheet na Sessão | baixa, M | **MELHORIAS.md** | — |
+
+### P2 Sessão — aplicado em `ui/p2-sessao`
+
+- **Tempo restante único:** `timerHeadline()`/`studiedSubline()` em
+  `src/lib/study/session-timer.ts` alimentam o cabeçalho e o chip da folha;
+  depois da meta o número vira `+MM:SS` nos dois lugares. Nada mudou no serviço
+  nativo do timer (`endsAt` + alarme continuam a fonte de verdade).
+- **Split view sem navegação:** o shell esconde a barra lateral e a inferior em
+  `/sessao` em qualquer largura; paisagem ≥600dp usa coluna fixa de 260dp com o
+  timer (40sp) e o Professor na base, e conteúdo rolável à direita. O FAB fica
+  só no retrato, com 96dp de respiro no rodapé.
+- **Cartão vazio único:** “Gerar material com IA” (CTA de uma linha) e
+  “Montar esta aula” (do plano, sem IA) no mesmo cartão; nenhuma ação removida.
+- **Folha do Professor:** cabeçalho M3 com chip do timer, “Professor IA” e
+  “Caderno” (alvo 48dp); perguntas rápidas em uma linha com fade (somem depois
+  da 1ª mensagem; atalhos permanecem) e enviar como IconButton 48dp.
+- **Fora do escopo:** a notificação com cronômetro nativo continua no backlog
+  (`MELHORIAS.md`); em telas <390dp o rótulo “Caderno” e o ícone do relógio do
+  chip encolhem para o título “Professor IA” caber inteiro.
+

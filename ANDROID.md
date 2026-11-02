@@ -243,23 +243,32 @@ sobe, então o WebView foi exercitado com o mesmo bundle do APK.
 
 ## Redesign da sessão de estudo (Material 3)
 
-A tela `/sessao` virou modo foco: a navegação inferior some para o cronômetro
-ocupar o topo. No desktop a barra lateral continua disponível.
+A tela `/sessao` virou modo foco: a barra lateral e a navegação inferior somem
+em **qualquer largura**. O número principal é o **tempo restante** (o mesmo do
+chip da folha do Professor) e a fonte de verdade continua sendo `endsAt` +
+horário salvo + alarme agendado.
 
 | Elemento | Comportamento |
 | --- | --- |
-| App bar | 64dp fixa: bloco em title-small, tempo em mono/tabular de 32sp e barra de progresso de 4dp logo abaixo |
-| Pausar/Retomar | pílula de 56dp à direita (`h-14`, `rounded-full`) |
-| Encerrar | botão de texto na linha de status; abre diálogo M3 (`role=dialog`, foco preso pelo Radix) com “Encerrar e salvar N min?” e **Cancelar / Encerrar** |
+| App bar (retrato) | fixa: voltar 48dp (`ArrowLeft`, “Voltar para hoje”, não encerra o timer), bloco em title-small, tempo restante em mono/tabular de 36sp/600 (`-0.5px`), barra de progresso de 6dp (12dp acima, 8dp abaixo), sub-linha “N min estudado(s) de M min” (13sp) e **Encerrar** como text button sem sublinhado (48dp, raio 8dp, 14sp/500) |
+| Tempo principal | contagem regressiva; depois da meta vira `+MM:SS`. `timerHeadline()` em `session-timer.ts` alimenta o cabeçalho **e** o chip do sheet, então os dois nunca divergem |
+| Pausar/Retomar | botão de 56dp, raio 28dp, `0 24dp`: parado/pausado = filled âmbar com `play`; rodando = tonal (âmbar escuro, borda 1.5dp primária, texto/ícone primários) com `pause` |
+| Encerrar | abre diálogo M3 (`role=dialog`, foco preso pelo Radix) com “Encerrar e salvar N min?” e **Cancelar / Encerrar** |
 | Voltar do Android | diálogos e folha do professor entram na pilha de overlays (`useBackOverlay`): o voltar fecha só o overlay mais recente |
-| Professor | FAB estendido de 56dp (ícone + “Professor”, `aria-label="Perguntar ao professor"`); abre folha inferior de 90% da altura com alça, chip `⏱ hh:mm` no topo e texto de 16px. Gesto de arraste e voltar fecham sem pausar o timer |
+| Paisagem larga (≥600dp) | split view: coluna fixa de 260dp com 100dvh (16dp de padding, borda direita) traz voltar + bloco, timer de 40sp, progresso, sub-linha, Pausar/Encerrar e o botão **Professor** (48dp, largura total) na base; coluna direita rolável com o conteúdo. Sem FAB e sem app bar fixa |
+| Professor (retrato) | FAB fixo na viewport (`right: 16dp`, `bottom: 16dp + safe-area`, z 30, 56dp, raio 16dp) e 96dp de padding no rodapé do conteúdo para nada ficar sob ele |
+| Folha do Professor | alça 32×4dp, chip `⏱ mm:ss` (32dp, mono 13sp, borda primária), título “Professor IA”, assist chip **Caderno** (visual 32dp, alvo 48dp) e fechar 48dp; perguntas rápidas em uma linha com rolagem horizontal e fade na borda (somem depois da 1ª mensagem; atalhos continuam); enviar virou IconButton 48×48 com `ArrowUp`, desabilitado com o campo vazio |
 | Conclusão | háptico (`navigator.vibrate`, permissão normal `VIBRATE`) e snackbar “Bloco concluído · N min” com **Desfazer**, que devolve a sessão ativa com o tempo já salvo |
 | Bloco ausente | `<ErrorState>` com “Esse bloco não existe mais no seu plano (talvez a planilha tenha mudado).” e ação **Ver plano de hoje** |
+| Conteúdo vazio | um único cartão (20dp de padding, raio 16dp) com o CTA “Gerar material com IA” em uma linha e **Montar esta aula** como ação secundária (monta do plano, sem IA) |
 
 A fonte de verdade do tempo continua sendo `startedAt` + acumulado e o
 `endsAt` gravado; o `setInterval` de um segundo só repinta a barra
 (`src/lib/study/session-timer.ts`, pura e testada em `session-timer.test.ts`).
-O texto do diálogo e do snackbar também sai dessa lógica pura.
+O texto do diálogo e do snackbar também sai dessa lógica pura, assim como a
+sub-linha (`studiedSubline`) e o rótulo acessível do timer
+(`timerHeadlineAria`). A visibilidade dos chips e o envio da folha são puros em
+`src/lib/study/chat-ui.ts` (`chat-ui.test.ts`).
 
 **Alarme exato contextual:** na primeira vez que o timer começa a correr, se o
 Android liberou notificações mas negou alarmes exatos, aparece um diálogo M3 com
@@ -276,6 +285,13 @@ A notificação persistente continua sendo só a notificação local agendada
 mostra o bloco e o tempo restante (`Bloco A · 23:14 restantes`). Ações
 Pausar/Encerrar na própria notificação não foram adicionadas — exigiriam
 `actionTypeId` + listener de ação e não são necessárias para a fonte de verdade.
+
+Para validar no aparelho: criar/ler o alarme exato, o diálogo ao tocar
+*Permitir* (abre a tela do Android), a entrega exata/inexata com tela bloqueada,
+a vibração no fim do bloco e o snackbar **Desfazer** depois de matar/reabrir o
+app. No WebView (mesmo bundle do APK) os fluxos de UI, a folha, o foco do
+diálogo, o split view em 780×360 e o layout de 320px foram exercitados.
+
 
 Para validar no aparelho: criar/ler o alarme exato, o diálogo ao tocar
 *Permitir* (abre a tela do Android), a entrega exata/inexata com tela bloqueada,
