@@ -422,123 +422,132 @@ function ImportPage() {
         <section
           ref={previewRef}
           aria-labelledby="previa-planilha"
-          className="flex max-h-[calc(100dvh-6.5rem-env(safe-area-inset-bottom))] scroll-mt-2 flex-col gap-2 rounded-2xl border border-border bg-surface p-4 min-[600px]:max-h-[calc(100dvh-8rem)]"
+          className="import-preview scroll-mt-2 rounded-2xl border border-border bg-surface p-4"
         >
-          <div className="flex items-center justify-between gap-3">
-            {/* 11px é o tamanho pedido na revisão P4 para este rótulo. */}
-            <p
-              data-a11y-allow="metadata-size"
-              className="text-[11px] font-semibold uppercase tracking-wide text-primary"
-            >
-              Pré-visualização
-            </p>
-            <Button
-              variant="surface"
-              className="shrink-0 px-3"
-              disabled={reading}
-              onClick={() => fileInput.current?.click()}
-            >
-              <FileUp className="size-5" aria-hidden />
-              Trocar arquivo
-            </Button>
+          <div className="import-preview-head">
+            <div className="flex items-center justify-between gap-3">
+              {/* 11px é o tamanho pedido na revisão P4 para este rótulo. */}
+              <p
+                data-a11y-allow="metadata-size"
+                className="text-[11px] font-semibold uppercase tracking-wide text-primary"
+              >
+                Pré-visualização
+              </p>
+              <Button
+                variant="surface"
+                className="shrink-0 px-3"
+                disabled={reading}
+                onClick={() => fileInput.current?.click()}
+              >
+                <FileUp className="size-5" aria-hidden />
+                Trocar arquivo
+              </Button>
+            </div>
+            <h1 id="previa-planilha" className="text-xl leading-snug">
+              Confira antes de importar
+            </h1>
           </div>
-          <h1 id="previa-planilha" className="text-xl leading-snug">
-            Confira antes de importar
-          </h1>
 
-          {/* O conteúdo rola dentro do cartão em telas curtas; o aviso de erro
-              abre a lista (nada é escondido) e as ações ficam fixas embaixo,
-              sempre inteiras acima da dobra. */}
-          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain">
-            {fileError ? (
-              <InlineError
-                copy={fileError}
-                onAction={handleErrorAction}
-                secondaryAction={fileError.secondaryAction}
-              />
-            ) : null}
-            {previewError ? (
-              <InlineError
-                copy={previewError}
-                onAction={handleErrorAction}
-                secondaryAction={previewError.secondaryAction}
-              />
-            ) : null}
-
+          {/*
+            Em retrato o corpo rola dentro do cartão e as ações ficam fixas
+            embaixo. Em paisagem baixa (≥600px), o corpo vira um grid de duas
+            colunas: dias + Ajustar colunas à esquerda, resumo/aviso/ações à
+            direita. Nada da prévia desaparece atrás da rolagem.
+          */}
+          <div className="import-preview-body">
             {summary ? (
-              <p className="rounded-xl bg-surface-2 px-3 py-2 text-sm font-semibold leading-snug text-fg">
+              <p className="import-preview-summary rounded-xl bg-surface-2 px-3 py-2 text-sm font-semibold leading-snug text-fg">
                 {summary.label}
               </p>
             ) : null}
 
-            {previewItems.length ? (
-              <ul className="flex flex-col gap-2">
-                {previewItems.map((item) => (
-                  <PreviewItemRow key={item.key} item={item} />
-                ))}
-              </ul>
-            ) : null}
-            {extraDays > 0 ? (
-              <p className="text-xs text-muted">
-                e mais {extraDays} {extraDays === 1 ? "dia" : "dias"}
-              </p>
-            ) : null}
+            <div className="import-preview-left">
+              {fileError ? (
+                <InlineError
+                  copy={fileError}
+                  onAction={handleErrorAction}
+                  secondaryAction={fileError.secondaryAction}
+                />
+              ) : null}
+              {previewError ? (
+                <InlineError
+                  copy={previewError}
+                  onAction={handleErrorAction}
+                  secondaryAction={previewError.secondaryAction}
+                />
+              ) : null}
 
-            <details
-              className="group border-t border-border"
-              open={columnsOpen}
-              onToggle={(event) => setColumnsOpen(event.currentTarget.open)}
-            >
-              <summary
-                aria-expanded={columnsOpen}
-                className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-0.5 [&::-webkit-details-marker]:hidden"
-              >
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium leading-tight text-fg">
-                    Ajustar colunas
-                  </span>
-                  <span
-                    className={cn(
-                      "mt-0.5 block text-xs leading-tight",
-                      manual ? "text-clay-text" : "text-muted",
-                    )}
-                  >
-                    {manual
-                      ? "Cabeçalhos não reconhecidos · escolha as colunas"
-                      : recognized.label}
-                  </span>
-                </span>
-                <ChevronDown
-                  className={cn(
-                    "size-6 shrink-0 text-muted transition-transform duration-200",
-                    columnsOpen && "rotate-180",
-                  )}
-                  aria-hidden
-                />
-              </summary>
-              <div className="pb-3 pt-2">
-                <ColumnControls
-                  sheet={sheet}
-                  sheets={sheets}
-                  sheetName={sheetName}
-                  manual={manual}
-                  map={map}
-                  labels={labels}
-                  onChangeSheet={changeSheet}
-                  onChangeMap={(key, value) => setMap({ ...map, [key]: value })}
-                />
+              <div className="import-preview-list">
+                {previewItems.length ? (
+                  <ul className="flex flex-col gap-2">
+                    {previewItems.map((item) => (
+                      <PreviewItemRow key={item.key} item={item} />
+                    ))}
+                  </ul>
+                ) : null}
+                {extraDays > 0 ? (
+                  <p className="text-xs text-muted">
+                    e mais {extraDays} {extraDays === 1 ? "dia" : "dias"}
+                  </p>
+                ) : null}
               </div>
-            </details>
+
+              <details
+                className="group border-t border-border"
+                open={columnsOpen}
+                onToggle={(event) => setColumnsOpen(event.currentTarget.open)}
+              >
+                <summary
+                  aria-expanded={columnsOpen}
+                  className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-0.5 [&::-webkit-details-marker]:hidden"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium leading-tight text-fg">
+                      Ajustar colunas
+                    </span>
+                    <span
+                      className={cn(
+                        "mt-0.5 block text-xs leading-tight",
+                        manual ? "text-clay-text" : "text-muted",
+                      )}
+                    >
+                      {manual
+                        ? "Cabeçalhos não reconhecidos · escolha as colunas"
+                        : recognized.label}
+                    </span>
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "size-6 shrink-0 text-muted transition-transform duration-200",
+                      columnsOpen && "rotate-180",
+                    )}
+                    aria-hidden
+                  />
+                </summary>
+                <div className="pb-3 pt-2">
+                  <ColumnControls
+                    sheet={sheet}
+                    sheets={sheets}
+                    sheetName={sheetName}
+                    manual={manual}
+                    map={map}
+                    labels={labels}
+                    onChangeSheet={changeSheet}
+                    onChangeMap={(key, value) => setMap({ ...map, [key]: value })}
+                  />
+                </div>
+              </details>
+            </div>
 
             {planDays.length ? (
-              <p className="text-xs leading-relaxed text-muted">
+              <p className="import-preview-warning text-xs leading-relaxed text-muted">
                 Ao importar, esta planilha substitui o plano atual. O histórico de sessões e erros
                 continua aqui.
               </p>
             ) : null}
           </div>
 
-          <div className="flex flex-none border-t border-border pt-2">
+          <div className="import-preview-actions flex flex-none border-t border-border pt-2">
             <div className="flex w-full flex-row-reverse gap-2">
               <Button
                 className="flex-1"
