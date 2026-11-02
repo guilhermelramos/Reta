@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decideBackAction, isHomePath, type BackState } from "./back-navigation.ts";
+import {
+  decideBackAction,
+  isEditableTarget,
+  isHomePath,
+  type BackState,
+} from "./back-navigation.ts";
 
 function state(overrides: Partial<BackState> = {}): BackState {
-  return { overlayOpen: false, canGoBack: false, pathname: "/", ...overrides };
+  return { keyboardOpen: false, overlayOpen: false, canGoBack: false, pathname: "/", ...overrides };
 }
 
 describe("isHomePath", () => {
@@ -28,7 +33,37 @@ describe("isHomePath", () => {
   });
 });
 
+describe("isEditableTarget", () => {
+  it("reconhece os campos que abrem o teclado", () => {
+    assert.equal(isEditableTarget({ tagName: "INPUT", type: "text" }), true);
+    assert.equal(isEditableTarget({ tagName: "input", type: "search" }), true);
+    assert.equal(isEditableTarget({ tagName: "INPUT", type: "email" }), true);
+    assert.equal(isEditableTarget({ tagName: "INPUT", type: "number" }), true);
+    assert.equal(isEditableTarget({ tagName: "INPUT" }), true);
+    assert.equal(isEditableTarget({ tagName: "TEXTAREA" }), true);
+    assert.equal(isEditableTarget({ tagName: "DIV", isContentEditable: true }), true);
+  });
+
+  it("ignora controles que não abrem teclado de texto", () => {
+    assert.equal(isEditableTarget(null), false);
+    assert.equal(isEditableTarget({ tagName: "BUTTON" }), false);
+    assert.equal(isEditableTarget({ tagName: "INPUT", type: "checkbox" }), false);
+    assert.equal(isEditableTarget({ tagName: "INPUT", type: "date" }), false);
+    assert.equal(isEditableTarget({ tagName: "SELECT" }), false);
+    assert.equal(isEditableTarget({ tagName: "TEXTAREA", readOnly: true }), false);
+    assert.equal(isEditableTarget({ tagName: "INPUT", type: "text", disabled: true }), false);
+  });
+});
+
 describe("decideBackAction", () => {
+  it("com o teclado aberto, o primeiro voltar só tira o foco do campo", () => {
+    assert.equal(decideBackAction(state({ keyboardOpen: true })), "blur-field");
+    assert.equal(
+      decideBackAction(state({ keyboardOpen: true, overlayOpen: true, canGoBack: true })),
+      "blur-field",
+    );
+  });
+
   it("fecha o overlay mais recente, mesmo com histórico e em Hoje", () => {
     assert.equal(decideBackAction(state({ overlayOpen: true })), "close-overlay");
     assert.equal(decideBackAction(state({ overlayOpen: true, canGoBack: true })), "close-overlay");

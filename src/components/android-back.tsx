@@ -1,7 +1,32 @@
 import { useEffect } from "react";
 import { useRouter } from "@tanstack/react-router";
-import { decideBackAction } from "@/lib/android/back-navigation";
+import { decideBackAction, isEditableTarget } from "@/lib/android/back-navigation";
 import { closeTopBackOverlay, hasBackOverlay } from "@/lib/android/back-overlays";
+
+/**
+ * Campo de texto focado com o teclado aberto. O Android entrega o `backButton`
+ * ao WebView mesmo com o IME visível em algumas versões; nesse caso o primeiro
+ * voltar deve só fechar o teclado, sem fechar o sheet do Professor nem navegar.
+ */
+function focusedTextField(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return null;
+  const input = active as HTMLElement & {
+    type?: string;
+    readOnly?: boolean;
+    disabled?: boolean;
+  };
+  return isEditableTarget({
+    tagName: input.tagName,
+    type: input.type,
+    isContentEditable: input.isContentEditable,
+    readOnly: input.readOnly,
+    disabled: input.disabled,
+  })
+    ? active
+    : null;
+}
 
 /**
  * Botão/gesto "voltar" do Android (Capacitor).
@@ -23,12 +48,18 @@ export function AndroidBackHandler(): null {
 
       const { App } = await import("@capacitor/app");
       const listener = await App.addListener("backButton", () => {
+        const field = focusedTextField();
         const action = decideBackAction({
+          keyboardOpen: field != null,
           overlayOpen: hasBackOverlay(),
           canGoBack: router.history.canGoBack(),
           pathname: router.state.location.pathname,
         });
 
+        if (action === "blur-field") {
+          field?.blur();
+          return;
+        }
         if (action === "close-overlay") {
           closeTopBackOverlay();
           return;
