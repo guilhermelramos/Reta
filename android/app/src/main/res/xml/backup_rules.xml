@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Regra legada (Android 11 e anteriores). O manifesto já usa
+  android:allowBackup="false"; esta regra é defesa em profundidade para que as
+  chaves de API e os tokens do login xAI nunca saiam do aparelho.
+
+  WSSecureStorageSharedPreferences é o arquivo do
+  @aparajita/capacitor-secure-storage (Keystore): contém reta.xai,
+  reta.openrouter e reta.xai.oauth. O WebView guarda o IndexedDB em
+  app_webview/, excluído pelo domínio root/file.
+-->
+<full-backup-content>
+  <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+  <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+  <exclude domain="root" path="app_webview/" />
+  <exclude domain="file" path="." />
+  <exclude domain="database" path="." />
+</full-backup-content>

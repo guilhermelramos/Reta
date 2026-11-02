@@ -1,24 +1,86 @@
 import { Capacitor } from "@capacitor/core";
 
 /**
- * Chaves de API (xAI e outros pesquisadores).
+ * Chaves de API (xAI, OpenRouter e outros pesquisadores).
  *
  * O IndexedDB é a fonte de verdade só na web. No Android o app roda dentro do
  * WebView do Capacitor e as chaves vão para o `@aparajita/capacitor-secure-storage`
  * (AES-GCM com chave gerada pelo Android Keystore, em SharedPreferences do app).
+ *
+ * Cada provedor tem o seu próprio registro no cofre (`reta.<nome>`); a chave do
+ * OpenRouter (`sk-or-…`) usa o nome `openrouter` e, no APK, nunca entra no
+ * IndexedDB nem no backup.
  *
  * Fallback web: o navegador não expõe um cofre equivalente ao Keystore. Para não
  * mudar o comportamento atual, `settings.keys` continua no IndexedDB — o mesmo
  * armazenamento de antes. O backup nunca leva essas chaves (ver `db.exportAll`).
  */
 
-export const KEY_NAMES = ["xai", "perplexity", "gemini", "claude"] as const;
+export const KEY_NAMES = ["xai", "openrouter", "perplexity", "gemini", "claude"] as const;
 
 export type KeyName = (typeof KEY_NAMES)[number];
 
 export type KeyValues = Record<KeyName, string>;
 
-export const EMPTY_KEYS: KeyValues = { xai: "", perplexity: "", gemini: "", claude: "" };
+export const EMPTY_KEYS: KeyValues = {
+  xai: "",
+  openrouter: "",
+  perplexity: "",
+  gemini: "",
+  claude: "",
+};
+
+/** Prefixo das chaves de API do OpenRouter. */
+export const OPENROUTER_KEY_PREFIX = "sk-or-";
+
+/**
+ * Máscara para mostrar em Ajustes sem expor o segredo:
+ * `sk-or-…9f3a` para chaves do OpenRouter, `xai-…9f3a` para as demais.
+ */
+export function maskKey(value: string): string {
+  const clean = (value ?? "").trim();
+  if (!clean) return "";
+  if (clean.length <= 4) return "…";
+  const tail = clean.slice(-4);
+  if (clean.length <= 8) return `…${tail}`;
+  const prefix = clean.startsWith(OPENROUTER_KEY_PREFIX)
+    ? OPENROUTER_KEY_PREFIX
+    : clean.slice(0, 4);
+  return `${prefix}…${tail}`;
+}
+
+/** Resultado da validação da chave colada em Ajustes. */
+export type OpenRouterKeyCheck =
+  { ok: true; value: string } | { ok: false; reason: "empty" | "prefix"; message: string };
+
+/** Só limpa as pontas; a comparação de formato fica em `validateOpenRouterKey`. */
+export function normalizeOpenRouterKey(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Valida o formato da chave colada: precisa ser texto, ter o prefixo
+ * documentado (`sk-or-`) e não ser só o prefixo. O restante é o OpenRouter
+ * quem confere — esta função nunca chama a rede.
+ */
+export function validateOpenRouterKey(value: unknown): OpenRouterKeyCheck {
+  const clean = normalizeOpenRouterKey(value);
+  if (!clean) {
+    return {
+      ok: false,
+      reason: "empty",
+      message: "Cole a chave do OpenRouter (começa com sk-or-).",
+    };
+  }
+  if (!clean.startsWith(OPENROUTER_KEY_PREFIX) || clean.length <= OPENROUTER_KEY_PREFIX.length) {
+    return {
+      ok: false,
+      reason: "prefix",
+      message: "Chave do OpenRouter inválida: ela começa com sk-or-.",
+    };
+  }
+  return { ok: true, value: clean };
+}
 
 /** Prefixo das chaves dentro do plugin (o plugin também aplica o prefixo dele). */
 const SECURE_PREFIX = "reta.";
@@ -216,4 +278,33 @@ export async function loadKeys(): Promise<KeyValues> {
     // Cofre realmente indisponível: mantém as chaves antigas desta execução.
     return normalizeKeys(await legacyStorage.read());
   }
+}
+
+/* ---------------------- Atalhos do provedor OpenRouter ---------------------- */
+
+/**
+ * Lê a chave do OpenRouter do mesmo cofre da xAI (Keystore no Android).
+ * A entrada fica ao lado de `reta.xai`, com o nome próprio `reta.openrouter`.
+ */
+export async function getOpenRouterKey(storage: KeyStorage = activeStorage()): Promise<string> {
+  return (await readKey(storage, "openrouter")).value;
+}
+
+/**
+ * Valida e grava a chave do OpenRouter. Lança antes de tocar no cofre quando
+ * o texto colado não tem o formato documentado; nunca registra a chave.
+ */
+export async function setOpenRouterKey(
+  value: string,
+  storage: KeyStorage = activeStorage(),
+): Promise<string> {
+  const check = validateOpenRouterKey(value);
+  if (!check.ok) throw new Error(check.message);
+  await storage.set("openrouter", check.value);
+  return check.value;
+}
+
+/** Remove a chave do OpenRouter do cofre ativo. */
+export async function clearOpenRouterKey(storage: KeyStorage = activeStorage()): Promise<void> {
+  await storage.remove("openrouter");
 }

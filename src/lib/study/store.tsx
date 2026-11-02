@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { generatePackageClient } from "@/lib/ai/xai-client";
+import { aiOptionsFor } from "@/lib/ai/provider";
+import { loadCachedModels } from "@/lib/ai/openrouter/model-cache";
 import { EMPTY_KEYS, loadKeys, setKeys, type KeyValues } from "@/lib/secure/keys";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
 import { loadSnapshot, saveDays, saveMeta, saveMistake, savePackage, saveSession, deleteMistake, deleteDay } from "@/lib/study/db";
@@ -316,6 +318,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
         userKey: researcherKey(settings, keys),
         webSearch: settings.webSearch,
         gaps,
+        ai: aiOptionsFor(settings, keys.openrouter, loadCachedModels() ?? undefined),
       });
       if (!res.ok) return res.error;
       const pkg: StudyPackage = {

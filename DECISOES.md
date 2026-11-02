@@ -195,11 +195,11 @@ Resposta em `consultor/respostas.md` (## P6), gerada pelo Gemini a pedido do Gui
 | Item | Decisão | Branch |
 | --- | --- | --- |
 | Seletor de provedor (xAI \| OpenRouter) em Ajustes e onboarding | **Aplicar**; xAI segue igual e é o padrão | `feat/openrouter` |
-| Auth: OAuth PKCE S256 (`https://openrouter.ai/auth` → `POST /api/v1/auth/keys`) via `@capacitor/browser` + App Link; alternativa colar chave | **Aplicar**. Como ainda não há domínio verificado para App Link, o callback fica configurável (placeholder) e há também o modo sem callback documentado pelo OpenRouter (usuário cola o código exibido) | `feat/openrouter` |
+| Auth: **somente chave de API colada** (`sk-or-…`) no secure storage | **Aplicar**. Instrução do Guilherme em 2026-11-02: **sem OAuth/PKCE/App Link/callback**; a decisão anterior de OAuth PKCE foi descartada | `feat/openrouter` |
 | Chave só no secure storage/Keystore; excluída do backup (`data_extraction_rules.xml` + `full_backup_content`) | **Aplicar** | `feat/openrouter` |
 | Modelos: presets de estudo + explorador `GET /api/v1/models` (filtros `:free` e `input_modalities` com `image`), modelo salvo; fallback com o array `models` | **Aplicar** | `feat/openrouter` |
 | Chamadas via CapacitorHttp para `POST /api/v1/chat/completions` com `HTTP-Referer` e `X-Title` | **Aplicar** | `feat/openrouter` |
 | Erros claros 401, 402, 429 e modelo sem visão (bloquear anexo de imagem) | **Aplicar** | `feat/openrouter` |
 | Questões, Professor e pacotes usam o provedor escolhido | **Aplicar** | `feat/openrouter` |
 | Snackbar "Usar xAI" após 429, saldo via `/api/v1/credits`, mascarar chave, cache de 24h | Mascarar e cache: aplicar se couber; o resto vai para MELHORIAS | — |
-| assetlinks.json no domínio e verificação do App Link; fluxo OAuth real | Teste no aparelho | — |
+| Validação da chave real, do saldo e dos limites da conta | Teste no aparelho (a chave nunca vai para o repositório) | — |

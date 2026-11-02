@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  hasActiveAiKey,
   hasImportedPlan,
   isKeyCheckSuccess,
   isValidKeyDraft,
@@ -35,6 +36,48 @@ describe("shouldShowOnboarding", () => {
 
   it("considera feito quando o plano veio de uma planilha importada", () => {
     assert.equal(shouldShowOnboarding({ ...fresh, hasImportedPlan: true }), false);
+  });
+
+  it("gate usa a credencial do provedor ativo (xAI por padrão)", () => {
+    assert.equal(
+      shouldShowOnboarding({
+        ...fresh,
+        hasXaiKey: false,
+        hasOpenRouterKey: true,
+        aiProvider: "openrouter",
+      }),
+      false,
+    );
+    // Chave do OpenRouter não conta quando a xAI é o provedor ativo.
+    assert.equal(
+      shouldShowOnboarding({
+        ...fresh,
+        hasXaiKey: false,
+        hasOpenRouterKey: true,
+        aiProvider: "xai",
+      }),
+      true,
+    );
+    // Chave da xAI não conta quando o OpenRouter está ativo.
+    assert.equal(
+      shouldShowOnboarding({
+        ...fresh,
+        hasXaiKey: true,
+        hasOpenRouterKey: false,
+        aiProvider: "openrouter",
+      }),
+      true,
+    );
+  });
+
+  it("hasActiveAiKey escolhe a chave do provedor ativo", () => {
+    assert.equal(hasActiveAiKey({ hasXaiKey: true }), true);
+    assert.equal(hasActiveAiKey({ aiProvider: "xai", hasXaiKey: true }), true);
+    assert.equal(hasActiveAiKey({ aiProvider: "openrouter", hasOpenRouterKey: true }), true);
+    assert.equal(
+      hasActiveAiKey({ aiProvider: "openrouter", hasXaiKey: true, hasOpenRouterKey: false }),
+      false,
+    );
   });
 
   it("o plano semeado na primeira abertura não conta como importação", () => {

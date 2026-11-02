@@ -35,6 +35,8 @@ function Frame() {
     shouldShowOnboarding({
       onboardingDone,
       hasXaiKey: Boolean(keys.xai.trim()),
+      hasOpenRouterKey: Boolean(keys.openrouter.trim()),
+      aiProvider: settings.aiProvider,
       hasImportedPlan: hasImportedPlan(seeded, days.length),
     });
 

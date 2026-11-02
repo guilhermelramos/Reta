@@ -15,6 +15,10 @@ export type AiErrorKind =
   | "server"
   | "bad-request"
   | "empty"
+  /** OpenRouter: a conta/chave está sem créditos (HTTP 402). */
+  | "no-credits"
+  /** OpenRouter: o modelo escolhido não aceita imagem em `input_modalities`. */
+  | "vision"
   | "unknown";
 
 /**
@@ -26,7 +30,12 @@ export type AiFailure = {
   message: string;
   status?: number;
   retryAfterSeconds?: number | null;
+  /** Provedor que falhou, para a UI manter os textos da xAI e os do OpenRouter. */
+  provider?: AiProviderId;
 };
+
+/** Só o id do provedor: evita importar `provider.ts` (que importa este módulo). */
+export type AiProviderId = "xai" | "openrouter";
 
 export const OFFLINE_MESSAGE = "Sem internet. Conecte-se e tente de novo.";
 export const NETWORK_MESSAGE =
@@ -38,6 +47,7 @@ export const EMPTY_MESSAGE = "A IA voltou vazia. Tente de novo.";
 export type AiErrorInfo = {
   status?: number;
   retryAfterSeconds?: number | null;
+  provider?: AiProviderId;
 };
 
 /** Erro já traduzido: `mapFailure` devolve a mensagem sem remapear. */
@@ -45,6 +55,7 @@ export class AiRequestError extends Error {
   readonly kind: AiErrorKind;
   readonly status?: number;
   readonly retryAfterSeconds?: number | null;
+  readonly provider?: AiProviderId;
 
   constructor(message: string, kind: AiErrorKind = "unknown", info: AiErrorInfo = {}) {
     super(message);
@@ -52,6 +63,7 @@ export class AiRequestError extends Error {
     this.kind = kind;
     this.status = info.status;
     this.retryAfterSeconds = info.retryAfterSeconds;
+    this.provider = info.provider;
   }
 }
 
@@ -100,36 +112,46 @@ export function httpError(
   options: {
     retryAfter?: string | number | null;
     providerLabel?: string;
+    provider?: AiProviderId;
     now?: number;
   } = {},
 ): AiRequestError {
   const label = options.providerLabel?.trim() || "xAI";
   const detail = sanitizedErrorBody(body);
+  const providerInfo = options.provider ? { provider: options.provider } : {};
 
   if (status === 401 || status === 403) {
-    return new AiRequestError(
-      `A chave da ${label} foi recusada. Confira a chave em Ajustes.`,
-      "unauthorized",
-      {
-        status,
-      },
-    );
+    const message =
+      options.provider === "openrouter"
+        ? status === 401
+          ? "Chave do OpenRouter inválida ou revogada. Cole uma nova em Ajustes."
+          : "Chave do OpenRouter bloqueada ou sem permissão. Confira a chave em Ajustes."
+        : `A chave da ${label} foi recusada. Confira a chave em Ajustes.`;
+    return new AiRequestError(message, "unauthorized", {
+      status,
+      ...providerInfo,
+    });
   }
 
   if (status === 429) {
     const seconds = retryAfterSeconds(options.retryAfter, options.now);
-    const wait =
-      seconds != null && seconds > 0
-        ? `Espere ${seconds} s e tente de novo.`
-        : "Espere um pouco e tente de novo.";
-    return new AiRequestError(`Limite de uso da API atingido. ${wait}`, "rate-limit", {
+    const message =
+      options.provider === "openrouter"
+        ? `Limite de uso atingido. Tente em ${seconds != null && seconds > 0 ? seconds : 60} s ou troque de modelo.`
+        : `Limite de uso da API atingido. ${
+            seconds != null && seconds > 0
+              ? `Espere ${seconds} s e tente de novo.`
+              : "Espere um pouco e tente de novo."
+          }`;
+    return new AiRequestError(message, "rate-limit", {
       status,
       retryAfterSeconds: seconds,
+      ...providerInfo,
     });
   }
 
   if (status === 408 || status === 504) {
-    return new AiRequestError(TIMEOUT_MESSAGE, "timeout", { status });
+    return new AiRequestError(TIMEOUT_MESSAGE, "timeout", { status, ...providerInfo });
   }
 
   if (status >= 500) {
@@ -138,6 +160,7 @@ export function httpError(
       "server",
       {
         status,
+        ...providerInfo,
       },
     );
   }
@@ -146,6 +169,7 @@ export function httpError(
     const suffix = detail ? `: ${detail}` : ".";
     return new AiRequestError(`A IA recusou o pedido (erro ${status})${suffix}`, "bad-request", {
       status,
+      ...providerInfo,
     });
   }
 
@@ -154,6 +178,7 @@ export function httpError(
     "unknown",
     {
       status,
+      ...providerInfo,
     },
   );
 }
@@ -205,6 +230,7 @@ export function failureOf(
     message: info.message,
     ...(info.status != null ? { status: info.status } : {}),
     retryAfterSeconds: info.retryAfterSeconds ?? null,
+    ...(info.provider ? { provider: info.provider } : {}),
   };
 }
 

@@ -1,4 +1,5 @@
 import { buildBackupFile, type BackupFile, type FullBackup } from "@/lib/study/backup";
+import { normalizeAiPreferences } from "@/lib/ai/provider";
 import { clampStage } from "@/lib/study/srs";
 import type { Doubt, Mistake, PlanDay, Settings, StudyPackage, StudySession } from "@/lib/study/types";
 import type { BlockKind, SessionMode } from "@/lib/study/types";
@@ -408,10 +409,16 @@ function mergeSettings(raw: unknown): Settings {
     rest.researcher === "claude"
       ? rest.researcher
       : EMPTY_SETTINGS.researcher;
+  // O provedor ativo e o modelo do OpenRouter vivem em `settings` (não são
+  // segredo); valores antigos/estranhos caem sempre em xAI.
+  const ai = normalizeAiPreferences(rest);
   return {
     ...EMPTY_SETTINGS,
     ...rest,
     researcher,
+    aiProvider: ai.provider,
+    openRouterModel: ai.openRouterModel,
+    openRouterFallbacks: ai.openRouterFallbacks,
     alerts: { ...EMPTY_SETTINGS.alerts, ...alerts },
   };
 }

@@ -1,6 +1,6 @@
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
 import { AiRequestError, failureOf, type AiErrorKind } from "./errors.ts";
-import { isNativeAi, nativeProfessorReply, type ProfessorInput } from "./xai-client";
+import { isNativeAi, providerProfessorReply, type ProfessorInput } from "./xai-client";
 
 /**
  * Chat do professor nos dois ambientes.
@@ -45,6 +45,7 @@ function structured(error: unknown): AiRequestError {
   return new AiRequestError(failure.message, failure.kind, {
     status: failure.status,
     retryAfterSeconds: failure.retryAfterSeconds,
+    ...(failure.provider ? { provider: failure.provider } : {}),
   });
 }
 
@@ -54,8 +55,14 @@ export async function askProfessor(
   input: ProfessorInput,
   onRaw: (raw: string) => void,
 ): Promise<AskProfessorResult> {
-  if (isNativeAi()) {
-    const text = await nativeProfessorReply(input);
+  // OpenRouter é BYOK e não usa a rota de servidor; anexo de imagem também
+  // precisa do caminho local (a rota /api/professor transporta só texto).
+  const local =
+    isNativeAi() ||
+    input.ai?.preferences?.provider === "openrouter" ||
+    Boolean(input.images?.length);
+  if (local) {
+    const text = await providerProfessorReply(input);
     onRaw(text);
     return { text, streamed: false };
   }

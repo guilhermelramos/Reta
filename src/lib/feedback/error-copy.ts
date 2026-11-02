@@ -13,6 +13,8 @@ export type FeedbackKind =
   | "rate-limit"
   | "unauthorized"
   | "missing-key"
+  | "no-credits"
+  | "vision"
   | "notifications"
   | "sheet"
   | "block"
@@ -27,7 +29,10 @@ export type FeedbackActionId =
   | "open-settings"
   | "choose-file"
   | "download-template"
-  | "today-plan";
+  | "today-plan"
+  | "use-free-model"
+  | "open-credits"
+  | "use-vision-model";
 
 export type FeedbackAction = {
   id: FeedbackActionId;
@@ -36,6 +41,10 @@ export type FeedbackAction = {
   href?: "/" | "/ajustes";
   /** Segundos de espera antes de liberar o botão de tentar de novo. */
   retryAfterSeconds?: number;
+  /** Abre em nova janela/navegador externo (sem plugin novo). */
+  externalUrl?: string;
+  /** Preset que a tela aplica em 1 toque (modelo grátis / com visão). */
+  preset?: "fast-free" | "vision";
 };
 
 export type ErrorCopy = {
@@ -70,6 +79,13 @@ export type DescribeErrorOptions = {
 export const OFFLINE_MESSAGE = "Você está offline. Pacotes baixados continuam funcionando.";
 export const RATE_LIMIT_MESSAGE = "Muitas perguntas seguidas. Aguarde ~1 min.";
 export const INVALID_KEY_MESSAGE = "Chave xAI inválida.";
+export const OPENROUTER_INVALID_KEY_MESSAGE =
+  "Chave do OpenRouter inválida ou revogada. Cole uma nova em Ajustes.";
+export const OPENROUTER_NO_CREDITS_MESSAGE =
+  "Sem créditos no OpenRouter. Escolha um modelo grátis ou recarregue.";
+export const OPENROUTER_VISION_MESSAGE =
+  "Este modelo não lê imagens. Use um modelo com visão para anexar a foto.";
+export const OPENROUTER_CREDITS_URL = "https://openrouter.ai/settings/credits";
 export const NOTIFICATIONS_DENIED_MESSAGE =
   "Lembretes desativados. Você não vai receber aviso do timer.";
 export const SHEET_MESSAGE =
@@ -112,12 +128,59 @@ export function rateLimitCopy(retryAfterSeconds?: number | null): ErrorCopy {
   };
 }
 
+/** 429 do OpenRouter: a contagem vai no texto e a troca de modelo é a saída. */
+export function openRouterRateLimitCopy(retryAfterSeconds?: number | null): ErrorCopy {
+  const seconds =
+    retryAfterSeconds != null && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? Math.ceil(retryAfterSeconds)
+      : RATE_LIMIT_DEFAULT_SECONDS;
+  return {
+    kind: "rate-limit",
+    title: "Limite de uso atingido",
+    message: `Limite de uso atingido. Tente em ${seconds} s ou troque de modelo.`,
+    action: retryAction(seconds),
+    secondaryAction: { id: "use-free-model", label: "Usar modelo grátis", preset: "fast-free" },
+  };
+}
+
 export function unauthorizedCopy(): ErrorCopy {
   return {
     kind: "unauthorized",
     title: "Chave recusada",
     message: INVALID_KEY_MESSAGE,
     action: { id: "update-key", label: "Atualizar chave", href: "/ajustes" },
+  };
+}
+
+export function openRouterUnauthorizedCopy(): ErrorCopy {
+  return {
+    kind: "unauthorized",
+    title: "Chave recusada",
+    message: OPENROUTER_INVALID_KEY_MESSAGE,
+    action: { id: "update-key", label: "Atualizar chave", href: "/ajustes" },
+  };
+}
+
+export function openRouterNoCreditsCopy(): ErrorCopy {
+  return {
+    kind: "no-credits",
+    title: "Sem créditos",
+    message: OPENROUTER_NO_CREDITS_MESSAGE,
+    action: { id: "use-free-model", label: "Usar modelo grátis", preset: "fast-free" },
+    secondaryAction: {
+      id: "open-credits",
+      label: "Recarregar",
+      externalUrl: OPENROUTER_CREDITS_URL,
+    },
+  };
+}
+
+export function visionUnsupportedCopy(): ErrorCopy {
+  return {
+    kind: "vision",
+    title: "Modelo sem visão",
+    message: OPENROUTER_VISION_MESSAGE,
+    action: { id: "use-vision-model", label: "Usar modelo que lê fotos", preset: "vision" },
   };
 }
 
@@ -249,6 +312,7 @@ type FailureLike = {
   message?: string;
   status?: number;
   retryAfterSeconds?: number | null;
+  provider?: string;
 };
 
 function readFailure(error: unknown): FailureLike | null {
@@ -263,6 +327,7 @@ function readFailure(error: unknown): FailureLike | null {
         typeof candidate.retryAfterSeconds === "number" || candidate.retryAfterSeconds === null
           ? candidate.retryAfterSeconds
           : undefined,
+      ...(typeof candidate.provider === "string" ? { provider: candidate.provider } : {}),
     };
   }
   if (typeof error === "string") return { message: error };
@@ -286,6 +351,8 @@ function failureKind(failure: FailureLike | null): AiErrorKind | undefined {
     kind === "bad-request" ||
     kind === "empty" ||
     kind === "missing-key" ||
+    kind === "no-credits" ||
+    kind === "vision" ||
     kind === "unknown"
   ) {
     return kind;
@@ -293,18 +360,39 @@ function failureKind(failure: FailureLike | null): AiErrorKind | undefined {
   return undefined;
 }
 
+function isOpenRouterFailure(failure: FailureLike | null): boolean {
+  if (failure?.provider === "openrouter") return true;
+  return /openrouter/i.test(failure?.message ?? "");
+}
+
 function copyForKind(
   kind: AiErrorKind | undefined,
   failure: FailureLike | null,
 ): ErrorCopy | null {
+  const openRouter = isOpenRouterFailure(failure);
   if (kind === "offline") return offlineCopy();
   if (kind === "rate-limit" || failure?.status === 429) {
-    return rateLimitCopy(failure?.retryAfterSeconds);
+    return openRouter
+      ? openRouterRateLimitCopy(failure?.retryAfterSeconds)
+      : rateLimitCopy(failure?.retryAfterSeconds);
   }
   if (kind === "unauthorized" || failure?.status === 401 || failure?.status === 403) {
-    return unauthorizedCopy();
+    return openRouter ? openRouterUnauthorizedCopy() : unauthorizedCopy();
   }
-  if (kind === "missing-key") return missingKeyCopy(failure?.message);
+  if (kind === "no-credits" || failure?.status === 402) return openRouterNoCreditsCopy();
+  if (kind === "vision") return visionUnsupportedCopy();
+  if (kind === "missing-key") {
+    return openRouter
+      ? {
+          kind: "missing-key",
+          title: "Falta a chave do OpenRouter",
+          message:
+            failure?.message ||
+            "Sem chave do OpenRouter. Cole a sua chave (sk-or-…) em Ajustes.",
+          action: { id: "update-key", label: "Atualizar chave", href: "/ajustes" },
+        }
+      : missingKeyCopy(failure?.message);
+  }
   if (kind === "timeout") return timeoutCopy();
   if (kind === "server") return serverCopy(failure?.message);
   return null;
@@ -333,10 +421,19 @@ export function describeError(
 
   const message = failure?.message?.trim() ?? "";
   if (/sem (internet|conex)/i.test(message)) return offlineCopy();
+  const openRouter = isOpenRouterFailure(failure);
   if (/limite de uso|muitas perguntas|429/i.test(message)) {
-    return rateLimitCopy(failure?.retryAfterSeconds);
+    return openRouter
+      ? openRouterRateLimitCopy(failure?.retryAfterSeconds)
+      : rateLimitCopy(failure?.retryAfterSeconds);
   }
-  if (/chave.*(recusada|inválida)/i.test(message)) return unauthorizedCopy();
+  if (/sem créditos|402|recarregue/i.test(message)) return openRouterNoCreditsCopy();
+  if (/não lê imagens|sem visão|modelo.*imagem/i.test(message)) {
+    return visionUnsupportedCopy();
+  }
+  if (/chave.*(recusada|inválida)/i.test(message)) {
+    return openRouter ? openRouterUnauthorizedCopy() : unauthorizedCopy();
+  }
   if (/sem chave/i.test(message)) return missingKeyCopy(message);
   if (/demorou demais|não respondeu|timeout|15 s/i.test(message)) return timeoutCopy();
   if (message.length > 0) return genericCopy(message);

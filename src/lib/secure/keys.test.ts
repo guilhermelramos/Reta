@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { EMPTY_KEYS, migrateLegacyKeys, normalizeKeys, readKey } from "./keys.ts";
+import {
+  EMPTY_KEYS,
+  OPENROUTER_KEY_PREFIX,
+  clearOpenRouterKey,
+  getOpenRouterKey,
+  maskKey,
+  migrateLegacyKeys,
+  normalizeKeys,
+  normalizeOpenRouterKey,
+  readKey,
+  setOpenRouterKey,
+  validateOpenRouterKey,
+} from "./keys.ts";
 import type { KeyName, KeyStorage, LegacyKeyStorage } from "./keys.ts";
 import { withoutKeys } from "./redact.ts";
 
@@ -166,7 +178,7 @@ describe("migrateLegacyKeys", () => {
 });
 
 describe("normalizeKeys", () => {
-  it("preenche as quatro chaves e descarta valores que não são texto", () => {
+  it("preenche as cinco chaves e descarta valores que não são texto", () => {
     assert.deepEqual(normalizeKeys({ xai: " ab ", perplexity: 42, gemini: null }), {
       ...EMPTY_KEYS,
       xai: "ab",
@@ -181,5 +193,58 @@ describe("withoutKeys (backup)", () => {
     const safe = withoutKeys(settings);
     assert.deepEqual(safe, { studyHour: 7 });
     assert.equal("keys" in safe, false);
+  });
+});
+
+describe("maskKey", () => {
+  it("mostra o prefixo do OpenRouter e só os últimos 4 caracteres", () => {
+    const masked = maskKey("sk-or-v1-0123456789abcdef");
+    assert.equal(masked, "sk-or-…cdef");
+    assert.doesNotMatch(masked, /0123456789ab/);
+  });
+
+  it("mantém um prefixo curto para as outras chaves", () => {
+    assert.equal(maskKey("  xai-abcdefghijkl  "), "xai-…ijkl");
+  });
+
+  it("não revela nada de chave vazia ou muito curta", () => {
+    assert.equal(maskKey(""), "");
+    assert.equal(maskKey("abc"), "…");
+    assert.equal(maskKey("abcdef"), "…cdef");
+  });
+});
+
+describe("chave do OpenRouter", () => {
+  it("limpa as pontas e exige o prefixo sk-or-", () => {
+    assert.equal(normalizeOpenRouterKey("  sk-or-v1-abc  "), "sk-or-v1-abc");
+    assert.equal(normalizeOpenRouterKey(null), "");
+
+    assert.deepEqual(validateOpenRouterKey("  sk-or-v1-abc  "), {
+      ok: true,
+      value: "sk-or-v1-abc",
+    });
+    assert.equal(validateOpenRouterKey("").ok, false);
+    assert.equal(validateOpenRouterKey("   ").ok, false);
+    assert.equal(validateOpenRouterKey("xai-abc").ok, false);
+    assert.equal(validateOpenRouterKey(`${OPENROUTER_KEY_PREFIX} `).ok, false);
+  });
+
+  it("grava, lê e remove no mesmo cofre da xAI, com nome próprio", async () => {
+    const secure = new FakeSecure({ xai: "xai-key" });
+
+    await setOpenRouterKey("  sk-or-v1-abc  ", secure);
+    assert.equal(await secure.get("openrouter"), "sk-or-v1-abc");
+    assert.equal(await getOpenRouterKey(secure), "sk-or-v1-abc");
+
+    await clearOpenRouterKey(secure);
+    assert.equal(await secure.get("openrouter"), null);
+    assert.equal(await secure.get("xai"), "xai-key");
+  });
+
+  it("recusa chave fora do formato antes de tocar no cofre", async () => {
+    const secure = new FakeSecure();
+    await assert.rejects(() => setOpenRouterKey("chave-qualquer", secure), /começa com sk-or-/);
+    assert.equal(secure.sets.length, 0);
+    assert.equal(await secure.get("openrouter"), null);
   });
 });
