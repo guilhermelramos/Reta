@@ -598,6 +598,21 @@ cartões ficam em `src/components/erros/`. Para validar no aparelho: o voltar do
 Android fechando folhas e o `alertdialog`, o TalkBack lendo os chips filtrados e
 o teclado do WebView nos campos do formulário.
 
+### Correções P4 na tela Erros
+
+- **Estado vazio:** quando não há nenhum erro guardado, o CTA **+ Registrar
+  erro** sai de baixo do cartão e entra nele como botão tonal (48px, fundo
+  `primary-tonal` e texto âmbar). Ao lado, o botão de texto **Estudar bloco de
+  hoje** leva à aba **Hoje** (`/`). Em 390px os dois ficam na mesma linha; em
+  320px quebram em duas linhas, sem overflow.
+- **Com erros:** o CTA **Registrar erro** continua fora do cartão, como antes —
+  inclusive no estado **Nada para revisar hoje**. A decisão é pura em
+  `isNotebookEmpty` ([`src/lib/study/error-notebook.ts`](./src/lib/study/error-notebook.ts))
+  e testada em `error-notebook.test.ts` (`npm test`).
+
+Para validar no aparelho: o TalkBack anunciando os dois botões dentro do cartão
+vazio e o alvo de 48dp com a fonte do sistema aumentada.
+
 ## Redesign da tela Plano (Material 3)
 
 A tela `/plano` virou uma agenda por semana, com topo fixo e o dia de hoje à
