@@ -3,10 +3,13 @@ import { describe, it } from "node:test";
 import {
   blockState,
   emptyBlocksLine,
+  isLatePending,
   isPrepDismissed,
+  LATE_GRACE_MIN,
   loadBlocks,
   nextAction,
   prepSuggestionVisible,
+  showsShortSession,
   studiedMinutesFor,
   weekKey,
 } from "./today.ts";
@@ -128,6 +131,61 @@ describe("nextAction: próxima ação do dia", () => {
       loadBlocks(blocks).map((item) => item.kind),
       ["A", "R"],
     );
+  });
+});
+
+describe('showsShortSession: "Só 15 min" só no herói pendente com 30+ min', () => {
+  it("bloco pendente com 30 min ou mais mostra o atalho", () => {
+    assert.equal(showsShortSession("idle", 30), true);
+    assert.equal(showsShortSession("idle", 60), true);
+  });
+
+  it("bloco pendente com menos de 30 min não mostra", () => {
+    assert.equal(showsShortSession("idle", 29), false);
+    assert.equal(showsShortSession("idle", 15), false);
+    assert.equal(showsShortSession("idle", 0), false);
+  });
+
+  it("bloco em andamento nunca mostra (o CTA é Continuar)", () => {
+    assert.equal(showsShortSession("active", 60), false);
+  });
+
+  it("bloco concluído nunca mostra", () => {
+    assert.equal(showsShortSession("done", 60), false);
+  });
+
+  it("duração inválida não vira atalho", () => {
+    assert.equal(showsShortSession("idle", Number.NaN), false);
+  });
+});
+
+describe("isLatePending: badge Atrasado no bloco pendente", () => {
+  const STUDY_MIN = 14 * 60; // 14:00
+
+  it("depois do horário de estudo + tolerância fica atrasado", () => {
+    assert.equal(isLatePending("idle", STUDY_MIN + LATE_GRACE_MIN, STUDY_MIN), true);
+    assert.equal(isLatePending("idle", STUDY_MIN + LATE_GRACE_MIN + 1, STUDY_MIN), true);
+  });
+
+  it("antes da tolerância não fica atrasado", () => {
+    assert.equal(isLatePending("idle", STUDY_MIN + LATE_GRACE_MIN - 1, STUDY_MIN), false);
+    assert.equal(isLatePending("idle", STUDY_MIN, STUDY_MIN), false);
+  });
+
+  it("só vale para bloco pendente", () => {
+    assert.equal(isLatePending("active", STUDY_MIN + 120, STUDY_MIN), false);
+    assert.equal(isLatePending("done", STUDY_MIN + 120, STUDY_MIN), false);
+  });
+
+  it("sem horário válido na store não sinaliza atraso", () => {
+    assert.equal(isLatePending("idle", STUDY_MIN + 120, Number.NaN), false);
+    assert.equal(isLatePending("idle", Number.NaN, STUDY_MIN), false);
+    assert.equal(isLatePending("idle", STUDY_MIN + 120, STUDY_MIN, Number.NaN), false);
+  });
+
+  it("aceita outra tolerância quando o chamador precisar", () => {
+    assert.equal(isLatePending("idle", STUDY_MIN + 10, STUDY_MIN, 10), true);
+    assert.equal(isLatePending("idle", STUDY_MIN + 9, STUDY_MIN, 10), false);
   });
 });
 

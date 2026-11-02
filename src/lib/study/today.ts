@@ -77,6 +77,44 @@ export function nextAction(
 }
 
 /**
+ * Atalho "Só 15 min" do cartão herói.
+ *
+ * Só faz sentido para um bloco ainda não iniciado com carga suficiente para
+ * valer a pena encurtar. Num bloco em andamento o timer já existe ("Continuar")
+ * e um atalho de 15 min criaria dúvida sobre sobrescrever o tempo atual; nos
+ * cartões da lista o botão repetido só atrapalha a leitura.
+ */
+export function showsShortSession(state: BlockState, plannedMin: number): boolean {
+  return state === "idle" && Number.isFinite(plannedMin) && plannedMin >= 30;
+}
+
+/**
+ * Tolerância do aviso de bloco pendente, igual à do Ajuste
+ * "Aviso se o bloco ainda não começou" (45 min após o horário de estudo).
+ */
+export const LATE_GRACE_MIN = 45;
+
+/**
+ * O bloco pendente já passou do horário de estudo configurado?
+ *
+ * A tela usa isso para trocar o chip "Pendente" por "Atrasado" no próprio
+ * cartão, no lugar do antigo banner entre o herói e a lista. Sem horário
+ * válido na store a função devolve `false` (nada é sinalizado).
+ */
+export function isLatePending(
+  state: BlockState,
+  nowMin: number,
+  studyMin: number,
+  graceMin = LATE_GRACE_MIN,
+): boolean {
+  if (state !== "idle") return false;
+  if (!Number.isFinite(nowMin) || !Number.isFinite(studyMin) || !Number.isFinite(graceMin)) {
+    return false;
+  }
+  return nowMin >= studyMin + graceMin;
+}
+
+/**
  * Junta os blocos sem carga numa linha só, na ordem do plano:
  * "Bloco B, Revisão e Leitura: sem carga hoje".
  */
