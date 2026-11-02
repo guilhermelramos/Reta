@@ -187,3 +187,19 @@ Resposta em `consultor/respostas.md` (## P5), gerada pelo Gemini a pedido do Gui
 | Melh. 3 — placeholder curto em 320 e "0 de 60 min" em paisagem | baixa, P | **Aplicar** | `ui/p5-ajustes` |
 | d4 — riscos do aparelho: allowBackup × Keystore, adjustResize, voltar fecha o teclado antes do sheet, alarme exato negado no Android 14+ | P | **Aplicar** | `fix/android-riscos` |
 | d4 — TalkBack com foco preso nas gavetas, Doze | — | Teste no aparelho (roteiro final) | — |
+
+## P6 — OpenRouter como segundo provedor de IA (2026-11-02, UTC-3)
+
+Resposta em `consultor/respostas.md` (## P6), gerada pelo Gemini a pedido do Guilherme (`consultor/gemini-p6/`). Pedido do Guilherme: OpenRouter como segundo provedor, sem quebrar a xAI. Endpoints conferidos na documentação oficial do OpenRouter (openrouter.ai/docs) em 2026-11-02.
+
+| Item | Decisão | Branch |
+| --- | --- | --- |
+| Seletor de provedor (xAI \| OpenRouter) em Ajustes e onboarding | **Aplicar**; xAI segue igual e é o padrão | `feat/openrouter` |
+| Auth: OAuth PKCE S256 (`https://openrouter.ai/auth` → `POST /api/v1/auth/keys`) via `@capacitor/browser` + App Link; alternativa colar chave | **Aplicar**. Como ainda não há domínio verificado para App Link, o callback fica configurável (placeholder) e há também o modo sem callback documentado pelo OpenRouter (usuário cola o código exibido) | `feat/openrouter` |
+| Chave só no secure storage/Keystore; excluída do backup (`data_extraction_rules.xml` + `full_backup_content`) | **Aplicar** | `feat/openrouter` |
+| Modelos: presets de estudo + explorador `GET /api/v1/models` (filtros `:free` e `input_modalities` com `image`), modelo salvo; fallback com o array `models` | **Aplicar** | `feat/openrouter` |
+| Chamadas via CapacitorHttp para `POST /api/v1/chat/completions` com `HTTP-Referer` e `X-Title` | **Aplicar** | `feat/openrouter` |
+| Erros claros 401, 402, 429 e modelo sem visão (bloquear anexo de imagem) | **Aplicar** | `feat/openrouter` |
+| Questões, Professor e pacotes usam o provedor escolhido | **Aplicar** | `feat/openrouter` |
+| Snackbar "Usar xAI" após 429, saldo via `/api/v1/credits`, mascarar chave, cache de 24h | Mascarar e cache: aplicar se couber; o resto vai para MELHORIAS | — |
+| assetlinks.json no domínio e verificação do App Link; fluxo OAuth real | Teste no aparelho | — |
