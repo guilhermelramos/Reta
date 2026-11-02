@@ -51,6 +51,21 @@ Regra: prioridade alta ou esforço P = aplicar; resto → MELHORIAS.md.
 
 > Nota da integração (integracao-fase2): as notificações locais nativas citadas acima como "não aplicado" em fix/estados-erro chegaram por fix/notificacoes-nativas e fix/timer-segundo-plano, já mesclados.
 
+### P1 Hoje — aplicado em `ui/hoje`
+
+- **Prob. 4 / Melh. 1 e 8:** topo enxuto com menu de overflow (Trocar planilha e
+  Exportar resumo continuam existindo), cartão herói só com a próxima ação,
+  descanso/conclusão com "Revisar erros (N)", blocos com carga em cartões
+  compactos com estado, blocos vazios numa linha e "Pacote na hora" fora da
+  repetição.
+- **Preparar semana:** virou sugestão com **Preparar** e **Dispensar**; a
+  dispensa é semanal (`meta.prepDismissedWeek`) e reaparece na semana seguinte.
+- **Largura/navegação:** conteúdo de 600dp centralizado, 16dp nas laterais e
+  12dp entre cartões; ≥600dp usa navigation rail M3 de 80dp, abaixo disso a
+  barra inferior M3. Nada muda na `/sessao`.
+- **Lógica pura:** `src/lib/study/today.ts` (próxima ação, blocos vazios e
+  dispensa semanal) com testes em `today.test.ts`, incluídos em `npm test`.
+
 ## P2 — revisão (c) Onboarding + Sessão (2026-11-01, UTC-3)
 
 Resposta em `consultor/respostas.md` (## P2), gerada pelo Gemini a pedido do Guilherme. Ressalva: o Gemini viu só 10 das 36 telas enviadas (`consultor/gemini-p2/`). Regra: alta ou esforço P = aplicar; o resto vai para `MELHORIAS.md`.

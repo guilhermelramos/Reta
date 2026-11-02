@@ -299,6 +299,28 @@ a vibração no fim do bloco e o snackbar **Desfazer** depois de matar/reabrir o
 app. No WebView (mesmo bundle do APK) os fluxos de UI, a folha, o foco do
 diálogo e o layout de 320px foram exercitados.
 
+## Redesign da tela Hoje (Material 3)
+
+A tela `/` agora responde "o que estudar agora" em vez de listar quatro cartões
+iguais. A leitura é pura em [`src/lib/study/today.ts`](./src/lib/study/today.ts)
+(escolha da próxima ação, agrupamento dos blocos vazios e chave da semana) e
+testada em `today.test.ts`.
+
+| Elemento | Comportamento |
+| --- | --- |
+| Topo | data em 14px muted, título serifado "O que estudar agora", "Faltam N dias para a prova." e **Mais opções** (`MoreVertical`, alvo 48×48) |
+| Menu de overflow | **Trocar planilha** (vai para Importar) e **Exportar resumo** (impressão), em `role=menu`; fecha com Esc e com o voltar do Android pela pilha de overlays (`useBackOverlay`) |
+| Cartão herói | `surface-2` com borda âmbar, bloco, assunto em serifa, minutos e **Começar bloco** (48dp). Com timer ativo vira **Continuar** e o bloco em andamento tem prioridade |
+| Descanso / dia concluído | cartão sem borda âmbar ("Hoje é descanso" ou "Blocos de hoje concluídos") com **Revisar erros (N)** quando o caderno tem erros vencidos hoje |
+| Blocos | cartões compactos só para quem tem carga, com estado **Pendente / Em andamento / Concluído**; o herói não se repete na lista |
+| Blocos vazios | uma linha só, ex.: "Bloco B, Revisão e Leitura: sem carga hoje" |
+| Pacote | o estado aparece uma vez, no herói ("Pacote pronto"), em vez de "Pacote na hora" em todo cartão |
+| Preparar semana | cartão de sugestão com **Preparar** e **Dispensar**. A dispensa fica em `meta.prepDismissedWeek` (segunda-feira da semana) e volta na semana seguinte |
+| Largura | coluna de 600dp centralizada e 16dp de margem; em ≥600dp a navegação vira **navigation rail** M3 de 80dp (ícone + rótulo e pílula no item ativo); abaixo disso continua a barra inferior M3. A `/sessao` segue sem navegação |
+
+Para validar no aparelho: o voltar do Android com o menu aberto, o TalkBack nos
+itens do menu e do rail, e a largura do rail numa tablet real.
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**
