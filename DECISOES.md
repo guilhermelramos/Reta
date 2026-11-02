@@ -149,3 +149,25 @@ Resposta em `consultor/respostas.md` (## P3), gerada pelo Gemini a pedido do Gui
 
 ### Redesign Progresso
 - **Aplicado:** topo com título serifado e a linha **Faltam N dias para a prova**; primeira dobra com sequência, horas da semana × planejado e % do plano; heatmap de 28 dias com escala por minutos (0, 1–14, 15–29, 30–59, 60+), `aria-label` **DD/MM: N min**, contorno de hoje e dia livre tracejado; planejado × real por assunto; assuntos mais fracos e motivos dos erros com até 5 itens, barra de proporção, link para `/erros` e **Ver todos**; termômetro e dias do plano compactos, sem repetir números das métricas; estado vazio com `ErrorState` neutro e único botão preenchido (**Ir para Hoje**). Lógica pura em `src/lib/study/progress-dashboard.ts`, testada em `progress-dashboard.test.ts` (incluída em `npm test`).
+
+## P4 — revisão (c) Erros + Plano + Progresso + confirmação da P3 (2026-11-02, UTC-3)
+
+Resposta em `consultor/respostas.md` (## P4), gerada pelo Gemini a pedido do Guilherme (`consultor/gemini-p4/`). P3: 5 de 9 itens resolvidos e 4 parciais. Regra: alta ou esforço P = aplicar; o resto vai para `MELHORIAS.md`.
+
+| Item | Prior./esforço | Decisão | Branch |
+| --- | --- | --- | --- |
+| P3 parcial 5 + Prob. 4 — título "Professor IA" truncado ou sumindo no sheet; Caderno vira IconButton e o timer vira chip | P | **Aplicar** | `ui/p4-sessao` |
+| Prob. 3 — Sessão 320: timer cortado ao lado de Iniciar; FAB Professor cobre o CTA | P | **Aplicar** | `ui/p4-sessao` |
+| P3 parcial 6 + Melh. 2b — nome padrão "Plano" → nome do arquivo importado | alta, P | **Aplicar** | `ui/p4-importar` |
+| P3 parcial 9 + Melh. 3 — Importar: rótulo da prévia truncado, topo duplo empurrando o botão | média, P | **Aplicar** | `ui/p4-importar` |
+| P3 parcial 8 + Prob. 6a — "Testar conexão" habilitado sem chave | P | **Aplicar** | `ui/p4-ajustes` |
+| P3 item 3 (sobra) + Prob. 6b — menu ⋮ de Hoje cobre o H1 | P | **Aplicar** | `ui/p4-hoje` |
+| Prob. 1 — topo fixo do Plano cobrindo o alerta e a semana após o auto-scroll | P | **Aplicar** (scroll-margin e alerta visível) | `ui/p4-plano` |
+| Prob. 2 — matérias truncadas em 320 (status só por ícone + aria-label) | P | **Aplicar** | `ui/p4-plano` |
+| Melh. 2a — "Novo dia" visível fora do ⋮ | alta, P | **Aplicar** | `ui/p4-plano` |
+| Prob. 5 — estado vazio do Progresso não aparece e a sequência mostra 1 sem estudo; heatmap gigante em paisagem | P | **Aplicar** | `ui/p4-progresso` |
+| Melh. 4 — juntar "Assuntos fracos" e "Motivos" quando vazios | média, P | **Aplicar** | `ui/p4-progresso` |
+| Prob. 5 — remover o cartão "Dias do plano" | — | **Não aplicar** (regra: não remover funções); continua compacto | — |
+| Melh. 1 — estado vazio de Erros com "Registrar erro" tonal no cartão + "Estudar bloco de hoje" | alta, P | **Aplicar** | `ui/p4-erros` |
+| Comparação Anki — próximo intervalo no botão de revisão | média, M | MELHORIAS | — |
+| Shots com erros e sessões semeados | — | **Aplicar** na validação (P5) | — |
