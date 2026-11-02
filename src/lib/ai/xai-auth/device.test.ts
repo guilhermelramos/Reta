@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  AuthDiagnostics,
+  PollWake,
   REFRESH_SKEW_MS,
   XaiAuthError,
   authErrorCode,
@@ -14,10 +16,12 @@ import {
   pollDeviceToken,
   refreshAccessToken,
   requestDeviceCode,
+  xaiAuthErrorLines,
   xaiAuthMessage,
   type AuthHttpRequest,
   type AuthHttpResponse,
   type AuthTransport,
+  type SleepFn,
 } from "./device.ts";
 import { XAI_OAUTH_CLIENT_ID, XAI_OAUTH_SCOPE } from "./config.ts";
 
@@ -56,15 +60,21 @@ const TOKEN = {
   scope: "openid api:access",
 };
 
-const fixedSleep = () => {
+function fakeClock(start = 1_700_000_000_000) {
+  let current = start;
   const waits: number[] = [];
   return {
     waits,
-    sleep: async (ms: number) => {
-      waits.push(ms);
+    now: () => current,
+    advance: (ms: number) => {
+      current += ms;
     },
+    sleep: (async (ms: number) => {
+      waits.push(ms);
+      current += ms;
+    }) as SleepFn,
   };
-};
+}
 
 describe("corpos form urlencoded", () => {
   it("device code manda client_id e todos os escopos", () => {
@@ -152,6 +162,15 @@ describe("requestDeviceCode", () => {
       (error) => error instanceof XaiAuthError && error.code === "network",
     );
   });
+
+  it("registra o pedido no log diagnóstico, sem o device_code", async () => {
+    const diagnostics = new AuthDiagnostics();
+    const { transport } = recorder(ok(DEVICE));
+    await requestDeviceCode(transport, { diagnostics });
+    const events = diagnostics.list();
+    assert.ok(events.some((event) => event.kind === "device-code"));
+    assert.doesNotMatch(JSON.stringify(events), /dev-123/);
+  });
 });
 
 describe("pollDeviceToken", () => {
@@ -159,42 +178,46 @@ describe("pollDeviceToken", () => {
     deviceCode: "dev-123",
     intervalSeconds: 5,
     expiresInSeconds: 60,
-    now: 1_700_000_000_000,
   };
 
   it("authorization_pending continua e devolve o token no sucesso", async () => {
-    const { waits, sleep } = fixedSleep();
+    const clock = fakeClock();
     const { calls, transport } = recorder((_request, call) =>
       call < 3 ? fail(400, "authorization_pending") : ok(TOKEN),
     );
-    const tokens = await pollDeviceToken(transport, { ...base, sleep });
+    const tokens = await pollDeviceToken(transport, {
+      ...base,
+      now: clock.now,
+      sleep: clock.sleep,
+    });
     assert.equal(tokens.accessToken, "access-1");
     assert.equal(tokens.refreshToken, "refresh-1");
-    assert.equal(tokens.expiresAt, base.now + 3600_000);
-    assert.deepEqual(waits, [5000, 5000, 5000]);
+    assert.equal(tokens.expiresAt, clock.now() + 3600_000);
+    assert.deepEqual(clock.waits, [5000, 5000, 5000]);
     assert.equal(calls.length, 3);
   });
 
   it("slow_down soma 5 s ao intervalo e avisa a UI", async () => {
-    const { waits, sleep } = fixedSleep();
+    const clock = fakeClock();
     const intervals: number[] = [];
     const { transport } = recorder((_request, call) =>
       call === 1 ? fail(400, "slow_down") : ok(TOKEN),
     );
     await pollDeviceToken(transport, {
       ...base,
-      sleep,
+      now: clock.now,
+      sleep: clock.sleep,
       onSlowDown: (interval) => intervals.push(interval),
     });
-    assert.deepEqual(waits, [5000, 10000]);
+    assert.deepEqual(clock.waits, [5000, 10000]);
     assert.deepEqual(intervals, [10]);
   });
 
   it("expired_token encerra com o texto de código expirado", async () => {
-    const { sleep } = fixedSleep();
+    const clock = fakeClock();
     const { transport } = recorder(fail(400, "expired_token"));
     await assert.rejects(
-      () => pollDeviceToken(transport, { ...base, sleep }),
+      () => pollDeviceToken(transport, { ...base, now: clock.now, sleep: clock.sleep }),
       (error) =>
         error instanceof XaiAuthError &&
         error.code === "expired_token" &&
@@ -203,41 +226,209 @@ describe("pollDeviceToken", () => {
   });
 
   it("access_denied encerra com o texto de recusa", async () => {
-    const { sleep } = fixedSleep();
+    const clock = fakeClock();
     const { transport } = recorder(fail(400, "access_denied"));
     await assert.rejects(
-      () => pollDeviceToken(transport, { ...base, sleep }),
+      () => pollDeviceToken(transport, { ...base, now: clock.now, sleep: clock.sleep }),
       (error) => error instanceof XaiAuthError && error.code === "access_denied",
     );
   });
 
   it("esgota o prazo quando o servidor só responde pending", async () => {
-    const { waits, sleep } = fixedSleep();
+    const clock = fakeClock();
     const { transport } = recorder(fail(400, "authorization_pending"));
     await assert.rejects(
-      () => pollDeviceToken(transport, { ...base, expiresInSeconds: 12, sleep }),
+      () =>
+        pollDeviceToken(transport, {
+          ...base,
+          expiresInSeconds: 12,
+          now: clock.now,
+          sleep: clock.sleep,
+        }),
       (error) => error instanceof XaiAuthError && error.code === "expired_token",
     );
-    assert.deepEqual(waits, [5000, 5000]);
+    assert.deepEqual(clock.waits, [5000, 5000]);
   });
 
   it("não espera além do prazo quando o intervalo é maior", async () => {
-    const { waits, sleep } = fixedSleep();
+    const clock = fakeClock();
     const { transport } = recorder(fail(400, "authorization_pending"));
     await assert.rejects(
-      () => pollDeviceToken(transport, { ...base, intervalSeconds: 30, expiresInSeconds: 10, sleep }),
+      () =>
+        pollDeviceToken(transport, {
+          ...base,
+          intervalSeconds: 30,
+          expiresInSeconds: 10,
+          now: clock.now,
+          sleep: clock.sleep,
+        }),
       XaiAuthError,
     );
-    assert.deepEqual(waits, []);
+    assert.deepEqual(clock.waits, []);
   });
 
-  it("5xx vira erro de servidor", async () => {
-    const { sleep } = fixedSleep();
-    const { transport } = recorder({ status: 503, data: {}, headers: {} });
+  it("prazo real: o relógio avança durante o sleep e expira sem pollar", async () => {
+    const clock = fakeClock();
+    const { calls, transport } = recorder(ok(TOKEN));
     await assert.rejects(
-      () => pollDeviceToken(transport, { ...base, sleep }),
-      (error) => error instanceof XaiAuthError && error.code === "server",
+      () =>
+        pollDeviceToken(transport, {
+          ...base,
+          expiresInSeconds: 8,
+          now: clock.now,
+          // O app ficou suspenso: o relógio real andou 10 s.
+          sleep: async (ms) => {
+            clock.advance(ms + 5000);
+          },
+        }),
+      (error) => error instanceof XaiAuthError && error.code === "expired_token",
     );
+    assert.equal(calls.length, 0);
+  });
+
+  it("exceção transitória seguida de sucesso não mata o login", async () => {
+    const clock = fakeClock();
+    let calls = 0;
+    const transport: AuthTransport = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("Network request failed");
+      return ok(TOKEN);
+    };
+    const tokens = await pollDeviceToken(transport, {
+      ...base,
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+    assert.equal(tokens.accessToken, "access-1");
+    assert.equal(calls, 2);
+    // 5 s iniciais + backoff exponencial depois da falha.
+    assert.deepEqual(clock.waits, [5000, 10000]);
+  });
+
+  it("5xx seguidos de pending e sucesso continuam até o token", async () => {
+    const clock = fakeClock();
+    const { calls, transport } = recorder((_request, call) => {
+      if (call === 1) return { status: 503, data: {}, headers: {} };
+      if (call === 2) return fail(400, "authorization_pending");
+      return ok(TOKEN);
+    });
+    const tokens = await pollDeviceToken(transport, {
+      ...base,
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+    assert.equal(tokens.accessToken, "access-1");
+    assert.equal(calls.length, 3);
+    assert.deepEqual(clock.waits, [5000, 10000, 5000]);
+  });
+
+  it("429 é tratado como slow_down e aumenta o intervalo", async () => {
+    const clock = fakeClock();
+    const intervals: number[] = [];
+    const { transport } = recorder((_request, call) =>
+      call === 1 ? fail(429, "rate_limit") : ok(TOKEN),
+    );
+    await pollDeviceToken(transport, {
+      ...base,
+      now: clock.now,
+      sleep: clock.sleep,
+      onSlowDown: (interval) => intervals.push(interval),
+    });
+    assert.deepEqual(clock.waits, [5000, 10000]);
+    assert.deepEqual(intervals, [10]);
+  });
+
+  it("N falhas transitórias seguidas encerram com detalhes reais", async () => {
+    const clock = fakeClock();
+    const diagnostics = new AuthDiagnostics(30, clock.now);
+    const transport: AuthTransport = async () => {
+      throw new Error("Network request failed");
+    };
+    await assert.rejects(
+      () =>
+        pollDeviceToken(transport, {
+          ...base,
+          expiresInSeconds: 600,
+          maxConsecutiveFailures: 3,
+          now: clock.now,
+          sleep: clock.sleep,
+          diagnostics,
+        }),
+      (error) => {
+        assert.ok(error instanceof XaiAuthError);
+        assert.equal(error.code, "network");
+        assert.equal(error.transportMessage, "Network request failed");
+        assert.equal(error.attempts, 3);
+        assert.equal(error.endpoint, "https://auth.x.ai/oauth2/token");
+        assert.equal(typeof error.at, "number");
+        assert.ok((error.events?.length ?? 0) >= 3);
+        assert.ok(error.events?.some((event) => event.kind === "transient"));
+        return true;
+      },
+    );
+  });
+
+  it("wake faz o poll imediato, sem esperar o intervalo", async () => {
+    const clock = fakeClock();
+    const wake = new PollWake();
+    const { calls, transport } = recorder(ok(TOKEN));
+    let sleepStarted = false;
+    const sleep: SleepFn = (ms, signal) =>
+      new Promise<void>((resolve) => {
+        sleepStarted = true;
+        const finish = () => {
+          signal?.removeEventListener("abort", finish);
+          resolve();
+        };
+        if (signal?.aborted) {
+          resolve();
+          return;
+        }
+        signal?.addEventListener("abort", finish, { once: true });
+        clock.waits.push(ms);
+      });
+
+    const promise = pollDeviceToken(transport, {
+      ...base,
+      now: clock.now,
+      sleep,
+      wake,
+    });
+    await Promise.resolve();
+    while (!sleepStarted) await Promise.resolve();
+
+    wake.wake();
+    const tokens = await promise;
+    assert.equal(tokens.accessToken, "access-1");
+    assert.equal(calls.length, 1);
+    // Nenhum tempo passou: o poll saiu no wake, não no timer de 5 s.
+    assert.equal(clock.now(), 1_700_000_000_000);
+  });
+
+  it("detalhes não contêm tokens nem device_code", async () => {
+    const clock = fakeClock();
+    const transport: AuthTransport = async () => {
+      throw new Error("device_code=dev-123 access_token=access-1");
+    };
+    let failure: XaiAuthError | null = null;
+    try {
+      await pollDeviceToken(transport, {
+        ...base,
+        expiresInSeconds: 600,
+        maxConsecutiveFailures: 2,
+        now: clock.now,
+        sleep: clock.sleep,
+        diagnostics: new AuthDiagnostics(30, clock.now),
+      });
+    } catch (error) {
+      failure = error as XaiAuthError;
+    }
+    assert.ok(failure);
+    const text = xaiAuthErrorLines(failure).join("\n");
+    assert.doesNotMatch(text, /dev-123/);
+    assert.doesNotMatch(text, /access-1/);
+    assert.match(text, /\[omitido\]/);
+    assert.match(text, /Tentativas de polling: 2/);
   });
 });
 
