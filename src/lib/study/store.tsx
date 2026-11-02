@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { generatePackageClient } from "@/lib/ai/xai-client";
 import { EMPTY_KEYS, loadKeys, setKeys, type KeyValues } from "@/lib/secure/keys";
 import { coverageProblems, isModernaBlock } from "@/lib/study/coverage";
-import { loadSnapshot, saveDays, saveMeta, saveMistake, savePackage, saveSession } from "@/lib/study/db";
+import { loadSnapshot, saveDays, saveMeta, saveMistake, savePackage, saveSession, deleteMistake } from "@/lib/study/db";
 import { restorePlan, type PlanUndo } from "@/lib/study/import-undo";
 import { buildHumanasPackage } from "@/lib/study/humanas-pack";
 import { SEED_DAYS } from "@/lib/study/seed";
@@ -59,11 +59,15 @@ type StudyApi = Snapshot & {
   rememberNotify: (log: Record<string, string>) => void;
   upsertSession: (session: StudySession) => Promise<void>;
   addMistake: (mistake: Mistake) => Promise<void>;
+  /** Aplica um patch no erro (edição manual do caderno). */
+  updateMistake: (id: string, patch: Partial<Mistake>) => Promise<void>;
+  /** Remove o erro do IndexedDB e da lista em memória. */
+  removeMistake: (id: string) => Promise<void>;
   reviewMistake: (id: string) => Promise<void>;
   /** Revisão espaçada: agenda +1/+3/+7… dias conforme a retenção escolhida. */
   reviewMistakeSrs: (id: string, outcome: SrsOutcome, today?: string) => Promise<void>;
   /** Classificação rápida da causa do erro (Teoria, Atenção, Interpretação, Tempo). */
-  setMistakeErrorReason: (id: string, reason: ErrorReason) => Promise<void>;
+  setMistakeErrorReason: (id: string, reason: ErrorReason | undefined) => Promise<void>;
   saveDoubt: (doubt: Doubt) => Promise<void>;
   saveBuilt: (pkg: StudyPackage) => Promise<void>;
   packageFor: (date: string, kind: BlockKind) => StudyPackage | undefined;
@@ -228,6 +232,19 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     setSnap((s) => ({ ...s, mistakes: [...s.mistakes.filter((item) => item.id !== mistake.id), mistake] }));
   }, []);
 
+  const updateMistake = useCallback(async (id: string, patch: Partial<Mistake>) => {
+    const current = snapRef.current.mistakes.find((item) => item.id === id);
+    if (!current) return;
+    const next = { ...current, ...patch, id: current.id };
+    await saveMistake(next);
+    setSnap((s) => ({ ...s, mistakes: s.mistakes.map((item) => (item.id === id ? next : item)) }));
+  }, []);
+
+  const removeMistake = useCallback(async (id: string) => {
+    await deleteMistake(id);
+    setSnap((s) => ({ ...s, mistakes: s.mistakes.filter((item) => item.id !== id) }));
+  }, []);
+
   const reviewMistake = useCallback(async (id: string) => {
     const current = snapRef.current.mistakes.find((item) => item.id === id);
     if (!current) return;
@@ -244,7 +261,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     setSnap((s) => ({ ...s, mistakes: s.mistakes.map((item) => (item.id === id ? next : item)) }));
   }, []);
 
-  const setMistakeErrorReason = useCallback(async (id: string, reason: ErrorReason) => {
+  const setMistakeErrorReason = useCallback(async (id: string, reason: ErrorReason | undefined) => {
     const current = snapRef.current.mistakes.find((item) => item.id === id);
     if (!current) return;
     const next = { ...current, errorReason: reason };
@@ -377,6 +394,8 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       rememberNotify,
       upsertSession,
       addMistake,
+      updateMistake,
+      removeMistake,
       reviewMistake,
       reviewMistakeSrs,
       setMistakeErrorReason,
@@ -388,7 +407,7 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       cancelPrep,
       dismissPrepWeek,
     }),
-    [snap, ready, loadError, prep, importDays, undoImport, upsertDay, saveSettings, completeOnboarding, rememberNotify, upsertSession, addMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep, dismissPrepWeek],
+    [snap, ready, loadError, prep, importDays, undoImport, upsertDay, saveSettings, completeOnboarding, rememberNotify, upsertSession, addMistake, updateMistake, removeMistake, reviewMistake, reviewMistakeSrs, setMistakeErrorReason, saveDoubt, saveBuilt, packageFor, buildOne, startPrep, cancelPrep, dismissPrepWeek],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

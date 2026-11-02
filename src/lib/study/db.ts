@@ -138,6 +138,18 @@ export function saveMistake(mistake: Mistake): Promise<void> {
   return putAll("mistakes", [mistake]);
 }
 
+/** Remove um erro do caderno (exclusão confirmada pela tela Erros). */
+export async function deleteMistake(id: string): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("mistakes", "readwrite");
+    tx.objectStore("mistakes").delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("Falha ao excluir o erro."));
+  });
+  db.close();
+}
+
 export async function saveMeta(
   key:
     | "settings"
