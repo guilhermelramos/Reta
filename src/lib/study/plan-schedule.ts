@@ -87,6 +87,29 @@ export function overdueLabel(count: number): string {
   return `${total} ${total === 1 ? "dia atrasado" : "dias atrasados"}`;
 }
 
+export type PlanScrollTarget = "atrasados" | "hoje" | "nenhum";
+
+/**
+ * Para onde a tela Plano leva a rolagem ao abrir.
+ *
+ * Com dias atrasados, o aviso "N dias atrasados" (e o botão Recalcular) fica
+ * no topo da lista e precisa continuar à vista: rolar até hoje o esconderia
+ * atrás do cabeçalho. Sem atrasados, o alvo é a semana de hoje — e quando o
+ * plano não tem esse dia, a tela fica onde está.
+ */
+export function planScrollTarget({
+  days,
+  today,
+  overdueCount,
+}: {
+  days: readonly PlanDay[];
+  today: string;
+  overdueCount: number;
+}): PlanScrollTarget {
+  if (Math.max(0, Math.round(overdueCount)) > 0) return "atrasados";
+  return days.some((day) => day.date === today) ? "hoje" : "nenhum";
+}
+
 export type PlanWeek = {
   /** Segunda-feira da semana (YYYY-MM-DD), usada como chave da seção. */
   start: string;

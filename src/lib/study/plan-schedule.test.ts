@@ -10,6 +10,7 @@ import {
   planDayState,
   planDayTopics,
   planHeaderLine,
+  planScrollTarget,
 } from "./plan-schedule.ts";
 import type { BlockKind, PlanBlock, PlanDay, StudySession } from "./types.ts";
 
@@ -168,6 +169,35 @@ describe("atrasados: dias anteriores com bloco pendente", () => {
   });
 });
 
+describe("planScrollTarget: rolagem ao abrir a tela", () => {
+  const days = [day("2026-11-02", [block("A", 60)]), day(TODAY, [block("A", 60)])];
+
+  it("com atrasados, para no aviso (o dia de hoje não esconde o alerta)", () => {
+    assert.equal(planScrollTarget({ days, today: TODAY, overdueCount: 2 }), "atrasados");
+  });
+
+  it("atrasados vencem mesmo sem o dia de hoje no plano", () => {
+    const futureOnly = [day("2026-11-20", [block("A", 60)])];
+    assert.equal(
+      planScrollTarget({ days: futureOnly, today: TODAY, overdueCount: 1 }),
+      "atrasados",
+    );
+  });
+
+  it("sem atrasados, rola até a semana de hoje", () => {
+    assert.equal(planScrollTarget({ days, today: TODAY, overdueCount: 0 }), "hoje");
+  });
+
+  it("plano sem o dia de hoje não rola", () => {
+    const futureOnly = [day("2026-11-20", [block("A", 60)])];
+    assert.equal(planScrollTarget({ days: futureOnly, today: TODAY, overdueCount: 0 }), "nenhum");
+  });
+
+  it("contagem inválida não vira alvo de atrasados", () => {
+    assert.equal(planScrollTarget({ days, today: TODAY, overdueCount: -1 }), "hoje");
+  });
+});
+
 describe("cabeçalho e tópicos da linha", () => {
   it("monta Planilha · período · N dias", () => {
     const days = [day("2026-11-02", [block("A", 60)]), day("2026-11-09", [block("A", 60)])];
@@ -184,7 +214,10 @@ describe("cabeçalho e tópicos da linha", () => {
 
   it("nome genérico antigo vira Minha planilha só na exibição", () => {
     const days = [day("2026-11-02", [block("A", 60)])];
-    assert.equal(planHeaderLine({ days, sheetName: "Plano" }), "Planilha: Minha planilha · 02/11 · 1 dia");
+    assert.equal(
+      planHeaderLine({ days, sheetName: "Plano" }),
+      "Planilha: Minha planilha · 02/11 · 1 dia",
+    );
   });
 
   it("plano vazio não deixa o nome solto", () => {
