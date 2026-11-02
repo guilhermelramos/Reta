@@ -46,6 +46,8 @@ export type TextRequest = {
   images?: string[];
   /** Provedor ativo/modelo/fallbacks e catálogo para o roteamento. */
   ai?: AiRequestOptions;
+  /** xAI: a chave veio do login experimental (sem chave de API). */
+  xaiOAuth?: boolean;
   /** `false` só no chat do professor, que responde texto livre. */
   json?: boolean;
 };
@@ -67,6 +69,8 @@ export type GeneratePackageInput = {
   webSearch?: boolean;
   gaps?: string;
   ai?: AiRequestOptions;
+  /** xAI: usa o token do login experimental quando não há chave. */
+  xaiOAuth?: boolean;
 };
 
 export type GenerateBlockInput = {
@@ -74,6 +78,8 @@ export type GenerateBlockInput = {
   minutes?: number;
   userKey?: string;
   ai?: AiRequestOptions;
+  /** xAI: usa o token do login experimental quando não há chave. */
+  xaiOAuth?: boolean;
 };
 
 export type ResearchInput = {
@@ -81,6 +87,8 @@ export type ResearchInput = {
   topic: string;
   userKey?: string;
   ai?: AiRequestOptions;
+  /** xAI: usa o token do login experimental quando não há chave. */
+  xaiOAuth?: boolean;
 };
 
 export type TutorInput = {
@@ -92,12 +100,16 @@ export type TutorInput = {
   userKey?: string;
   previous?: string;
   ai?: AiRequestOptions;
+  /** xAI: usa o token do login experimental quando não há chave. */
+  xaiOAuth?: boolean;
 };
 
 export type PingInput = {
   provider: ResearcherId;
   userKey?: string;
   ai?: AiRequestOptions;
+  /** xAI: usa o token do login experimental quando não há chave. */
+  xaiOAuth?: boolean;
 };
 
 const PROVIDERS: ResearcherId[] = ["grok", "perplexity", "gemini", "claude"];
@@ -165,6 +177,7 @@ export async function runGeneratePackage(
       maxTokens: 3200,
       webSearch,
       ...(input.ai ? { ai: input.ai } : {}),
+      ...(input.xaiOAuth ? { xaiOAuth: true } : {}),
     });
     const parsed = extractJson(text);
     const routedProvider =
@@ -215,6 +228,7 @@ export async function runGenerateBlockPackage(
         maxTokens: 4000,
         webSearch: false,
         ...(input.ai ? { ai: input.ai } : {}),
+      ...(input.xaiOAuth ? { xaiOAuth: true } : {}),
       });
       text = response.text;
     } catch (error) {
@@ -267,6 +281,7 @@ export async function runResearchAdd(
       maxTokens: 3500,
       webSearch: true,
       ...(input.ai ? { ai: input.ai } : {}),
+      ...(input.xaiOAuth ? { xaiOAuth: true } : {}),
     });
     const research = coerceResearch(extractJson(text));
     if (!research) return { ok: false, error: "A pesquisa não trouxe um texto utilizável." };
@@ -305,6 +320,7 @@ export async function runTutorTurn(
         maxTokens: 400,
         webSearch: false,
         ...(input.ai ? { ai: input.ai } : {}),
+      ...(input.xaiOAuth ? { xaiOAuth: true } : {}),
       });
       const out = tutorText(extractJson(text));
       if (!out) return { ok: false, error: "Não consegui outra explicação." };
@@ -323,6 +339,7 @@ export async function runTutorTurn(
       maxTokens: 900,
       webSearch: false,
       ...(input.ai ? { ai: input.ai } : {}),
+      ...(input.xaiOAuth ? { xaiOAuth: true } : {}),
     });
     const item = asQuiz(extractJson(text), difficulty, `live-${newId()}`);
     if (!item) return { ok: false, error: "A questão veio incompleta. Tente de novo." };
@@ -348,6 +365,7 @@ export async function runPingAi(
       maxTokens: 40,
       webSearch: false,
       ...(input.ai ? { ai: input.ai } : {}),
+      ...(input.xaiOAuth ? { xaiOAuth: true } : {}),
     });
     if (!text.trim()) return { ok: false, error: "A IA voltou vazia. Confira a chave em Ajustes." };
     return { ok: true, data: { text: text.slice(0, 80) } };

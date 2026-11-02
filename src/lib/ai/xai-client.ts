@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import { getKey, getOpenRouterKey, type KeyName } from "../secure/keys.ts";
+import { currentXaiAccessToken } from "./xai-auth/session.ts";
 import type { ResearcherId } from "../study/types.ts";
 import { generateBlockPackage } from "./package.functions.ts";
 import type { AiResult, CoreDeps, TextRequest } from "./core.ts";
@@ -103,14 +104,23 @@ function authHeader(key: string): Record<string, string> {
   return { "Content-Type": "application/json", Authorization: `Bearer ${key}` };
 }
 
-async function nativeKey(provider: ResearcherId, userKey?: string): Promise<string> {
+/** Credencial da xAI: chave de API primeiro; login experimental só na falta dela. */
+type XaiCredential = { value: string; oauth: boolean };
+
+async function xaiCredential(provider: ResearcherId, userKey?: string): Promise<XaiCredential> {
   const direct = (userKey ?? "").trim();
-  if (direct) return direct;
+  if (direct) return { value: direct, oauth: false };
+  let stored = "";
   try {
-    return (await getKey(KEY_NAMES[provider])).trim();
+    stored = (await getKey(KEY_NAMES[provider])).trim();
   } catch {
-    return "";
+    stored = "";
   }
+  if (stored) return { value: stored, oauth: false };
+  // Só a xAI tem o login experimental; os outros pesquisadores exigem chave.
+  if (provider !== "grok") return { value: "", oauth: false };
+  const token = await currentXaiAccessToken();
+  return { value: token, oauth: Boolean(token) };
 }
 
 function openRouterKey(options: AiRequestOptions): Promise<string> {
@@ -182,8 +192,16 @@ function bodyText(data: unknown): string {
   }
 }
 
-function requireOk(response: NativeResponse, provider: ResearcherId): void {
+function requireOk(response: NativeResponse, provider: ResearcherId, oauth = false): void {
   if (response.status >= 200 && response.status < 300) return;
+  // O login experimental não tem a mesma garantia da chave: deixa claro que a
+  // saída é usar a chave de API em vez de culpar a conta da pessoa.
+  if (oauth && (response.status === 401 || response.status === 403)) {
+    throw new AiRequestError("Login de conta xAI recusado — use a chave de API", "unauthorized", {
+      status: response.status,
+      provider: "xai",
+    });
+  }
   throw httpError(response.status, bodyText(response.data), {
     retryAfter: response.headers["retry-after"],
     providerLabel: LABELS[provider],
@@ -203,6 +221,7 @@ async function xaiChat(options: {
   temperature?: number;
   json?: boolean;
   readTimeout?: number;
+  oauth?: boolean;
 }): Promise<string> {
   const response = await nativeRequest({
     method: "POST",
@@ -221,7 +240,7 @@ async function xaiChat(options: {
       options.readTimeout ??
       (options.maxTokens > 1500 ? GENERATE_TIMEOUT : QUICK_TIMEOUT),
   });
-  requireOk(response, "grok");
+  requireOk(response, "grok", options.oauth === true);
   const text = textFromChat(response.data);
   if (!text.trim()) throw emptyError();
   return text;
@@ -238,6 +257,7 @@ async function webXaiChat(options: {
   temperature?: number;
   json?: boolean;
   readTimeout?: number;
+  oauth?: boolean;
 }): Promise<string> {
   const timeout = options.readTimeout ?? (options.maxTokens > 1500 ? GENERATE_TIMEOUT : QUICK_TIMEOUT);
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -258,6 +278,13 @@ async function webXaiChat(options: {
     });
     const body = await response.text().catch(() => "");
     if (!response.ok) {
+      if (options.oauth && (response.status === 401 || response.status === 403)) {
+        throw new AiRequestError(
+          "Login de conta xAI recusado — use a chave de API",
+          "unauthorized",
+          { status: response.status, provider: "xai" },
+        );
+      }
       throw httpError(response.status, body, {
         retryAfter: response.headers.get("retry-after"),
         providerLabel: "xAI",
@@ -383,6 +410,7 @@ async function routedText(
 ): Promise<{ text: string; webSearch: boolean }> {
   const ai = normalizeAiRequestOptions(request.ai);
   const xai = (input: {
+    oauth?: boolean;
     messages: ProviderMessage[];
     maxTokens: number;
     temperature?: number;
@@ -396,6 +424,7 @@ async function routedText(
       temperature: input.temperature,
       json: input.json,
       readTimeout: input.timeoutMs,
+      oauth: request.xaiOAuth === true,
     };
     return transport === "capacitor" ? xaiChat(call) : webXaiChat(call);
   };
@@ -519,17 +548,19 @@ function wantsOpenRouter(options: AiRequestOptions): boolean {
   return options.preferences.provider === "openrouter";
 }
 
-async function effectiveKey(
+async function effectiveCredential(
   options: AiRequestOptions,
   provider: ResearcherId,
   userKey?: string,
-): Promise<string> {
-  if (wantsOpenRouter(options)) return openRouterKey(options);
-  return nativeKey(provider, userKey);
+): Promise<XaiCredential> {
+  if (wantsOpenRouter(options)) {
+    return { value: await openRouterKey(options), oauth: false };
+  }
+  return xaiCredential(provider, userKey);
 }
 
-function localDeps(options: AiRequestOptions): CoreDeps {
-  return wantsOpenRouter(options) ? (isNativeAi() ? nativeDeps : webDeps) : nativeDeps;
+function localDeps(_options: AiRequestOptions): CoreDeps {
+  return isNativeAi() ? nativeDeps : webDeps;
 }
 
 /** Falha de configuração do OpenRouter antes de qualquer chamada de rede. */
@@ -546,56 +577,92 @@ export async function generatePackageClient(
   input: GeneratePackageInput,
 ): Promise<AiResult<PackageBody>> {
   const options = aiOptions(input);
-  if (!wantsOpenRouter(options) && !isNativeAi()) {
+  const credential = await effectiveCredential(options, input.provider, input.userKey);
+  // Sem login experimental, a web segue na server function (chave de ambiente).
+  if (!wantsOpenRouter(options) && !isNativeAi() && !credential.oauth) {
     return webResult(() => generatePackage({ data: withoutAi(input) }));
   }
-  const userKey = await effectiveKey(options, input.provider, input.userKey);
-  if (wantsOpenRouter(options) && !userKey) return missingOpenRouter<PackageBody>();
-  return runGeneratePackage({ ...input, userKey, ai: options }, localDeps(options));
+  if (!credential.value) {
+    return wantsOpenRouter(options)
+      ? missingOpenRouter<PackageBody>()
+      : runGeneratePackage({ ...input, userKey: "", ai: options }, localDeps(options));
+  }
+  return runGeneratePackage(
+    { ...input, userKey: credential.value, xaiOAuth: credential.oauth, ai: options },
+    localDeps(options),
+  );
 }
 
 export async function generateBlockPackageClient(
   input: GenerateBlockInput,
 ): Promise<AiResult<AiBlockPackage>> {
   const options = aiOptions(input);
-  if (!wantsOpenRouter(options) && !isNativeAi()) {
+  const credential = await effectiveCredential(options, "grok", input.userKey);
+  if (!wantsOpenRouter(options) && !isNativeAi() && !credential.oauth) {
     return webResult(() => generateBlockPackage({ data: withoutAi(input) }));
   }
-  const userKey = await effectiveKey(options, "grok", input.userKey);
-  if (wantsOpenRouter(options) && !userKey) return missingOpenRouter();
-  return runGenerateBlockPackage({ ...input, userKey, ai: options }, localDeps(options));
+  if (!credential.value) {
+    return wantsOpenRouter(options)
+      ? missingOpenRouter()
+      : runGenerateBlockPackage({ ...input, userKey: "", ai: options }, localDeps(options));
+  }
+  return runGenerateBlockPackage(
+    { ...input, userKey: credential.value, xaiOAuth: credential.oauth, ai: options },
+    localDeps(options),
+  );
 }
 
 export async function researchAddClient(input: ResearchInput): Promise<AiResult<ResearchAddition>> {
   const options = aiOptions(input);
-  if (!wantsOpenRouter(options) && !isNativeAi()) {
+  const credential = await effectiveCredential(options, "grok", input.userKey);
+  if (!wantsOpenRouter(options) && !isNativeAi() && !credential.oauth) {
     return webResult(() => researchAdd({ data: withoutAi(input) }));
   }
-  const userKey = await effectiveKey(options, "grok", input.userKey);
-  if (wantsOpenRouter(options) && !userKey) return missingOpenRouter();
-  return runResearchAdd({ ...input, userKey, ai: options }, localDeps(options));
+  if (!credential.value) {
+    return wantsOpenRouter(options)
+      ? missingOpenRouter()
+      : runResearchAdd({ ...input, userKey: "", ai: options }, localDeps(options));
+  }
+  return runResearchAdd(
+    { ...input, userKey: credential.value, xaiOAuth: credential.oauth, ai: options },
+    localDeps(options),
+  );
 }
 
 export async function pingAiClient(input: PingInput): Promise<AiResult<{ text: string }>> {
   const options = aiOptions(input);
-  if (!wantsOpenRouter(options) && !isNativeAi()) {
+  const credential = await effectiveCredential(options, input.provider, input.userKey);
+  if (!wantsOpenRouter(options) && !isNativeAi() && !credential.oauth) {
     return webResult(() => pingAi({ data: withoutAi(input) }));
   }
-  const userKey = await effectiveKey(options, input.provider, input.userKey);
-  if (wantsOpenRouter(options) && !userKey) return missingOpenRouter();
-  return runPingAi({ ...input, userKey, ai: options }, localDeps(options));
+  if (!credential.value) {
+    return wantsOpenRouter(options)
+      ? missingOpenRouter<{ text: string }>()
+      : runPingAi({ ...input, userKey: "", ai: options }, localDeps(options));
+  }
+  return runPingAi(
+    { ...input, userKey: credential.value, xaiOAuth: credential.oauth, ai: options },
+    localDeps(options),
+  );
 }
 
 export async function tutorTurnClient(
   input: TutorInput,
 ): Promise<AiResult<{ item?: QuizItem; text?: string }>> {
   const options = aiOptions(input);
-  if (!wantsOpenRouter(options) && !isNativeAi()) {
+  const credential = await effectiveCredential(options, "grok", input.userKey);
+  if (!wantsOpenRouter(options) && !isNativeAi() && !credential.oauth) {
     return webResult(() => tutorTurn({ data: withoutAi(input) }));
   }
-  const userKey = await effectiveKey(options, "grok", input.userKey);
-  if (wantsOpenRouter(options) && !userKey) return missingOpenRouter();
-  return runTutorTurn({ ...input, userKey, ai: options }, localDeps(options));
+  if (!credential.value) {
+    return wantsOpenRouter(options)
+      ? missingOpenRouter()
+      : runTutorTurn({ ...input, userKey: "", ai: options }, localDeps(options));
+  }
+  return runTutorTurn(
+    { ...input, userKey: credential.value, xaiOAuth: credential.oauth, ai: options },
+    localDeps(options),
+  );
 }
 
 /* ------------------------------ Chat do professor ------------------------------ */
@@ -624,7 +691,8 @@ export async function providerProfessorReply(
   transport: "capacitor" | "fetch" = isNativeAi() ? "capacitor" : "fetch",
 ): Promise<string> {
   const options = aiOptions(input);
-  const key = await effectiveKey(options, "grok", input.userKey);
+  const credential = await effectiveCredential(options, "grok", input.userKey);
+  const key = credential.value;
   if (!key) {
     const message =
       options.preferences.provider === "openrouter"
@@ -648,6 +716,7 @@ export async function providerProfessorReply(
     temperature?: number;
     json?: boolean;
     timeoutMs?: number;
+    xaiOAuth?: boolean;
   }) => {
     const call = {
       key,
@@ -656,6 +725,7 @@ export async function providerProfessorReply(
       temperature: request.temperature,
       json: request.json,
       readTimeout: request.timeoutMs,
+      oauth: request.xaiOAuth === true,
     };
     return transport === "capacitor" ? xaiChat(call) : webXaiChat(call);
   };
@@ -672,6 +742,7 @@ export async function providerProfessorReply(
       temperature: 0.3,
       json: false,
       timeoutMs: PROFESSOR_TIMEOUT,
+      xaiOAuth: credential.oauth,
     },
     xai,
   );

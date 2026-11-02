@@ -158,6 +158,8 @@ export type ProviderChatRequest = {
   /** Quase todos os fluxos pedem JSON; o professor usa texto livre. */
   json?: boolean;
   timeoutMs?: number;
+  /** xAI: usa o access token do login experimental (sem chave de API). */
+  xaiOAuth?: boolean;
 };
 
 /** Transporte da xAI já existente (server function ou CapacitorHttp). */
