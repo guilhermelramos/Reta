@@ -466,6 +466,19 @@ o resultado real de `navigator.storage.persist()` no WebView. Também: abrir a
 tela de alarmes exatos e de otimização de bateria e ver o status mudar ao voltar,
 e remover/sobrescrever a chave xAI do Keystore.
 
+### Correções P4 na tela Ajustes
+
+- **Testar conexão** passou a respeitar a mesma trava do **Salvar chave**: sem
+  chave salva e com o campo xAI vazio (trim), o botão fica `disabled` e
+  `aria-disabled`, com o visual M3 desabilitado (texto a 38%, sem borda ativa).
+  Com chave já salva, continua habilitado mesmo com o campo vazio; com texto no
+  campo, habilita na hora.
+- A regra é pura em `canTestConnection(hasSavedKey, draft)`
+  ([`src/lib/ui/settings-status.ts`](./src/lib/ui/settings-status.ts)) e
+  testada em `settings-status.test.ts`, incluída em `npm test`.
+- Para validar no aparelho: o TalkBack anunciando o botão desabilitado e o teste
+  real com a chave lida do Keystore, sem digitar de novo no campo.
+
 ## Redesign da tela Importar (Material 3)
 
 A tela `/importar` agora mostra o estado do plano, a escolha do arquivo e a
