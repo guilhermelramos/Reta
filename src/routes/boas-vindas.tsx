@@ -24,6 +24,7 @@ import {
   COLUMN_FIELDS,
 } from "@/lib/study/parse-sheet";
 import { readWorkbookOffThread, SheetReadError } from "@/lib/study/parse-sheet-client";
+import { sheetNameFromFile } from "@/lib/study/sheet-name";
 import {
   isKeyCheckSuccess,
   isValidKeyDraft,
@@ -305,7 +306,7 @@ function SheetStep({ onDone, onLater }: { onDone: () => void; onLater: () => voi
         );
         return;
       }
-      await importDays(preview.days, target.name);
+      await importDays(preview.days, sheetNameFromFile(file.name));
       setImportedThisSession(true);
       setNote(`${preview.days.length} dias importados.`);
       onDone();

@@ -182,6 +182,11 @@ describe("cabeçalho e tópicos da linha", () => {
     assert.equal(planHeaderLine({ days }), "Planilha: Plano de exemplo · 02/11 · 1 dia");
   });
 
+  it("nome genérico antigo vira Minha planilha só na exibição", () => {
+    const days = [day("2026-11-02", [block("A", 60)])];
+    assert.equal(planHeaderLine({ days, sheetName: "Plano" }), "Planilha: Minha planilha · 02/11 · 1 dia");
+  });
+
   it("plano vazio não deixa o nome solto", () => {
     assert.equal(planHeaderLine({ days: [], sheetName: "X" }), "Planilha: X · nenhum dia");
   });

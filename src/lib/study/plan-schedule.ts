@@ -8,6 +8,7 @@
  */
 
 import { rangeLabel } from "./import-preview.ts";
+import { displaySheetName } from "./sheet-name.ts";
 import { blockState, weekKey } from "./today.ts";
 import type { PlanDay, StudySession } from "./types.ts";
 
@@ -131,7 +132,7 @@ export function planHeaderLine({
   days: readonly PlanDay[];
   sheetName?: string;
 }): string {
-  const name = sheetName?.trim() || "Plano de exemplo";
+  const name = displaySheetName(sheetName) || "Plano de exemplo";
   const ordered = orderedDays(days);
   if (!ordered.length) return `Planilha: ${name} · nenhum dia`;
   const first = ordered[0]!;

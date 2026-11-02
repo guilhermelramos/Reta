@@ -7,6 +7,7 @@
  */
 
 import { REQUIRED_COLUMNS } from "./parse-sheet.ts";
+import { displaySheetName } from "./sheet-name.ts";
 import { formatMin } from "./time.ts";
 import type { BlockKind, ColumnMap, PlanDay, RowWarning } from "./types.ts";
 import { KIND_LABEL } from "./types.ts";
@@ -258,10 +259,10 @@ export function currentPlanSummary({
     };
   }
 
-  const name = sheetName?.trim();
+  const name = displaySheetName(sheetName);
   return {
     imported: true,
-    title: name ? name : "Planilha importada",
+    title: name || "Planilha importada",
     detail: period,
     dayCount,
   };

@@ -138,6 +138,12 @@ describe("import-preview: plano atual", () => {
     assert.equal(copy.title, "Planilha importada");
   });
 
+  it("nome genérico antigo aparece como Minha planilha", () => {
+    const copy = currentPlanSummary({ days: PLAN, seeded: false, sheetName: "Plano" });
+    assert.equal(copy.imported, true);
+    assert.equal(copy.title, "Minha planilha");
+  });
+
   it("nome gravado vence a flag seeded antiga", () => {
     const copy = currentPlanSummary({ days: PLAN, seeded: true, sheetName: "Plano ENEM" });
     assert.equal(copy.imported, true);

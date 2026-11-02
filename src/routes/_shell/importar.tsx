@@ -26,6 +26,7 @@ import {
   type PreviewRow,
 } from "@/lib/study/import-preview";
 import { snapshotPlan, type PlanUndo } from "@/lib/study/import-undo";
+import { sheetNameFromFile } from "@/lib/study/sheet-name";
 import {
   applyManualMap,
   applyMap,
@@ -102,6 +103,8 @@ function ImportPage() {
   } = useStudy();
   const [sheets, setSheets] = useState<SheetTable[]>([]);
   const [sheetName, setSheetName] = useState("");
+  /** Arquivo escolhido: o nome salvo da planilha vem daqui, não da aba. */
+  const [fileName, setFileName] = useState("");
   const [map, setMap] = useState<ColumnMap | null>(null);
   const [manual, setManual] = useState(false);
   const [fileError, setFileError] = useState<ErrorCopy | null>(null);
@@ -182,6 +185,7 @@ function ImportPage() {
   function resetSelection() {
     setSheets([]);
     setSheetName("");
+    setFileName("");
     setMap(null);
     setManual(false);
     setColumnsOpen(false);
@@ -217,6 +221,7 @@ function ImportPage() {
       const needsManual = !autoMap || missingRequiredColumns(autoMap).length > 0;
       setSheets(usable);
       setSheetName(target.name);
+      setFileName(file.name);
       setManual(needsManual);
       setMap(needsManual ? guessMap(manualHeaders(target)) : autoMap);
       setScrollToPreview(true);
@@ -236,7 +241,7 @@ function ImportPage() {
 
   async function confirm() {
     if (!preview?.days.length || missingColumns.length) return;
-    const importedSheet = sheet?.name ?? "";
+    const importedSheet = sheetNameFromFile(fileName);
     const importedDays = preview.days;
     // Retrato de antes da substituição: o snackbar Desfazer devolve este plano
     // e o meta.activeSheet/seeded, sem tocar em sessões, pacotes ou erros.
