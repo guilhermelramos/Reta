@@ -46,8 +46,7 @@ function TodayPage() {
   const studyMin = study.settings.studyHour * 60 + study.settings.studyMinute;
   const nowMin = clock.hour * 60 + clock.minute;
   const action = day ? nextAction(day.blocks, study.sessions, day.date) : null;
-  const others =
-    day && action ? loadBlocks(day.blocks).filter((b) => b.kind !== action.block.kind) : [];
+  const others = day ? loadBlocks(day.blocks).filter((b) => b.kind !== action?.block.kind) : [];
   const emptyLine = day ? emptyBlocksLine(day.blocks) : null;
   const load = day ? dayLoad(day) : 0;
   const dueMistakes = study.mistakes.filter((mistake) => isDueToday(mistake, today));
@@ -103,9 +102,9 @@ function TodayPage() {
           ) : null}
 
           {others.length ? (
-            <section aria-labelledby="outros-blocos" className="flex flex-col gap-3">
-              <h2 id="outros-blocos" className="text-lg">
-                Outros blocos de hoje
+            <section aria-labelledby="blocos-hoje" className="flex flex-col gap-3">
+              <h2 id="blocos-hoje" className="text-lg">
+                Blocos de hoje
               </h2>
               <ul className="flex flex-col gap-3">
                 {others.map((block) => (
