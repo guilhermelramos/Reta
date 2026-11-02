@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Clock, Mic, X } from "lucide-react";
+import { ArrowUp, BookOpen, Clock, Mic, X } from "lucide-react";
 import { Drawer } from "vaul";
 import { useBackOverlay } from "@/lib/android/use-back-overlay";
 import { QuestionCard } from "@/components/study-view";
@@ -8,6 +8,7 @@ import { ButtonSpinner } from "@/components/feedback/button-spinner";
 import { InlineError } from "@/components/feedback/inline-error";
 import { askProfessor } from "@/lib/ai/professor-client";
 import { researchAddClient } from "@/lib/ai/xai-client";
+import { canSendMessage, quickQuestionsVisible } from "@/lib/study/chat-ui";
 import { describeError, type ErrorCopy } from "@/lib/feedback/error-copy";
 import { validateDiagram } from "@/lib/study/diagrams";
 import { mergeAddition } from "@/lib/study/outline";
@@ -123,10 +124,14 @@ export type TeacherChatProps = {
    * dúvidas antigas, sem o campo, continuam aparecendo no escopo do bloco.
    */
   questionId?: string;
-  /** Tempo restante do bloco para o chip no topo da folha (ex.: "23:14"). */
-  remainingClock?: string;
-  /** O bloco já cumpriu a meta. */
-  timeUp?: boolean;
+  /**
+   * Número do timer já formatado pela lógica pura da sessão (`headline`):
+   * "23:14" enquanto conta, "+02:10" depois da meta. É o mesmo texto do
+   * cabeçalho, então os dois nunca divergem.
+   */
+  timerClock?: string;
+  /** O bloco já passou da meta (só muda o rótulo acessível do chip). */
+  timerExpired?: boolean;
 };
 
 /** Dúvidas salvas que pertencem a um bloco — e, quando informado, à questão aberta. */
@@ -156,8 +161,8 @@ export function TeacherChat({
   quote,
   onQuoteUsed,
   questionId,
-  remainingClock,
-  timeUp,
+  timerClock,
+  timerExpired,
 }: TeacherChatProps) {
   const [draft, setDraft] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -412,46 +417,52 @@ export function TeacherChat({
   return (
     <SheetFrame open={open} onClose={onClose}>
       <Drawer.Handle
-        className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-border"
+        className="mx-auto my-2 shrink-0 rounded-full bg-border"
+        style={{ width: 32, height: 4 }}
         aria-hidden
       />
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="Professor">
-        <header className="flex flex-col border-b border-border">
-          <div className="flex items-center gap-2 px-3 pt-2">
-            {remainingClock ? (
+        <header className="flex flex-col gap-1 border-b border-border px-4 pb-3 pt-2">
+          <div className="flex items-center gap-2">
+            {timerClock ? (
               <span
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-semibold tabular-nums text-primary"
-                aria-label={timeUp ? "Tempo cumprido" : `Tempo restante: ${remainingClock}`}
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary-tonal px-2.5 font-mono text-[13px] tabular-nums text-primary"
+                aria-label={
+                  timerExpired ? `Tempo estourado: ${timerClock}` : `Tempo restante: ${timerClock}`
+                }
               >
-                <Clock className="size-4" aria-hidden />
-                {timeUp ? "tempo cumprido" : remainingClock}
+                <Clock className="hidden size-4 min-[360px]:block" aria-hidden />
+                {timerClock}
               </span>
             ) : null}
-            <p className="min-w-0 flex-1 truncate text-xs text-muted">
-              Professor · o tempo segue contando
-            </p>
+            <h2 className="min-w-0 flex-1 truncate text-base font-semibold">Professor IA</h2>
+            <button
+              type="button"
+              className="grid h-12 min-w-12 shrink-0 place-items-center"
+              aria-pressed={tab === "caderno"}
+              aria-label={tab === "chat" ? "Abrir caderno" : "Voltar para a conversa"}
+              onClick={() => setTab(tab === "chat" ? "caderno" : "chat")}
+            >
+              <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 text-xs text-muted">
+                <BookOpen className="size-4" aria-hidden />
+                <span className="hidden min-[390px]:inline">
+                  {tab === "chat" ? "Caderno" : "Conversa"}
+                </span>
+              </span>
+            </button>
             <button
               type="button"
               className="grid size-12 shrink-0 place-items-center rounded-full"
               aria-label="Fechar professor"
               onClick={onClose}
             >
-              <X className="size-5" />
+              <X className="size-5" aria-hidden />
             </button>
           </div>
-          <div className="flex items-center gap-2 px-3 pb-2">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{title}</p>
-              <p className="truncate text-xs text-muted">{subtopic}</p>
-            </div>
-            <button
-              type="button"
-              className="min-h-12 shrink-0 px-2 text-xs text-muted"
-              onClick={() => setTab(tab === "chat" ? "caderno" : "chat")}
-            >
-              {tab === "chat" ? "Caderno" : "Conversa"}
-            </button>
-          </div>
+          <p className="truncate text-xs text-muted">
+            {title}
+            {subtopic ? ` · ${subtopic}` : ""}
+          </p>
         </header>
         {tab === "caderno" ? (
           <ul className="flex-1 space-y-2 overflow-y-auto p-3">
@@ -556,26 +567,28 @@ export function TeacherChat({
                 </Button>
               ) : null}
             </div>
-            <div className="border-t border-border p-2 pb-[calc(env(safe-area-inset-bottom)_+_0.5rem)] md:pb-2">
-              <div className="mb-2 flex gap-2 overflow-x-auto pb-1" aria-label="Perguntas rápidas">
-                {QUICK_QUESTIONS.map((label) => (
-                  <button
-                    key={label}
-                    type="button"
-                    disabled={busy}
-                    className="min-h-12 shrink-0 rounded-full border border-primary/60 bg-primary/10 px-3 text-sm font-semibold text-primary disabled:opacity-50"
-                    onClick={() => void send(label)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-2">
+            <div className="border-t border-border pb-[calc(env(safe-area-inset-bottom)_+_0.75rem)] pt-2">
+              {quickQuestionsVisible(active?.messages.length ?? 0) ? (
+                <div className="session-chips" role="group" aria-label="Perguntas rápidas">
+                  {QUICK_QUESTIONS.map((label) => (
+                    <button
+                      key={label}
+                      type="button"
+                      disabled={busy}
+                      className="h-9 shrink-0 rounded-lg border border-border bg-surface px-3 text-[13px] text-fg disabled:opacity-50"
+                      onClick={() => void send(label)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="session-chips" role="group" aria-label="Atalhos do professor">
                 {SHORTCUTS.map((label) => (
                   <button
                     key={label}
                     type="button"
-                    className="min-h-12 shrink-0 rounded-full border border-border px-3 text-sm"
+                    className="h-9 shrink-0 rounded-lg border border-border bg-surface px-3 text-[13px] text-fg"
                     onClick={() => void send(label)}
                   >
                     {label}
@@ -583,68 +596,73 @@ export function TeacherChat({
                 ))}
                 <button
                   type="button"
-                  className="min-h-12 shrink-0 rounded-full border border-border px-3 text-sm"
+                  className="h-9 shrink-0 rounded-lg border border-border bg-surface px-3 text-[13px] text-fg"
                   onClick={draw}
                 >
                   Desenhe isso em SVG
                 </button>
                 <button
                   type="button"
-                  className="min-h-12 shrink-0 rounded-full border border-border px-3 text-sm"
+                  className="h-9 shrink-0 rounded-lg border border-border bg-surface px-3 text-[13px] text-fg"
                   onClick={testMe}
                 >
                   Me teste nisso
                 </button>
               </div>
-              {active ? (
-                <div className="mb-2 flex gap-2">
-                  <Button variant="surface" onClick={() => mark("resolvida")}>
-                    Resolvida
-                  </Button>
-                  <Button variant="ghost" onClick={() => mark("revisar")}>
-                    Revisar depois
-                  </Button>
-                </div>
-              ) : null}
-              {!speech ? (
-                <p className="px-1 pb-1 text-xs text-muted">
-                  Sem microfone neste navegador: digite a dúvida.
-                </p>
-              ) : null}
-              <form
-                className="flex gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void send(draft);
-                }}
-              >
-                {speech ? (
-                  <button
-                    type="button"
-                    className="grid size-12 shrink-0 place-items-center rounded-xl border border-border"
-                    aria-label="Falar a dúvida"
-                    onClick={listen}
-                  >
-                    <Mic className="size-4" />
-                  </button>
+              <div className="px-4">
+                {active ? (
+                  <div className="mb-2 flex gap-2">
+                    <Button variant="surface" onClick={() => mark("resolvida")}>
+                      Resolvida
+                    </Button>
+                    <Button variant="ghost" onClick={() => mark("revisar")}>
+                      Revisar depois
+                    </Button>
+                  </div>
                 ) : null}
-                <input
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Pergunte sobre este trecho"
-                  className="min-h-12 min-w-0 flex-1 rounded-xl border border-border bg-bg px-3 text-base"
-                />
-                <Button type="submit" disabled={busy || !draft.trim()}>
-                  {busy && busyKind === "chat" ? (
-                    <>
+                {!speech ? (
+                  <p className="px-1 pb-1 text-xs text-muted">
+                    Sem microfone neste navegador: digite a dúvida.
+                  </p>
+                ) : null}
+                <form
+                  className="flex items-center gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void send(draft);
+                  }}
+                >
+                  {speech ? (
+                    <button
+                      type="button"
+                      className="grid size-12 shrink-0 place-items-center rounded-xl border border-border"
+                      aria-label="Falar a dúvida"
+                      onClick={listen}
+                    >
+                      <Mic className="size-4" aria-hidden />
+                    </button>
+                  ) : null}
+                  <input
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    placeholder="Pergunte sobre este trecho"
+                    aria-label="Mensagem para o professor"
+                    className="min-h-12 min-w-0 flex-1 rounded-[24px] border border-border bg-bg px-4 text-base"
+                  />
+                  <button
+                    type="submit"
+                    aria-label="Enviar"
+                    disabled={!canSendMessage(draft, busy)}
+                    className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-primary-fg disabled:bg-surface-2 disabled:text-muted"
+                  >
+                    {busy && busyKind === "chat" ? (
                       <ButtonSpinner />
-                      Enviando…
-                    </>
-                  ) : (
-                    "Enviar"
-                  )}
-                </Button>
-              </form>
+                    ) : (
+                      <ArrowUp className="size-5" aria-hidden />
+                    )}
+                  </button>
+                </form>
+              </div>
             </div>
           </>
         )}
