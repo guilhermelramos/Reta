@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, BookOpen, Clock, Mic, X } from "lucide-react";
+import { ArrowUp, BookOpen, Mic, X } from "lucide-react";
 import { Drawer } from "vaul";
 import { useBackOverlay } from "@/lib/android/use-back-overlay";
 import { QuestionCard } from "@/components/study-view";
@@ -9,7 +9,7 @@ import { InlineError } from "@/components/feedback/inline-error";
 import { askProfessor } from "@/lib/ai/professor-client";
 import { researchAddClient } from "@/lib/ai/xai-client";
 import { canSendMessage } from "@/lib/study/chat-ui";
-import { notebookChipLabel, professorChips } from "@/lib/study/professor-chips";
+import { professorChips } from "@/lib/study/professor-chips";
 import { describeError, type ErrorCopy } from "@/lib/feedback/error-copy";
 import { validateDiagram } from "@/lib/study/diagrams";
 import { mergeAddition } from "@/lib/study/outline";
@@ -408,41 +408,41 @@ export function TeacherChat({
         aria-hidden
       />
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="Professor">
-        <header className="flex flex-col gap-1 border-b border-border px-4 pb-3 pt-2">
-          <div className="flex items-center gap-2">
+        <header className="flex flex-col gap-1 border-b border-border px-4 pb-3 pt-2 max-[359px]:px-3">
+          <div className="flex min-h-12 items-center gap-2">
+            <h2 className="shrink-0 whitespace-nowrap text-[18px] font-semibold leading-6">
+              Professor IA
+            </h2>
             {timerClock ? (
               <span
-                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary-tonal px-2.5 font-mono text-[13px] tabular-nums text-primary"
+                className="inline-flex h-7 shrink-0 items-center rounded-full bg-primary-tonal px-2 font-mono text-xs tabular-nums text-primary"
                 aria-label={
                   timerExpired ? `Tempo estourado: ${timerClock}` : `Tempo restante: ${timerClock}`
                 }
               >
-                <Clock className="hidden size-4 min-[400px]:block" aria-hidden />
                 {timerClock}
               </span>
             ) : null}
-            <h2 className="min-w-0 flex-1 truncate text-base font-semibold max-[359px]:sr-only">
-              Professor IA
-            </h2>
-            <button
-              type="button"
-              className="ml-auto grid h-12 shrink-0 place-items-center"
-              aria-pressed={tab === "caderno"}
-              onClick={() => setTab(tab === "chat" ? "caderno" : "chat")}
-            >
-              <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs text-muted">
-                <BookOpen className="size-4" aria-hidden />
-                {notebookChipLabel(tab)}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="grid size-12 shrink-0 place-items-center rounded-full"
-              aria-label="Fechar professor"
-              onClick={onClose}
-            >
-              <X className="size-5" aria-hidden />
-            </button>
+            <div className="ml-auto flex shrink-0 items-center">
+              <button
+                type="button"
+                className="grid size-12 shrink-0 place-items-center rounded-full"
+                aria-label="Abrir caderno"
+                title="Abrir caderno"
+                aria-pressed={tab === "caderno"}
+                onClick={() => setTab(tab === "chat" ? "caderno" : "chat")}
+              >
+                <BookOpen className="size-5" aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="grid size-12 shrink-0 place-items-center rounded-full"
+                aria-label="Fechar professor"
+                onClick={onClose}
+              >
+                <X className="size-5" aria-hidden />
+              </button>
+            </div>
           </div>
           <p className="truncate text-xs text-muted">
             {title}
