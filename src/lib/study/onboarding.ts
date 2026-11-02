@@ -42,10 +42,48 @@ export function shouldShowOnboarding(signals: OnboardingSignals): boolean {
   return true;
 }
 
+function clampOnboardingStep(step: number): OnboardingStep {
+  return Math.min(ONBOARDING_STEP_COUNT - 1, Math.max(0, Math.trunc(step))) as OnboardingStep;
+}
+
 /** Passo anterior, nunca abaixo de 0 (usado pelo voltar do Android). */
 export function previousOnboardingStep(step: number): OnboardingStep {
-  const clamped = Math.min(ONBOARDING_STEP_COUNT - 1, Math.max(0, Math.trunc(step)));
+  const clamped = clampOnboardingStep(step);
   return (clamped > 0 ? clamped - 1 : 0) as OnboardingStep;
+}
+
+/**
+ * Próximo passo, nunca além do último.
+ *
+ * No passo 2 (Planilha) o "Agora não" usa isto: avança só para o passo 3
+ * (Professor IA) e não conclui a introdução. "Pular" continua encerrando tudo.
+ */
+export function nextOnboardingStep(step: number): OnboardingStep {
+  const clamped = clampOnboardingStep(step);
+  return (clamped < ONBOARDING_STEP_COUNT - 1 ? clamped + 1 : clamped) as OnboardingStep;
+}
+
+export type PlanDayCountSignals = {
+  /** `meta.seeded`: o plano atual ainda é o modelo de exemplo. */
+  seeded: boolean;
+  /** Quantidade de dias no plano atual. */
+  dayCount: number;
+  /** Uma planilha foi importada nesta sessão do onboarding. */
+  importedThisSession?: boolean;
+};
+
+/**
+ * O rodapé do passo 2 só mostra "N dias no plano atual" quando o plano veio de
+ * uma planilha do usuário (importada agora ou em uma sessão anterior). O plano
+ * de exemplo semeado na primeira abertura não é anunciado como plano atual.
+ */
+export function shouldShowPlanDayCount({
+  seeded,
+  dayCount,
+  importedThisSession = false,
+}: PlanDayCountSignals): boolean {
+  if (dayCount <= 0) return false;
+  return importedThisSession || hasImportedPlan(seeded, dayCount);
 }
 
 /* ------------------------- Verificação da chave xAI ------------------------- */

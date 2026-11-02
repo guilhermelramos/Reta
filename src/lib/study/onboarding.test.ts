@@ -8,8 +8,10 @@ import {
   KEY_CHECK_OFFLINE_MESSAGE,
   KEY_CHECK_RATE_LIMIT_MESSAGE,
   keyCheckErrorCopy,
+  nextOnboardingStep,
   previousOnboardingStep,
   shouldShowOnboarding,
+  shouldShowPlanDayCount,
 } from "./onboarding.ts";
 
 describe("shouldShowOnboarding", () => {
@@ -54,6 +56,48 @@ describe("previousOnboardingStep", () => {
     assert.equal(previousOnboardingStep(-4), 0);
     assert.equal(previousOnboardingStep(9), 2);
     assert.equal(previousOnboardingStep(2.8), 1);
+  });
+});
+
+describe("nextOnboardingStep", () => {
+  it("avança um passo sem concluir a introdução no passo 2", () => {
+    // "Agora não (usar plano de exemplo)" sai da Planilha só para o Professor.
+    assert.equal(nextOnboardingStep(1), 2);
+    assert.equal(nextOnboardingStep(2), 3);
+    assert.equal(nextOnboardingStep(0), 1);
+  });
+
+  it("não passa do último passo", () => {
+    assert.equal(nextOnboardingStep(3), 3);
+    assert.equal(nextOnboardingStep(9), 3);
+    assert.equal(nextOnboardingStep(2.8), 3);
+    assert.equal(nextOnboardingStep(-4), 1);
+  });
+});
+
+describe("shouldShowPlanDayCount", () => {
+  it("esconde a contagem enquanto o plano é só o de exemplo", () => {
+    assert.equal(shouldShowPlanDayCount({ seeded: true, dayCount: 36 }), false);
+  });
+
+  it("mostra depois de importar nesta sessão", () => {
+    assert.equal(
+      shouldShowPlanDayCount({ seeded: true, dayCount: 36, importedThisSession: true }),
+      true,
+    );
+    assert.equal(
+      shouldShowPlanDayCount({ seeded: false, dayCount: 36, importedThisSession: true }),
+      true,
+    );
+  });
+
+  it("mostra para uma planilha importada em uma sessão anterior", () => {
+    assert.equal(shouldShowPlanDayCount({ seeded: false, dayCount: 12 }), true);
+  });
+
+  it("esconde quando não há dias no plano", () => {
+    assert.equal(shouldShowPlanDayCount({ seeded: false, dayCount: 0 }), false);
+    assert.equal(shouldShowPlanDayCount({ seeded: true, dayCount: 0 }), false);
   });
 });
 
