@@ -16,15 +16,22 @@ export function ErrorState({
   onAction?: FeedbackActionHandler;
   className?: string;
 }) {
+  // O mesmo cartão serve de estado vazio ("nada aqui ainda"): sem o vermelho
+  // de erro e com o ícone na cor da marca.
+  const empty = copy.kind === "empty";
   return (
     <section
-      role="alert"
+      role={empty ? "status" : "alert"}
       className={cn(
         "flex flex-col items-center gap-3 rounded-xl border border-clay/40 bg-surface px-5 py-7 text-center",
+        empty && "border-border",
         className,
       )}
     >
-      <FeedbackIcon kind={copy.kind} className="size-12 text-clay-text" />
+      <FeedbackIcon
+        kind={copy.kind}
+        className={cn("size-12", empty ? "text-primary" : "text-clay-text")}
+      />
       <h2 className="text-2xl">{copy.title}</h2>
       <p className="max-w-md text-sm leading-relaxed text-muted">{copy.message}</p>
       {copy.detail ? (

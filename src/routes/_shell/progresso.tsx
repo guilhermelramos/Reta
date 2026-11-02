@@ -1,100 +1,103 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ProgressInsights } from "@/components/progress/progress-insights";
+import { useMemo } from "react";
+import { ErrorState } from "@/components/feedback/error-state";
+import { HeatmapCard } from "@/components/progress/heatmap-card";
+import { InsightCard } from "@/components/progress/insight-card";
+import { MetricRow } from "@/components/progress/metric-row";
+import { PlanDaysCard } from "@/components/progress/plan-days-card";
+import { PlanRealCard } from "@/components/progress/plan-real-card";
+import {
+  buildHeatmap,
+  emptyProgressCopy,
+  examCountdown,
+  firstFoldMetrics,
+  planDayRows,
+  planVsReal,
+  reasonRows,
+  weakTopics,
+} from "@/lib/study/progress-dashboard";
+import { retaCoverage } from "@/lib/study/progress-metrics";
 import { useStudy } from "@/lib/study/store";
-import { currentStreak, studiedDates } from "@/lib/study/progress-metrics";
-import { dayLoad, formatMin, formatShortDate, saoPauloToday } from "@/lib/study/time";
-import type { BlockKind } from "@/lib/study/types";
-import { KIND_LABEL } from "@/lib/study/types";
-import { cn } from "@/lib/cn";
+import { saoPauloToday } from "@/lib/study/time";
 
 export const Route = createFileRoute("/_shell/progresso")({
   head: () => ({ meta: [{ title: "Progresso · Reta" }] }),
   component: ProgressPage,
 });
 
-const KINDS: BlockKind[] = ["A", "B", "R", "L"];
-
 function ProgressPage() {
-  const { days, sessions } = useStudy();
-  const today = saoPauloToday();
-  const streak = currentStreak(days, sessions, today);
-  const hit = studiedDates(sessions);
-  const questions = sessions.reduce((sum, s) => sum + s.correct + s.wrong, 0);
-  const right = sessions.reduce((sum, s) => sum + s.correct, 0);
-  const rate = questions ? Math.round((right / questions) * 100) : 0;
+  const { days, sessions, mistakes } = useStudy();
+  const today = useMemo(() => saoPauloToday(), []);
 
-  return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <header>
-        <h1 className="text-4xl">Progresso</h1>
-        <p className="mt-2 text-sm text-muted">Sequência de {streak} {streak === 1 ? "dia" : "dias"}. Dias livres não quebram a conta.</p>
-      </header>
-      <dl className="grid grid-cols-3 gap-3">
-        <Stat k="Sequência" v={String(streak)} />
-        <Stat k="Questões" v={String(questions)} />
-        <Stat k="Acertos" v={questions ? `${rate}%` : "—"} />
-      </dl>
-      <ProgressInsights />
-      <section>
-        <h2 className="text-xl">Dias do plano</h2>
-        <ul className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6">
-          {days.map((day) => {
-            const future = day.date > today;
-            const rest = dayLoad(day) <= 0;
-            const ok = hit.has(day.date);
-            const missed = !future && !rest && !ok && day.date < today;
-            return (
-              <li key={day.date}>
-                <div
-                  className={cn(
-                    "flex min-h-14 flex-col items-center justify-center rounded-xl border text-xs",
-                    ok && "border-primary bg-primary/20 text-fg",
-                    missed && "border-clay/40 text-clay-text",
-                    rest && "border-border text-muted",
-                    future && "border-border text-muted",
-                    day.date === today && "ring-1 ring-primary",
-                  )}
-                  title={day.phase}
-                >
-                  <span>{formatShortDate(day.date)}</span>
-                  <span className="text-muted">{ok ? "feito" : rest ? "livre" : future ? "vem" : "falta"}</span>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-      <section>
-        <h2 className="text-xl">Planejado e real</h2>
-        <ul className="mt-3 flex flex-col gap-3">
-          {KINDS.map((kind) => {
-            const planned = days.reduce((sum, d) => sum + (d.blocks.find((b) => b.kind === kind)?.plannedMin ?? 0), 0);
-            const real = Math.round(sessions.filter((s) => s.kind === kind).reduce((sum, s) => sum + s.elapsedSec, 0) / 60);
-            const max = Math.max(planned, real, 1);
-            if (!planned) return null;
-            return (
-              <li key={kind}>
-                <div className="flex justify-between text-sm">
-                  <span>{KIND_LABEL[kind]}</span>
-                  <span className="tabular-nums text-muted">{formatMin(real)} / {formatMin(planned)}</span>
-                </div>
-                <div className="mt-1 h-2 rounded-full bg-surface-2">
-                  <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, Math.round((real / max) * 100))}%` }} />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-    </div>
+  const countdown = useMemo(() => examCountdown(days, today), [days, today]);
+  const metrics = useMemo(
+    () => firstFoldMetrics({ days, sessions, today }),
+    [days, sessions, today],
   );
-}
+  const heatmap = useMemo(() => buildHeatmap({ days, sessions, today }), [days, sessions, today]);
+  const realRows = useMemo(() => planVsReal({ days, sessions }), [days, sessions]);
+  const topics = useMemo(
+    () => weakTopics({ days, sessions, mistakes }),
+    [days, sessions, mistakes],
+  );
+  const reasons = useMemo(() => reasonRows(mistakes), [mistakes]);
+  const coverage = useMemo(() => retaCoverage(days, sessions, today), [days, sessions, today]);
+  const dayRows = useMemo(() => planDayRows(days, sessions, today), [days, sessions, today]);
 
-function Stat({ k, v }: { k: string; v: string }) {
+  // Sem nenhuma sessão não há o que medir: o estado vazio toma o lugar dos
+  // cartões analíticos, mas os dias do plano continuam à vista.
+  const empty = sessions.length === 0;
+
+  const topicItems = topics.map((topic) => ({
+    key: topic.key,
+    label: topic.label,
+    value: `${topic.accuracy}%`,
+    pct: topic.accuracy,
+    tone: topic.accuracy < 50 ? ("clay" as const) : ("primary" as const),
+  }));
+
+  const reasonItems = reasons.map((reason) => ({
+    key: reason.key,
+    label: reason.label,
+    value: `${reason.count} ${reason.count === 1 ? "erro" : "erros"} · ${reason.pct}%`,
+    pct: reason.pct,
+    tone: "primary" as const,
+  }));
+
   return (
-    <div className="rounded-xl border border-border bg-surface p-3">
-      <dt className="text-xs text-muted">{k}</dt>
-      <dd className="font-display text-3xl tabular-nums">{v}</dd>
+    <div className="mx-auto flex w-full max-w-[600px] flex-col gap-3">
+      <header className="pt-1">
+        <h1 className="text-3xl leading-tight">Progresso</h1>
+        <p className="mt-1 text-sm text-muted">{countdown.label}</p>
+      </header>
+
+      {empty ? (
+        <>
+          <ErrorState copy={emptyProgressCopy()} />
+          <PlanDaysCard coverage={coverage} rows={dayRows} />
+        </>
+      ) : (
+        <>
+          <MetricRow metrics={metrics} />
+          <HeatmapCard heatmap={heatmap} />
+          <PlanRealCard rows={realRows} />
+          <div className="grid gap-3 min-[520px]:grid-cols-2">
+            <InsightCard
+              title="Assuntos mais fracos"
+              subtitle="Menor taxa de acerto. Toque para abrir o caderno."
+              items={topicItems}
+              emptyText="Ainda sem questões respondidas. Faça uma sessão para os assuntos aparecerem aqui."
+            />
+            <InsightCard
+              title="Motivos dos erros"
+              subtitle="O que mais derruba você nas questões erradas."
+              items={reasonItems}
+              emptyText="Nenhum erro no caderno ainda. Ao errar, marque a causa para o resumo ganhar forma."
+            />
+          </div>
+          <PlanDaysCard coverage={coverage} rows={dayRows} />
+        </>
+      )}
     </div>
   );
 }

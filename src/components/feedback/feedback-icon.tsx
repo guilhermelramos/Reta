@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   BellOff,
+  ChartNoAxesColumn,
   Compass,
   FileWarning,
   KeyRound,
@@ -32,6 +33,8 @@ export function FeedbackIcon({
       return <FileWarning {...props} />;
     case "block":
       return <Compass {...props} />;
+    case "empty":
+      return <ChartNoAxesColumn {...props} />;
     default:
       return <AlertTriangle {...props} />;
   }

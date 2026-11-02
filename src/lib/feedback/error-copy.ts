@@ -18,6 +18,7 @@ export type FeedbackKind =
   | "block"
   | "timeout"
   | "server"
+  | "empty"
   | "unknown";
 
 export type FeedbackActionId =
