@@ -50,3 +50,21 @@ Regra: prioridade alta ou esforço P = aplicar; resto → MELHORIAS.md.
 | Comparação (AnkiDroid/Duolingo/Quizlet) | — | Usada como referência; o Consultor marcou "sem fonte verificada". | — |
 
 > Nota da integração (integracao-fase2): as notificações locais nativas citadas acima como "não aplicado" em fix/estados-erro chegaram por fix/notificacoes-nativas e fix/timer-segundo-plano, já mesclados.
+
+## P2 — revisão (c) Onboarding + Sessão (2026-11-01, UTC-3)
+
+Resposta em `consultor/respostas.md` (## P2), gerada pelo Gemini a pedido do Guilherme. Ressalva: o Gemini viu só 10 das 36 telas enviadas (`consultor/gemini-p2/`). Regra: alta ou esforço P = aplicar; o resto vai para `MELHORIAS.md`.
+
+| Item | Prioridade/esforço | Decisão | Onde |
+|---|---|---|---|
+| Melh. 1 / Prob. 5 — tempo restante como número principal, igual ao chip do sheet | alta, P | **Aplicar** | `ui/p2-sessao` |
+| Melh. 2 / Prob. 10 — paisagem: sem sidebar na Sessão, FAB sem cobrir cartão, split view | alta, M | **Aplicar** | `ui/p2-sessao` |
+| Melh. 3 / Prob. 1 — "Agora não" no passo 2 (avança um passo), esconder "N dias no plano" antes de importar | alta, P | **Aplicar** | `ui/p2-onboarding` |
+| Melh. 4 / Prob. 8 — sheet do Professor: chips em linha com rolagem e fade, Enviar 48dp desabilitado se vazio, sem aviso duplicado | alta, P | **Aplicar** | `ui/p2-sessao` |
+| Melh. 5 / Prob. 7 — um só cartão de estado vazio, CTA "Gerar material com IA" em 1 linha, padding-bottom 96dp | alta, P | **Aplicar** (mantendo "Montar esta aula" como ação secundária se for função distinta) | `ui/p2-sessao` |
+| Melh. 7 / Prob. 6 — Pausar tonal vs. Iniciar filled, progresso 6dp, voltar ← 48dp na app bar | média, P | **Aplicar** | `ui/p2-sessao` |
+| Melh. 8 / Prob. 2–3 — chevron no expansor, Verificar desabilitado sem chave, título do passo 4 em 320px, frase duplicada | média, P | **Aplicar** | `ui/p2-onboarding` |
+| Prob. 4 — onboarding em paisagem com 2 colunas | sem prioridade na tabela, P | **Aplicar** | `ui/p2-onboarding` |
+| Prob. 9 — alarme exato no 1º Iniciar | — | Já aplicado (confirmado pelo Consultor) | — |
+| Melh. 6 — notificação com cronômetro regressivo nativo (`setChronometerCountDown`) | média, M | **MELHORIAS.md** | — |
+| Melh. 9 — chave xAI "lazy" em bottom sheet na Sessão | baixa, M | **MELHORIAS.md** | — |
