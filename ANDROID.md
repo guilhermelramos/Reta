@@ -461,6 +461,44 @@ Para validar no aparelho: o seletor de arquivos do WebView, a folha de
 compartilhamento do **Baixar modelo**, a leitura de uma planilha grande no Worker
 e o TalkBack anunciando o cartão de seleção como um único alvo.
 
+### Correções P3 na tela Importar
+
+- **Estado de pré-visualização:** com o arquivo já lido, o cartão **Plano
+  atual**, a área **Escolher arquivo .xlsx**, o formato de exemplo e **Baixar
+  modelo** saem de cena. No cabeçalho da prévia, a pílula com o nome da planilha
+  virou o botão **Trocar arquivo** (48dp) que reabre o seletor nativo; o nome da
+  planilha continua visível na linha de apoio, truncado. Ao terminar a leitura,
+  a prévia sobe com `scrollIntoView({ behavior: "smooth", block: "start" })` e,
+  em 360×780, o botão **Importar** fica acima da barra de navegação.
+- **Ajustar colunas:** virou um cabeçalho de acordeão de 48dp (`<details>` com
+  `aria-expanded`), título à esquerda e `ChevronDown` de 24dp que gira ao abrir.
+  Com os cabeçalhos reconhecidos, o subtítulo é **Reconhecidas automaticamente
+  (N/M)**; no mapeamento manual ele avisa que os cabeçalhos não foram
+  reconhecidos. O acordeão abre sozinho quando falta alguma coluna obrigatória.
+- **Ordem da prévia:** as linhas com aviso/erro do parser aparecem antes dos
+  dias válidos, em ordem crescente de linha da planilha. O encaixe é puro em
+  `importPreviewItems` (`src/lib/study/import-preview.ts`).
+- **Desfazer:** antes de substituir o plano, a tela guarda um retrato dos dias e
+  de `meta.activeSheet`/`meta.seeded` (`src/lib/study/import-undo.ts`). O
+  snackbar **Plano importado · N dias** mantém a ação **Desfazer** por 8 s e o
+  store `undoImport` grava o retrato de volta; sessões, pacotes e erros não são
+  tocados. O cartão de sucesso continua com **Ir para Hoje** e **Preparar os
+  próximos 7 dias**.
+- **Estado inicial:** **Baixar modelo** agora é um botão outlined de largura
+  total (48dp) e, abaixo da área de escolha, há um bloco mono 12px com os
+  cabeçalhos reais do parser (`Data | Bloco A | Min A | Bloco B | Min B |
+  Revisão | Min Rev`) e a linha de exemplo `01/11/2026 | Matemática | 60 |
+  Física | 40 | Questões | 20`. As colunas do modelo ficam em
+  `TEMPLATE_HEADERS` (`parse-sheet.ts`), usadas também pelo gerador do `.xlsx`.
+
+A ordem dos itens e o texto das colunas reconhecidas são testados em
+`src/lib/study/import-preview.test.ts`; o snapshot/restauração, em
+`src/lib/study/import-undo.test.ts` (fazem parte dos testes do app). Para
+validar no aparelho: o seletor reaberto por **Trocar arquivo**, a rolagem suave
+no WebView, o TalkBack anunciando o acordeão com `aria-expanded` e o snackbar
+**Desfazer** durante os 8 s (o retrato é em memória; depois do prazo, ou de
+fechar/reabrir o app, a importação já é definitiva).
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**
