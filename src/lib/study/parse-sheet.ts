@@ -302,3 +302,18 @@ export const COLUMN_FIELDS: { key: ColumnKey; label: string; required: boolean }
   { key: "contentR", label: "Revisão", required: true },
   { key: "minR", label: "Tempo da revisão", required: true },
 ];
+
+/**
+ * Cabeçalhos da planilha modelo, na ordem em que o parser os reconhece.
+ * Ficam aqui (e não no gerador do .xlsx) para a tela Importar mostrar o
+ * formato com as mesmas colunas sem carregar a biblioteca `xlsx`.
+ */
+export const TEMPLATE_HEADERS = [
+  "Data",
+  "Bloco A",
+  "Min A",
+  "Bloco B",
+  "Min B",
+  "Revisão",
+  "Min Rev",
+] as const;

@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  IMPORT_UNDO_MESSAGE,
   currentPlanSummary,
   dayMonth,
   importedMessage,
+  importPreviewItems,
   importPreviewRows,
   importSummary,
+  previewDayCount,
   rangeLabel,
+  recognizedColumns,
   shortContent,
 } from "./import-preview.ts";
+import { guessMap, TEMPLATE_HEADERS } from "./parse-sheet.ts";
 import type { BlockKind, PlanBlock, PlanDay } from "./types.ts";
 
 function block(kind: BlockKind, plannedMin: number, content = `${kind} · conteúdo`): PlanBlock {
@@ -145,5 +150,75 @@ describe("import-preview: plano atual", () => {
     assert.equal(copy.imported, false);
     assert.equal(copy.detail, "Nenhum dia no plano ainda.");
     assert.equal(copy.dayCount, 0);
+  });
+});
+
+describe("import-preview: ordem dos itens (avisos antes dos dias)", () => {
+  it("põe as linhas com aviso antes das linhas válidas, da menor para a maior", () => {
+    const items = importPreviewItems(PLAN, [
+      { row: 9, message: "Data inválida — linha ignorada." },
+      { row: 4, message: "Tempo do bloco A vazio." },
+    ]);
+    assert.deepEqual(
+      items.map((item) => (item.kind === "problem" ? `w${item.row}` : `d${item.row.date}`)),
+      ["w4", "w9", "d2026-03-04", "d2026-03-05", "d2026-03-06"],
+    );
+    assert.equal(items[0]?.kind, "problem");
+  });
+
+  it("mantém os avisos mesmo quando a linha é posterior aos dias mostrados", () => {
+    const items = importPreviewItems([day("2026-03-04", [block("A", 40)])], [
+      { row: 12, message: "Data inválida — linha ignorada." },
+    ]);
+    assert.equal(items[0]?.kind, "problem");
+    assert.equal(items[1]?.kind, "day");
+  });
+
+  it("aplica o limite só aos dias válidos e conta os dias exibidos", () => {
+    const items = importPreviewItems(
+      PLAN,
+      [{ row: 2, message: "Sem conteúdo — linha ignorada." }],
+      2,
+    );
+    assert.equal(previewDayCount(items), 2);
+    assert.equal(items.filter((item) => item.kind === "problem").length, 1);
+    assert.equal(items.length, 3);
+  });
+
+  it("sem avisos devolve só os dias, na ordem das datas", () => {
+    const items = importPreviewItems(PLAN);
+    assert.deepEqual(
+      items.map((item) => (item.kind === "day" ? item.row.label : "aviso")),
+      ["04/03", "05/03", "06/03"],
+    );
+    assert.equal(previewDayCount(items), 3);
+  });
+});
+
+describe("import-preview: colunas reconhecidas", () => {
+  it("conta 7 de 7 com os cabeçalhos da planilha modelo", () => {
+    const copy = recognizedColumns(guessMap([...TEMPLATE_HEADERS]));
+    assert.equal(copy.recognized, 7);
+    assert.equal(copy.total, 7);
+    assert.equal(copy.label, "Reconhecidas automaticamente (7/7)");
+  });
+
+  it("mostra quantas colunas obrigatórias o parser reconheceu", () => {
+    const map = guessMap([...TEMPLATE_HEADERS]);
+    map.minB = null;
+    map.contentR = null;
+    const copy = recognizedColumns(map);
+    assert.equal(copy.recognized, 5);
+    assert.equal(copy.label, "Reconhecidas automaticamente (5/7)");
+  });
+
+  it("sem mapa ainda mostra o total necessário", () => {
+    assert.equal(recognizedColumns(null).label, "Reconhecidas automaticamente (0/7)");
+  });
+});
+
+describe("import-preview: snackbar de desfazer", () => {
+  it("usa a mesma frase curta do snackbar", () => {
+    assert.equal(IMPORT_UNDO_MESSAGE, "Importação desfeita · plano anterior restaurado");
   });
 });

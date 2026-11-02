@@ -6,8 +6,9 @@
  * primeiras linhas da prévia, o estado do plano atual e o snackbar de sucesso.
  */
 
+import { REQUIRED_COLUMNS } from "./parse-sheet.ts";
 import { formatMin } from "./time.ts";
-import type { BlockKind, PlanDay } from "./types.ts";
+import type { BlockKind, ColumnMap, PlanDay, RowWarning } from "./types.ts";
 import { KIND_LABEL } from "./types.ts";
 
 /** Quantas linhas do plano a pré-visualização mostra antes de importar. */
@@ -133,6 +134,80 @@ export function importPreviewRows(
 export function importedMessage(dayCount: number): string {
   const count = Math.max(0, Math.round(dayCount));
   return `Plano importado · ${count} ${plural(count, "dia", "dias")}`;
+}
+
+/** Texto do snackbar depois de desfazer a importação. */
+export const IMPORT_UNDO_MESSAGE = "Importação desfeita · plano anterior restaurado";
+
+export type PreviewProblem = {
+  kind: "problem";
+  key: string;
+  /** Linha da planilha (1-based), como o parser reporta. */
+  row: number;
+  message: string;
+};
+
+export type PreviewDay = {
+  kind: "day";
+  key: string;
+  row: PreviewRow;
+};
+
+export type PreviewItem = PreviewProblem | PreviewDay;
+
+/**
+ * Itens da prévia na ordem de leitura: primeiro as linhas que o parser não
+ * conseguiu usar, das mais antigas para as mais novas, e só depois os dias
+ * válidos. Assim um problema escondido no fim da planilha não fica abaixo de
+ * três cartões de dia válidos (ou fora da dobra).
+ */
+export function importPreviewItems(
+  days: PlanDay[],
+  warnings: RowWarning[] = [],
+  limit = PREVIEW_ROW_LIMIT,
+): PreviewItem[] {
+  const problems: PreviewProblem[] = warnings
+    .map((warning, index) => ({
+      kind: "problem" as const,
+      key: `problem-${warning.row}-${index}`,
+      row: warning.row,
+      message: warning.message,
+    }))
+    .sort((a, b) => a.row - b.row);
+  const valid: PreviewDay[] = importPreviewRows(days, limit).map((row) => ({
+    kind: "day" as const,
+    key: `day-${row.date}`,
+    row,
+  }));
+  return [...problems, ...valid];
+}
+
+/** Quantos itens da prévia são dias válidos (para o "e mais N dias"). */
+export function previewDayCount(items: PreviewItem[]): number {
+  return items.reduce((total, item) => total + (item.kind === "day" ? 1 : 0), 0);
+}
+
+export type RecognizedColumns = {
+  recognized: number;
+  total: number;
+  /** Ex.: "Reconhecidas automaticamente (7/7)". */
+  label: string;
+};
+
+/**
+ * Quantas colunas obrigatórias o parser reconheceu sozinho. É o subtítulo do
+ * acordeão "Ajustar colunas"; o total é sempre o das colunas necessárias.
+ */
+export function recognizedColumns(map: ColumnMap | null): RecognizedColumns {
+  const total = REQUIRED_COLUMNS.length;
+  const recognized = map
+    ? REQUIRED_COLUMNS.filter((key) => map[key] != null).length
+    : 0;
+  return {
+    recognized,
+    total,
+    label: `Reconhecidas automaticamente (${recognized}/${total})`,
+  };
 }
 
 export type CurrentPlanSummary = {

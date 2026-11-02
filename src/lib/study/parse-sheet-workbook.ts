@@ -1,5 +1,5 @@
 import * as XLSXImport from "xlsx";
-import { findHeader } from "./parse-sheet.ts";
+import { findHeader, TEMPLATE_HEADERS } from "./parse-sheet.ts";
 import { utcKeyFromDate } from "./time.ts";
 import type { SheetTable } from "./types.ts";
 
@@ -51,10 +51,10 @@ export function readWorkbook(data: ArrayBuffer): SheetTable[] {
   }).filter((sheet) => sheet.matrix.length > 0);
 }
 
-const TEMPLATE_HEADERS = ["Data", "Bloco A", "Min A", "Bloco B", "Min B", "Revisão", "Min Rev"];
+const TEMPLATE_HEADERS_ROW: (string | number)[] = [...TEMPLATE_HEADERS];
 
 const TEMPLATE_ROWS: (string | number)[][] = [
-  TEMPLATE_HEADERS,
+  TEMPLATE_HEADERS_ROW,
   ["02/03/2026", "Matemática: Funções", 60, "Física: Leis de Ohm", 40, "Revisão: 10 questões de funções", 20],
   ["03/03/2026", "Biologia: Citologia", 50, "Química: Estequiometria", 45, "Revisão: mapa mental de citologia", 15],
   ["04/03/2026", "História: República Velha", 45, "", "", "Revisão: flashcards de história", 10],
