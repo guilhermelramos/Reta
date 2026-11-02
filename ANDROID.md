@@ -499,6 +499,31 @@ no WebView, o TalkBack anunciando o acordeão com `aria-expanded` e o snackbar
 **Desfazer** durante os 8 s (o retrato é em memória; depois do prazo, ou de
 fechar/reabrir o app, a importação já é definitiva).
 
+## Redesign da tela Erros (Material 3)
+
+O `/erros` virou um caderno de leitura rápida: coluna de 600dp, 16dp nas
+laterais e 12dp entre cartões, com um único botão preenchido (o CTA do herói).
+Nenhuma função saiu: revisão espaçada, timer de 5 min, classificação do motivo,
+Professor IA, erro externo e exclusão continuam nos mesmos serviços.
+
+| Elemento | Comportamento |
+| --- | --- |
+| Topo | título serifado **Caderno de erros** e a linha **N para revisar hoje · M no total** |
+| Cartão herói | `surface-2` com borda âmbar e **Revisar N erros agora** + **Começar revisão** quando há vencidos. Sem vencidos, cartão positivo **Nada para revisar hoje** com a próxima data (ou **Nenhum erro guardado ainda**) |
+| Filtros | uma linha rolável de FilterChips (status, matéria e motivo), visual de 32dp dentro de alvo de 48dp e **Limpar** quando algum filtro foge do padrão |
+| Lista | cartões compactos com assunto, trecho da questão em 2 linhas, chip do motivo e data da próxima revisão; o toque abre o detalhe e o menu ⋮ traz **Editar** e **Excluir** |
+| Registrar/editar | bottom sheet M3 aberto pelo botão tonal **Registrar erro**; campos de 48dp com label, motivo em chips de escolha única e **Sem motivo**; editar usa a mesma folha |
+| Excluir | `role="alertdialog"` com **Cancelar / Excluir**, foco preso pelo Radix, Esc e voltar do Android pela pilha `useBackOverlay` |
+| Revisão | um erro por vez, barra de progresso de 6dp com **k de N**, timer de 5 min no topo e resultados **Errei / Difícil / Fácil** de 48dp lado a lado |
+
+A contagem de vencidos, os filtros, a ordem, a próxima data e os rótulos são
+puros em [`src/lib/study/error-notebook.ts`](./src/lib/study/error-notebook.ts)
+e testados em `error-notebook.test.ts` (incluído em `npm test`). O store ganhou
+`updateMistake`/`removeMistake` e o IndexedDB, `deleteMistake`; o formulário e os
+cartões ficam em `src/components/erros/`. Para validar no aparelho: o voltar do
+Android fechando folhas e o `alertdialog`, o TalkBack lendo os chips filtrados e
+o teclado do WebView nos campos do formulário.
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**

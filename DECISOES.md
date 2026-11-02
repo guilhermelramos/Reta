@@ -140,3 +140,6 @@ Resposta em `consultor/respostas.md` (## P3), gerada pelo Gemini a pedido do Gui
 | Prob. 9 — Importar: prévia e botão abaixo da dobra; "Ajustar colunas" sem affordance | P | **Aplicar** (recolher seletor → "Trocar arquivo"; acordeão com chevron) | `ui/p3-importar` |
 | Melh. 2 — "Desfazer" na snackbar de importação; linhas com erro primeiro | alta, P | **Aplicar** | `ui/p3-importar` |
 | Melh. 3 — exemplo de linha da planilha e "Baixar modelo" largo | média, P | **Aplicar** | `ui/p3-importar` |
+
+### Redesign Erros
+- **Aplicado:** topo com resumo, herói só para vencidos, estado positivo com a próxima data, FilterChips roláveis (32dp visual/48dp de toque), cartões compactos com menu ⋮, folha de registrar/editar com campos de 48dp e revisão um-a-um com progresso de 6dp; exclusão em `alertdialog` e volta do Android via `useBackOverlay`. Lógica pura em `src/lib/study/error-notebook.ts` (testes em `error-notebook.test.ts`).
