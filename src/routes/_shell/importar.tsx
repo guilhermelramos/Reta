@@ -363,7 +363,7 @@ function ImportPage() {
                   id="plano-atual"
                   className="text-xs font-semibold uppercase tracking-wide text-muted"
                 >
-                  Plano atual
+                  Planilha atual
                 </h2>
                 <p className="mt-1 break-words text-lg leading-snug text-fg">{current.title}</p>
                 <p className="mt-1 text-sm leading-relaxed text-muted">{current.detail}</p>
@@ -541,8 +541,8 @@ function ImportPage() {
 
             {planDays.length ? (
               <p className="import-preview-warning text-xs leading-relaxed text-muted">
-                Ao importar, esta planilha substitui o plano atual. O histórico de sessões e erros
-                continua aqui.
+                Ao importar, esta planilha substitui a planilha atual. O histórico de sessões e
+                erros continua aqui.
               </p>
             ) : null}
           </div>

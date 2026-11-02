@@ -736,7 +736,7 @@ function SettingsPage() {
           to="/importar"
           icon={FileSpreadsheet}
           label="Trocar planilha"
-          support="Importar outra planilha substitui o plano atual."
+          support="Importar outra planilha substitui a planilha atual."
         />
 
         <SettingsButtonRow
