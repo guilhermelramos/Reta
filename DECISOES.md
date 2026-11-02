@@ -143,3 +143,6 @@ Resposta em `consultor/respostas.md` (## P3), gerada pelo Gemini a pedido do Gui
 
 ### Redesign Erros
 - **Aplicado:** topo com resumo, herói só para vencidos, estado positivo com a próxima data, FilterChips roláveis (32dp visual/48dp de toque), cartões compactos com menu ⋮, folha de registrar/editar com campos de 48dp e revisão um-a-um com progresso de 6dp; exclusão em `alertdialog` e volta do Android via `useBackOverlay`. Lógica pura em `src/lib/study/error-notebook.ts` (testes em `error-notebook.test.ts`).
+
+### Redesign Plano
+- **Aplicado:** topo sticky com a planilha ativa e o período, menu ⋮ de 48dp, aviso tonal de dias atrasados, lista agrupada por semana (linhas de 68dp com estado por ícone + texto e hoje em borda âmbar), detalhe em bottom sheet com estudar/editar/excluir e formulário de 48dp; `removeDay` apaga só o dia do plano. Lógica pura em `src/lib/study/plan-schedule.ts` e `plan-draft.ts` (testes em `plan-schedule.test.ts` e `plan-draft.test.ts`).

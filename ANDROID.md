@@ -524,6 +524,38 @@ cartões ficam em `src/components/erros/`. Para validar no aparelho: o voltar do
 Android fechando folhas e o `alertdialog`, o TalkBack lendo os chips filtrados e
 o teclado do WebView nos campos do formulário.
 
+## Redesign da tela Plano (Material 3)
+
+A tela `/plano` virou uma agenda por semana, com topo fixo e o dia de hoje à
+vista. Nenhuma função saiu: recalcular atrasados (com pré-visualização),
+criar/editar dia, blocos, minutos, fase, estudar um bloco e excluir dia
+continuam nos mesmos serviços — a exclusão agora também apaga o dia do
+IndexedDB (`deleteDay` + `removeDay` na store), preservando sessões, pacotes e
+erros.
+
+| Elemento | Comportamento |
+| --- | --- |
+| Topo | sticky com título serifado **Plano**, a linha **Planilha: nome · DD/MM a DD/MM · N dias** e o menu ⋮ de 48dp (`role=menu`, ícones de 20dp) com **Trocar planilha**, **Novo dia** e **Recalcular atrasados** |
+| Atrasados | cartão de aviso em `surface-2` (sem preenchimento âmbar) com **N dias atrasados** e o botão tonal **Recalcular**, que abre a mesma prévia/confirmação antes de gravar |
+| Lista | uma linha M3 de 68dp por dia: data curta + dia da semana à esquerda, fase/assuntos em até duas linhas, total de minutos e ícone + texto do estado (**Feito / Parcial / Pendente / Descanso**) à direita; o dia de hoje tem borda âmbar e a tela abre rolada na semana dele |
+| Semanas | seções **Semana de DD/MM** (segunda-feira), dias em ordem crescente e 12dp entre os cartões |
+| Detalhe | bottom sheet com a data longa, os blocos (tipo, minutos, tópico e estado), seleção do bloco e **Estudar este bloco** (filled, leva à Sessão), **Editar dia** (tonal) e **Excluir dia** (texto em cor de erro) |
+| Formulário | cartão com campos de 48dp e label, data/fase, blocos com tipo, minutos (`inputmode=numeric`, aceita 45/1h30/01:30) e tópico; **Salvar dia** filled e **Cancelar** texto |
+| Erros/vazio | `InlineError` para falhas de gravação e validação, `ErrorState` quando o plano não tem nenhum dia |
+| Diálogos | exclusão em `role=alertdialog` (ConfirmDialog), Esc e voltar do Android pela pilha `useBackOverlay` |
+
+O agrupamento por semana, o estado do dia, a contagem de atrasados, o cabeçalho
+e os tópicos da linha são puros em
+[`src/lib/study/plan-schedule.ts`](./src/lib/study/plan-schedule.ts) e testados
+em `plan-schedule.test.ts`. O rascunho e a validação do formulário ficam em
+[`src/lib/study/plan-draft.ts`](./src/lib/study/plan-draft.ts), com
+`plan-draft.test.ts`; os três testes fazem parte de `npm test`.
+
+Para validar no aparelho: o teclado numérico nos minutos, a rolagem até o dia
+de hoje num plano longo, o TalkBack lendo o estado da linha (ícone + texto), a
+folha aberta por cima da barra de navegação e o gesto voltar fechando a folha e
+o `alertdialog`.
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**
