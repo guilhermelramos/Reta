@@ -375,6 +375,21 @@ As regras novas são puras e testadas em `today.test.ts` (`showsShortSession` e
 anunciando o chip "Atrasado" e os itens do menu com ícone, e a coluna
 centralizada numa tablet real em paisagem.
 
+### Correções P4 na tela Hoje
+
+- O menu ⋮ abre ancorado pela borda direita do botão (16px da borda da tela),
+  logo abaixo do bloco do cabeçalho, com largura entre 180px e 220px. Em 320px
+  ele não cobre o H1 "O que estudar agora" nem sai da tela.
+- O deslocamento vertical é medido na abertura (`menuSideOffset`, em
+  [`src/lib/ui/overflow-menu.ts`](./src/lib/ui/overflow-menu.ts)): se o H1
+  quebrar em duas ou três linhas, o menu desce até a base do bloco de texto em
+  vez de ancorar só na base do botão. A posição é recalculada ao girar a tela
+  ou mudar a fonte com o menu aberto.
+- Esc, toque fora e o voltar do Android continuam fechando o menu. A lógica
+  pura está testada em `overflow-menu.test.ts`, incluída em `npm test`.
+- Para validar no aparelho: o TalkBack nos itens do menu e o voltar do Android
+  com o popover aberto.
+
 ## Redesign da tela Ajustes (Material 3)
 
 A tela `/ajustes` virou uma lista de seções com cabeçalho overline (âmbar, 14px),
