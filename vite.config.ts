@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
 import { defineConfig } from "vite";
@@ -18,6 +18,21 @@ function hasGlobbedMigrations(root: string): boolean {
     return readdirSync(join(root, "migrations")).some(isMigrationFile);
   } catch {
     return false;
+  }
+}
+
+/**
+ * Versão exibida em Ajustes › Sobre. Vem do `package.json` para não existir
+ * uma segunda cópia no código; o fallback cobre um build sem o arquivo.
+ */
+function readAppVersion(): string {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+    ) as { version?: unknown };
+    return typeof pkg.version === "string" && pkg.version.trim() ? pkg.version.trim() : "0.0.0";
+  } catch {
+    return "0.0.0";
   }
 }
 
@@ -152,6 +167,8 @@ export default defineConfig(({ command, isPreview }) => {
   const capBuild = process.env.CAP_BUILD === "1";
 
   return {
+    // Versão pública (sem segredo) injetada em `src/routes/_shell/ajustes.tsx`.
+    define: { __APP_VERSION__: JSON.stringify(readAppVersion()) },
     server: {
       host: "0.0.0.0",
       port: 8080,
