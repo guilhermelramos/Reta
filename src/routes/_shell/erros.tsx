@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { CheckCircle2, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { NotebookFilterChips } from "@/components/erros/filter-chips";
@@ -17,6 +17,7 @@ import {
   DELETE_MISTAKE_TITLE,
   emptyListMessage,
   hasActiveFilters,
+  isNotebookEmpty,
   mistakeSourceLabel,
   nextReviewDate,
   nextReviewLabel,
@@ -95,6 +96,7 @@ function ErrorsPage() {
     () => notebookList(study.mistakes, filters, today),
     [study.mistakes, filters, today],
   );
+  const emptyNotebook = isNotebookEmpty(counts);
   const nextDate = useMemo(() => nextReviewDate(study.mistakes, today), [study.mistakes, today]);
   const subjects = useMemo(() => notebookSubjects(study.mistakes), [study.mistakes]);
   const reasons = useMemo(() => notebookReasons(study.mistakes), [study.mistakes]);
@@ -376,34 +378,55 @@ function ErrorsPage() {
           </Button>
         </section>
       ) : (
-        <section className="flex items-start gap-3 rounded-xl border border-border bg-surface p-5">
-          <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-primary" aria-hidden />
-          <div className="min-w-0">
-            <h2 className="text-2xl leading-snug">
-              {counts.total ? "Nada para revisar hoje" : "Nenhum erro guardado ainda"}
-            </h2>
-            <p className="mt-1 text-sm leading-relaxed text-muted">
-              {counts.total
-                ? nextDate
-                  ? nextReviewLabel(nextDate, today)
-                  : "Todos os erros do caderno estão dominados."
-                : "Eles aparecem quando você erra na sessão — ou registre um erro de fora do app."}
-            </p>
+        <section className="rounded-xl border border-border bg-surface p-5">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-primary" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-2xl leading-snug">
+                {counts.total ? "Nada para revisar hoje" : "Nenhum erro guardado ainda"}
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-muted">
+                {counts.total
+                  ? nextDate
+                    ? nextReviewLabel(nextDate, today)
+                    : "Todos os erros do caderno estão dominados."
+                  : "Eles aparecem quando você erra na sessão — ou registre um erro de fora do app."}
+              </p>
+            </div>
           </div>
+          {emptyNotebook ? (
+            <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Button
+                variant="tonal"
+                onClick={() => {
+                  setPageError(null);
+                  setSheet({ mode: "create" });
+                }}
+              >
+                <Plus className="size-5" aria-hidden />
+                Registrar erro
+              </Button>
+              <Button asChild variant="ghost" className="px-3 text-primary hover:bg-primary/10">
+                <Link to="/">Estudar bloco de hoje</Link>
+              </Button>
+            </div>
+          ) : null}
         </section>
       )}
 
-      <Button
-        variant="tonal"
-        className="w-full sm:w-auto sm:self-start"
-        onClick={() => {
-          setPageError(null);
-          setSheet({ mode: "create" });
-        }}
-      >
-        <Plus className="size-5" aria-hidden />
-        Registrar erro
-      </Button>
+      {!emptyNotebook ? (
+        <Button
+          variant="tonal"
+          className="w-full sm:w-auto sm:self-start"
+          onClick={() => {
+            setPageError(null);
+            setSheet({ mode: "create" });
+          }}
+        >
+          <Plus className="size-5" aria-hidden />
+          Registrar erro
+        </Button>
+      ) : null}
 
       {counts.total ? (
         <NotebookFilterChips

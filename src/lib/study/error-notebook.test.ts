@@ -6,6 +6,7 @@ import {
   emptyListMessage,
   filterMistakes,
   hasActiveFilters,
+  isNotebookEmpty,
   mistakeSourceLabel,
   mistakeSubject,
   mistakeSubtopic,
@@ -288,6 +289,13 @@ describe("outcomeIntervalLabel: intervalo do resultado", () => {
     assert.equal(outcomeIntervalLabel("facil", 0), "+7 dias");
     assert.equal(outcomeIntervalLabel("facil", 2), "+15 dias");
     assert.equal(outcomeIntervalLabel("facil", 4), "+30 dias");
+  });
+});
+
+describe("isNotebookEmpty: ações dentro do cartão vazio", () => {
+  it("só é vazio sem nenhum erro guardado", () => {
+    assert.equal(isNotebookEmpty({ total: 0 }), true);
+    assert.equal(isNotebookEmpty({ total: 1 }), false);
   });
 });
 

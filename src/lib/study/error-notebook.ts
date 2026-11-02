@@ -116,6 +116,15 @@ export function notebookCounts(mistakes: readonly Mistake[], today: string): Not
   return { due, pending, mastered, total: mistakes.length };
 }
 
+/**
+ * Caderno realmente vazio (nenhum erro guardado). Só nesse caso as ações
+ * ficam dentro do cartão vazio; com erros no caderno, mesmo sem vencidos, o
+ * CTA "Registrar erro" continua fora do cartão.
+ */
+export function isNotebookEmpty(counts: Pick<NotebookCounts, "total">): boolean {
+  return counts.total === 0;
+}
+
 /** Linha do topo: "N para revisar hoje · M no total". */
 export function notebookSummary(counts: NotebookCounts): string {
   return `${counts.due} para revisar hoje · ${counts.total} no total`;
