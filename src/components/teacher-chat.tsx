@@ -8,7 +8,8 @@ import { ButtonSpinner } from "@/components/feedback/button-spinner";
 import { InlineError } from "@/components/feedback/inline-error";
 import { askProfessor } from "@/lib/ai/professor-client";
 import { researchAddClient } from "@/lib/ai/xai-client";
-import { canSendMessage, quickQuestionsVisible } from "@/lib/study/chat-ui";
+import { canSendMessage } from "@/lib/study/chat-ui";
+import { notebookChipLabel, professorChips } from "@/lib/study/professor-chips";
 import { describeError, type ErrorCopy } from "@/lib/feedback/error-copy";
 import { validateDiagram } from "@/lib/study/diagrams";
 import { mergeAddition } from "@/lib/study/outline";
@@ -49,21 +50,6 @@ function present(raw: string): { text: string; outside: boolean; cite: string; s
   const svg = clean && validateDiagram(clean).ok ? clean : "";
   return { text: text || "…", outside, cite: text.match(/«([^»]+)»/)?.[1] ?? "", svg };
 }
-
-const SHORTCUTS = [
-  "Explique de outro jeito",
-  "Dê um exemplo",
-  "Resuma em 3 linhas",
-  "Qual é a pegadinha?",
-] as const;
-
-/** Perguntas de 1 toque: evitam digitação longa no teclado do celular. */
-const QUICK_QUESTIONS = [
-  "Me dê uma dica sem entregar a resposta",
-  "Por que a minha alternativa está errada?",
-  "Qual é a pegadinha desta questão?",
-  "Resuma a fórmula/conceito em 3 linhas",
-] as const;
 
 /** Folha inferior modal (vaul): 90% da altura, alça de arraste e volta do Android. */
 function SheetFrame({
@@ -431,23 +417,22 @@ export function TeacherChat({
                   timerExpired ? `Tempo estourado: ${timerClock}` : `Tempo restante: ${timerClock}`
                 }
               >
-                <Clock className="hidden size-4 min-[360px]:block" aria-hidden />
+                <Clock className="hidden size-4 min-[400px]:block" aria-hidden />
                 {timerClock}
               </span>
             ) : null}
-            <h2 className="min-w-0 flex-1 truncate text-base font-semibold">Professor IA</h2>
+            <h2 className="min-w-0 flex-1 truncate text-base font-semibold max-[359px]:sr-only">
+              Professor IA
+            </h2>
             <button
               type="button"
-              className="grid h-12 min-w-12 shrink-0 place-items-center"
+              className="ml-auto grid h-12 shrink-0 place-items-center"
               aria-pressed={tab === "caderno"}
-              aria-label={tab === "chat" ? "Abrir caderno" : "Voltar para a conversa"}
               onClick={() => setTab(tab === "chat" ? "caderno" : "chat")}
             >
-              <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 text-xs text-muted">
+              <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs text-muted">
                 <BookOpen className="size-4" aria-hidden />
-                <span className="hidden min-[390px]:inline">
-                  {tab === "chat" ? "Caderno" : "Conversa"}
-                </span>
+                {notebookChipLabel(tab)}
               </span>
             </button>
             <button
@@ -568,46 +553,22 @@ export function TeacherChat({
               ) : null}
             </div>
             <div className="border-t border-border pb-[calc(env(safe-area-inset-bottom)_+_0.75rem)] pt-2">
-              {quickQuestionsVisible(active?.messages.length ?? 0) ? (
-                <div className="session-chips" role="group" aria-label="Perguntas rápidas">
-                  {QUICK_QUESTIONS.map((label) => (
-                    <button
-                      key={label}
-                      type="button"
-                      disabled={busy}
-                      className="h-9 shrink-0 rounded-lg border border-border bg-surface px-3 text-[13px] text-fg disabled:opacity-50"
-                      onClick={() => void send(label)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
               <div className="session-chips" role="group" aria-label="Atalhos do professor">
-                {SHORTCUTS.map((label) => (
+                {professorChips(active?.messages.length ?? 0).map((chip) => (
                   <button
-                    key={label}
+                    key={chip.id}
                     type="button"
-                    className="h-9 shrink-0 rounded-lg border border-border bg-surface px-3 text-[13px] text-fg"
-                    onClick={() => void send(label)}
+                    disabled={busy && chip.kind === "ask"}
+                    className="session-chip"
+                    onClick={() => {
+                      if (chip.kind === "ask") void send(chip.label);
+                      else if (chip.kind === "draw") draw();
+                      else testMe();
+                    }}
                   >
-                    {label}
+                    <span>{chip.label}</span>
                   </button>
                 ))}
-                <button
-                  type="button"
-                  className="h-9 shrink-0 rounded-lg border border-border bg-surface px-3 text-[13px] text-fg"
-                  onClick={draw}
-                >
-                  Desenhe isso em SVG
-                </button>
-                <button
-                  type="button"
-                  className="h-9 shrink-0 rounded-lg border border-border bg-surface px-3 text-[13px] text-fg"
-                  onClick={testMe}
-                >
-                  Me teste nisso
-                </button>
               </div>
               <div className="px-4">
                 {active ? (
