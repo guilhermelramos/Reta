@@ -321,6 +321,30 @@ testada em `today.test.ts`.
 Para validar no aparelho: o voltar do Android com o menu aberto, o TalkBack nos
 itens do menu e do rail, e a largura do rail numa tablet real.
 
+### Correções P3 na tela Hoje
+
+- O banner "Bloco de hoje ainda não iniciado" entre o herói e a lista saiu. O
+  espaço até o subtítulo "Blocos de hoje" ficou em 16px.
+- O aviso virou o chip **Atrasado** no próprio cartão do bloco pendente, no
+  lugar de **Pendente**. Ele mantém a tolerância de 45 min do Ajuste "Aviso se
+  o bloco ainda não começou" (`LATE_GRACE_MIN` em `today.ts`) e continua
+  respeitando `alerts.pending` e o modo silencioso. Sem horário válido na
+  store, nada é sinalizado.
+- **Só 15 min** aparece só no cartão herói, quando o bloco está pendente e tem
+  30 min ou mais (`showsShortSession`). Bloco em andamento mostra só
+  **Continuar**; os cartões da lista mostram só **Iniciar** (tonal, 48dp).
+- **Preparar** passou a tonal (borda e texto âmbar sobre `primary-tonal`), então
+  o único botão preenchido âmbar da tela é o CTA do herói.
+- Em ≥600px a coluna de 600px centraliza na área à direita do navigation rail
+  (`margin-inline: auto`), com 24px de padding lateral.
+- O menu ⋮ ganhou ícones lucide de 20px (`FileUp` e `Download`), gap de 12px,
+  padding lateral de 12px e itens de 48px.
+
+As regras novas são puras e testadas em `today.test.ts` (`showsShortSession` e
+`isLatePending`), incluídas em `npm test`. Para validar no aparelho: o TalkBack
+anunciando o chip "Atrasado" e os itens do menu com ícone, e a coluna
+centralizada numa tablet real em paisagem.
+
 ## Redesign da tela Ajustes (Material 3)
 
 A tela `/ajustes` virou uma lista de seções com cabeçalho overline (âmbar, 14px),
