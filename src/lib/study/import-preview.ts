@@ -150,7 +150,8 @@ export type CurrentPlanSummary = {
  * O plano semeado (modelo de exemplo) conta como "Nenhuma planilha importada":
  * `seeded` é a mesma flag que o onboarding usa para saber se o usuário já
  * trouxe uma planilha. O nome só existe depois da primeira importação; para
- * planos antigos, sem nome gravado, usamos um rótulo neutro.
+ * planos antigos, sem nome gravado, usamos um rótulo neutro. Um nome gravado
+ * vence a flag `seeded` (versões anteriores não a atualizavam ao importar).
  */
 export function currentPlanSummary({
   days,
@@ -169,8 +170,11 @@ export function currentPlanSummary({
     first && last
       ? `${rangeLabel(first.date, last.date)} · ${dayCount} ${plural(dayCount, "dia", "dias")}`
       : "";
+  const named = Boolean(sheetName?.trim());
 
-  if (seeded || !dayCount) {
+  // `seeded` pode ficar antigo em planos importados por versões anteriores;
+  // o nome da planilha gravado é a outra prova de que houve importação.
+  if (dayCount === 0 || (seeded && !named)) {
     return {
       imported: false,
       title: "Nenhuma planilha importada",

@@ -133,6 +133,13 @@ describe("import-preview: plano atual", () => {
     assert.equal(copy.title, "Planilha importada");
   });
 
+  it("nome gravado vence a flag seeded antiga", () => {
+    const copy = currentPlanSummary({ days: PLAN, seeded: true, sheetName: "Plano ENEM" });
+    assert.equal(copy.imported, true);
+    assert.equal(copy.title, "Plano ENEM");
+    assert.equal(copy.detail, "04/03 a 07/03 · 4 dias");
+  });
+
   it("sem nenhum dia não inventa período", () => {
     const copy = currentPlanSummary({ days: [], seeded: false });
     assert.equal(copy.imported, false);

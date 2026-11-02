@@ -156,8 +156,10 @@ export function StudyProvider({ children }: { children: ReactNode }) {
 
   const importDays = useCallback(async (days: PlanDay[], sheetName = "") => {
     await saveDays(days);
-    // Guarda o nome da aba para a tela Importar mostrar qual planilha está ativa.
+    // Guarda o nome da aba para a tela Importar mostrar qual planilha está ativa
+    // e limpa a flag do plano de exemplo (o onboarding usa as duas informações).
     await saveMeta("activeSheet", sheetName);
+    await saveMeta("seeded", false);
     setSnap((s) => ({ ...s, days, sheetName, seeded: false }));
   }, []);
 
