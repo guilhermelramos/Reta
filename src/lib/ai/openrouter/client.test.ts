@@ -326,6 +326,13 @@ describe("listModels", () => {
     );
   });
 
+  it("'Testar conexão' manda a chave colada no Authorization", async () => {
+    const { calls, transport } = recorder(ok({ data: [TEXT_MODEL_ROW] }));
+    await listModels(transport, { key: "  sk-or-v1-teste  " });
+    assert.equal(calls[0]?.headers.Authorization, "Bearer sk-or-v1-teste");
+    assert.equal(calls[0]?.headers["X-Title"], OPENROUTER_APP_TITLE);
+  });
+
   it("lista vazia ou inválida vira erro 'empty'", async () => {
     for (const data of [{ data: [] }, {}, { data: "x" }]) {
       const { transport } = recorder(ok(data));

@@ -401,14 +401,20 @@ export async function chatCompletion(
 /** `GET /api/v1/models` normalizado (preço por 1M, grátis, visão). */
 export async function listModels(
   transport: HttpTransport,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; key?: string } = {},
 ): Promise<OpenRouterModel[]> {
+  // O catálogo é público, mas "Testar conexão" manda a chave colada para o
+  // OpenRouter confirmar o login (401/403 aparecem na hora).
+  const key = (options.key ?? "").trim();
   let response: HttpResponse;
   try {
     response = await transport({
       method: "GET",
       url: `${OPENROUTER_API_BASE}/models`,
-      headers: { "X-Title": OPENROUTER_APP_TITLE },
+      headers: {
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+        "X-Title": OPENROUTER_APP_TITLE,
+      },
       timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     });
   } catch (error) {
