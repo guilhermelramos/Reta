@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Download, FileUp, MoreVertical } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { useBackOverlay } from "@/lib/android/use-back-overlay";
 import { cn } from "@/lib/cn";
@@ -32,6 +32,7 @@ import {
 } from "@/lib/study/time";
 import type { PlanBlock } from "@/lib/study/types";
 import { KIND_LABEL } from "@/lib/study/types";
+import { MENU_GAP, menuSideOffset } from "@/lib/ui/overflow-menu";
 
 export const Route = createFileRoute("/_shell/")({
   head: () => ({ meta: [{ title: "Hoje · Reta" }] }),
@@ -44,6 +45,9 @@ const TONAL_BUTTON =
 
 function TodayPage() {
   const study = useStudy();
+  // O menu ⋮ mede este bloco para abrir abaixo do H1 mesmo quando ele quebra
+  // em duas ou três linhas (320–360px).
+  const headerRef = useRef<HTMLDivElement>(null);
   const today = saoPauloToday();
   const day = study.days.find((item) => item.date === today);
   const exam = examDate(study.days);
@@ -63,7 +67,7 @@ function TodayPage() {
   return (
     <div className="mx-auto flex w-full max-w-[600px] flex-col gap-3">
       <header className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
+        <div ref={headerRef} className="min-w-0">
           <p className="text-sm text-muted">{formatLongDate(today)}</p>
           <h1 className="mt-1 text-3xl leading-tight text-fg">O que estudar agora</h1>
           {left != null ? (
@@ -76,7 +80,7 @@ function TodayPage() {
             </p>
           ) : null}
         </div>
-        <TodayMenu />
+        <TodayMenu contentRef={headerRef} />
       </header>
 
       {day ? (
@@ -157,17 +161,38 @@ function TodayPage() {
 }
 
 /** Menu de overflow do topo: as ações que saíram do cabeçalho, sem sumir. */
-function TodayMenu() {
+function TodayMenu({ contentRef }: { contentRef: RefObject<HTMLDivElement | null> }) {
   const [open, setOpen] = useState(false);
+  // Base do botão ⋮ + o que faltar para o menu começar abaixo do cabeçalho.
+  const [sideOffset, setSideOffset] = useState(MENU_GAP);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   // O voltar do Android fecha o menu antes de considerar o histórico.
   useBackOverlay(open, () => setOpen(false));
+
+  const measure = useCallback(() => {
+    const trigger = triggerRef.current?.getBoundingClientRect();
+    const content = contentRef.current?.getBoundingClientRect();
+    if (!trigger || !content) return;
+    setSideOffset(menuSideOffset(trigger.bottom, content.bottom));
+  }, [contentRef]);
+
+  // Rotação ou mudança de fonte podem quebrar o H1 de outro jeito com o menu
+  // aberto; a posição é recalculada sem fechar o popover.
+  useEffect(() => {
+    if (!open) return;
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [open, measure]);
 
   return (
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
       <DropdownMenu.Trigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label="Mais opções"
+          onClick={measure}
           className="no-print grid size-12 shrink-0 place-items-center rounded-full text-fg transition-colors hover:bg-surface-2 data-[state=open]:bg-surface-2"
         >
           <MoreVertical className="size-6" aria-hidden />
@@ -175,10 +200,13 @@ function TodayMenu() {
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
+          side="bottom"
           align="end"
-          sideOffset={8}
+          alignOffset={0}
+          sideOffset={sideOffset}
+          collisionPadding={8}
           aria-label="Ações da tela Hoje"
-          className="no-print z-50 min-w-56 rounded-xl border border-border bg-surface-2 p-1 shadow-xl"
+          className="no-print z-50 min-w-[180px] max-w-[220px] rounded-xl border border-border bg-surface-2 p-1 shadow-xl"
         >
           <DropdownMenu.Item asChild>
             <Link
