@@ -1,19 +1,28 @@
+import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
-import type { ErrorCopy } from "@/lib/feedback/error-copy";
+import type { ErrorCopy, FeedbackAction } from "@/lib/feedback/error-copy";
 import { FeedbackActionButton, type FeedbackActionHandler } from "./feedback-action-button";
 import { FeedbackIcon } from "./feedback-icon";
 
 /**
- * Banner de erro dentro de um cartão: ícone, uma frase e (no máximo) uma ação.
+ * Banner de erro dentro de um cartão: ícone, uma frase e as ações de saída.
  * Usa só os tokens do tema (`clay`, `surface`, `border`, `muted`).
+ *
+ * `secondaryAction` é uma saída alternativa (ex.: "Baixar modelo" ao lado de
+ * "Escolher outro arquivo") sem precisar repetir o texto do erro.
  */
 export function InlineError({
   copy,
   onAction,
+  secondaryAction,
+  children,
   className,
 }: {
   copy: ErrorCopy;
   onAction?: FeedbackActionHandler;
+  secondaryAction?: FeedbackAction;
+  /** Conteúdo extra abaixo da frase (ex.: linhas com problema na planilha). */
+  children?: ReactNode;
   className?: string;
 }) {
   return (
@@ -30,13 +39,21 @@ export function InlineError({
         {copy.detail ? (
           <p className="mt-1 text-xs leading-relaxed text-muted">{copy.detail}</p>
         ) : null}
-        {copy.action ? (
-          <FeedbackActionButton
-            action={copy.action}
-            onAction={onAction}
-            emphasis="surface"
-            className="mt-2"
-          />
+        {children}
+        {copy.action || secondaryAction ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {copy.action ? (
+              <FeedbackActionButton action={copy.action} onAction={onAction} emphasis="surface" />
+            ) : null}
+            {secondaryAction ? (
+              <FeedbackActionButton
+                action={secondaryAction}
+                onAction={onAction}
+                emphasis="surface"
+                className="border-transparent bg-transparent px-2 underline hover:bg-transparent"
+              />
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>
