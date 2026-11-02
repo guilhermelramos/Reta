@@ -321,6 +321,37 @@ testada em `today.test.ts`.
 Para validar no aparelho: o voltar do Android com o menu aberto, o TalkBack nos
 itens do menu e do rail, e a largura do rail numa tablet real.
 
+## Redesign da tela Ajustes (Material 3)
+
+A tela `/ajustes` virou uma lista de seções com cabeçalho overline (âmbar, 14px),
+cartão de 16dp de raio, itens de 56dp com 16dp de padding e separadores sutis;
+tudo numa coluna de no máximo 600dp. Nenhuma função existente saiu: horário e
+alertas de estudo, pesquisador, chave dos outros provedores, backup, planilha e
+introdução continuam nos mesmos serviços.
+
+| Elemento | Comportamento |
+| --- | --- |
+| Professor IA | Linha "Chave xAI" com status **Conectada / Não configurada**; campo de 48dp; **Salvar/Atualizar chave**, **Remover chave** (cofre seguro) e **Testar conexão** (idle, testando, conexão ok e erro com `InlineError`). **Avançado** recolhe as chaves opcionais de Perplexity/Gemini/Claude |
+| Notificações | Status da permissão (ativadas/bloqueadas/não ativadas), **Ativar lembretes**, status do **alarme exato** com **Abrir configurações** quando negado, e a linha **Avisos atrasando? Toque aqui**, que abre a tela de otimização de bateria do Android (nunca bloqueia; na web mostra a orientação) |
+| Switches | Componente M3 com `role="switch"`/`aria-checked` (Radix), trilho de 52×32dp, polegar de 24/28dp e a **linha inteira** clicável (56dp+, rótulo à esquerda, apoio de 14px e switch à direita). Substituem todos os checkboxes |
+| Horário de estudo | Inputs de hora/minuto com `<label for>` e 48dp; switches e horário gravam na hora por `saveSettings` (fila local evita que uma gravação sobrescreva a outra) |
+| Aparência | Só informativo: "Tema escuro" (o modo claro continua no `MELHORIAS.md`; o app não segue o tema do sistema) |
+| Dados | Armazenamento persistente com uso/quota, exportar/restaurar backup `.json` (Filesystem + Share no APK) e **Trocar planilha** |
+| Sobre | **Rever introdução** e versão (injetada no build a partir do `package.json` por `__APP_VERSION__`) |
+
+Os rótulos e estados são puros em
+[`src/lib/ui/settings-status.ts`](./src/lib/ui/settings-status.ts) (chave,
+permissão, alarme exato, bateria, teste de conexão, armazenamento e versão) e
+testados em `settings-status.test.ts`, incluído em `npm test`. Os componentes de
+lista/switch ficam em `src/components/settings/` e são usados só por Ajustes.
+Erros continuam usando `InlineError` com os textos padronizados de
+`src/lib/feedback`.
+
+Para validar no aparelho: abrir a tela de alarmes exatos e de otimização de
+bateria e ver o status mudar ao voltar, remover a chave xAI do Keystore, a
+permissão real do Android 13+ refletida na linha "Lembretes" e o TalkBack lendo
+cada switch como "ativado/desativado" com a linha inteira como alvo.
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**

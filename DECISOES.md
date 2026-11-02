@@ -66,6 +66,23 @@ Regra: prioridade alta ou esforço P = aplicar; resto → MELHORIAS.md.
 - **Lógica pura:** `src/lib/study/today.ts` (próxima ação, blocos vazios e
   dispensa semanal) com testes em `today.test.ts`, incluídos em `npm test`.
 
+### P1 Ajustes — aplicado em `ui/ajustes`
+
+- **Melh. 9 / Prob. 3 e 11:** a tela virou seções com cabeçalho (Professor IA,
+  Notificações, Aparência, Dados, Sobre), cartões de 16dp, itens de lista de
+  56dp e switches M3 (`role="switch"`, 52×32dp) com a linha inteira clicável —
+  nenhum checkbox restou. Inputs têm 48dp e `<label for>`.
+- **Status sem esconder ação:** chave "Conectada/Não configurada" com
+  salvar/atualizar/remover e teste de conexão; permissão, alarme exato (com
+  **Abrir configurações** quando negado) e a linha de bateria
+  "Avisos atrasando? Toque aqui" (não bloqueante). O OAuth experimental não
+  existe no código, então "Avançado" só recolhe as chaves dos outros
+  pesquisadores.
+- **Aparência só informativa:** "Tema escuro"; modo claro continua no backlog.
+- **Lógica pura:** `src/lib/ui/settings-status.ts` (rótulos de chave, permissão,
+  alarme exato, bateria, teste, armazenamento e versão) com
+  `settings-status.test.ts` em `npm test`.
+
 ## P2 — revisão (c) Onboarding + Sessão (2026-11-01, UTC-3)
 
 Resposta em `consultor/respostas.md` (## P2), gerada pelo Gemini a pedido do Guilherme. Ressalva: o Gemini viu só 10 das 36 telas enviadas (`consultor/gemini-p2/`). Regra: alta ou esforço P = aplicar; o resto vai para `MELHORIAS.md`.
