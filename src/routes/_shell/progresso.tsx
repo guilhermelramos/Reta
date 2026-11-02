@@ -8,9 +8,13 @@ import { PlanDaysCard } from "@/components/progress/plan-days-card";
 import { PlanRealCard } from "@/components/progress/plan-real-card";
 import {
   buildHeatmap,
+  DIAGNOSIS_PLACEHOLDER,
+  DIAGNOSIS_TITLE,
   emptyProgressCopy,
   examCountdown,
   firstFoldMetrics,
+  hasQuestionDiagnostics,
+  isEmptyProgress,
   planDayRows,
   planVsReal,
   reasonRows,
@@ -44,9 +48,14 @@ function ProgressPage() {
   const coverage = useMemo(() => retaCoverage(days, sessions, today), [days, sessions, today]);
   const dayRows = useMemo(() => planDayRows(days, sessions, today), [days, sessions, today]);
 
-  // Sem nenhuma sessão não há o que medir: o estado vazio toma o lugar dos
-  // cartões analíticos, mas os dias do plano continuam à vista.
-  const empty = sessions.length === 0;
+  // Sem tempo estudado e sem questão respondida não há o que medir: o estado
+  // vazio toma o lugar das métricas, do mapa de calor e do planejado × real.
+  // Sessões abertas e não iniciadas (elapsedSec 0) não desligam o estado vazio.
+  const empty = useMemo(() => isEmptyProgress(sessions), [sessions]);
+  const hasDiagnostics = useMemo(
+    () => hasQuestionDiagnostics({ sessions, mistakes }),
+    [sessions, mistakes],
+  );
 
   const topicItems = topics.map((topic) => ({
     key: topic.key,
@@ -72,32 +81,41 @@ function ProgressPage() {
       </header>
 
       {empty ? (
-        <>
-          <ErrorState copy={emptyProgressCopy()} />
-          <PlanDaysCard coverage={coverage} rows={dayRows} />
-        </>
+        <ErrorState copy={emptyProgressCopy()} />
       ) : (
         <>
           <MetricRow metrics={metrics} />
-          <HeatmapCard heatmap={heatmap} />
-          <PlanRealCard rows={realRows} />
-          <div className="grid gap-3 min-[520px]:grid-cols-2">
-            <InsightCard
-              title="Assuntos mais fracos"
-              subtitle="Menor taxa de acerto. Toque para abrir o caderno."
-              items={topicItems}
-              emptyText="Ainda sem questões respondidas. Faça uma sessão para os assuntos aparecerem aqui."
-            />
-            <InsightCard
-              title="Motivos dos erros"
-              subtitle="O que mais derruba você nas questões erradas."
-              items={reasonItems}
-              emptyText="Nenhum erro no caderno ainda. Ao errar, marque a causa para o resumo ganhar forma."
-            />
+          {/* Paisagem: mapa de calor e planejado × real dividem a linha. */}
+          <div className="grid gap-3 min-[600px]:grid-cols-2 min-[600px]:gap-4">
+            <HeatmapCard heatmap={heatmap} />
+            <PlanRealCard rows={realRows} />
           </div>
-          <PlanDaysCard coverage={coverage} rows={dayRows} />
         </>
       )}
+
+      {hasDiagnostics ? (
+        <div className="grid gap-3 min-[520px]:grid-cols-2">
+          <InsightCard
+            title="Assuntos mais fracos"
+            subtitle="Menor taxa de acerto. Toque para abrir o caderno."
+            items={topicItems}
+            emptyText="Ainda sem questões respondidas. Faça uma sessão para os assuntos aparecerem aqui."
+          />
+          <InsightCard
+            title="Motivos dos erros"
+            subtitle="O que mais derruba você nas questões erradas."
+            items={reasonItems}
+            emptyText="Nenhum erro no caderno ainda. Ao errar, marque a causa para o resumo ganhar forma."
+          />
+        </div>
+      ) : (
+        <section className="rounded-xl border border-border bg-surface p-4">
+          <h2 className="text-lg">{DIAGNOSIS_TITLE}</h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted">{DIAGNOSIS_PLACEHOLDER}</p>
+        </section>
+      )}
+
+      <PlanDaysCard coverage={coverage} rows={dayRows} />
     </div>
   );
 }
