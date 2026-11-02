@@ -390,6 +390,27 @@ centralizada numa tablet real em paisagem.
 - Para validar no aparelho: o TalkBack nos itens do menu e o voltar do Android
   com o popover aberto.
 
+### Correções P4 (Sessão e Professor IA)
+
+- **Cronômetro no topo em 320px:** a fonte usa `clamp(22px, 6.5vw, 32px)` com
+  `tabular-nums`, então `1:00:00` cabe inteiro ao lado do botão Iniciar sem
+  cortar dígitos. Abaixo de 360px o Iniciar mantém 48px de alvo de toque e a
+  face visível de 40px (padding de 12px), sem apertar o relógio.
+- **Professor não cobre mais o CTA:** o container de rolagem reserva 88px de
+  `padding-bottom` para o FAB. Enquanto o cartão "Este bloco ainda não tem
+  material rico" está visível, o Professor aparece no fluxo, 16px abaixo do
+  cartão, em vez de flutuar sobre "Gerar material com IA". A decisão é pura em
+  [`src/lib/study/session-layout.ts`](./src/lib/study/session-layout.ts) e
+  testada em `session-layout.test.ts`, incluída em `npm test`.
+- **Cabeçalho da gaveta do Professor IA:** linha de 48px com o título
+  "Professor IA" de 18px semibold (sem truncar nem sumir em 320px), chip
+  compacto do timer de 28px/12px em âmbar sobre `primary-tonal` e, à direita,
+  "Caderno" virou IconButton de 48x48 (ícone de livro, `aria-label` e `title`
+  "Abrir caderno") ao lado do X de 48x48. A matéria fica no subtítulo de 12px.
+- Para validar no aparelho: o toque real nos 48px do Iniciar e dos ícones com
+  a fonte do sistema aumentada, e o TalkBack anunciando o botão "Abrir
+  caderno" (com o estado pressionado no caderno).
+
 ## Redesign da tela Ajustes (Material 3)
 
 A tela `/ajustes` virou uma lista de seções com cabeçalho overline (âmbar, 14px),
