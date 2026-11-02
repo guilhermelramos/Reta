@@ -178,7 +178,9 @@
   width: 100%;
   max-width: 42rem;
   margin-inline: auto;
-  padding: 1rem 1rem calc(6rem + env(safe-area-inset-bottom));
+  /* 88px no mínimo: o FAB do Professor (56px + 16px do rodapé + folga) nunca
+     cobre o último CTA quando a rolagem chega ao fim. */
+  padding: 1rem 1rem calc(5.5rem + env(safe-area-inset-bottom));
 }
 
 /* Alvo de 48x48 para voltar, fechar e afins. */
@@ -208,6 +210,63 @@
   box-shadow: 0 6px 16px rgb(0 0 0 / 0.45);
   font-size: 0.875rem;
   font-weight: 600;
+}
+
+/*
+ * Com o cartão "sem material rico" na primeira dobra, o Professor fica no
+ * fluxo logo abaixo dele (16px), fora da área do CTA "Gerar material com IA".
+ */
+.session-professor-inline {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  min-height: 3.5rem;
+  padding: 0 1.25rem;
+  border: 1.5px solid var(--color-primary);
+  border-radius: 1rem;
+  background: var(--color-primary-tonal);
+  color: var(--color-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/*
+ * Cronômetro da app bar: `1:00:00` (7 caracteres) precisa caber ao lado do
+ * botão Iniciar em 320px. O clamp reduz a fonte só o necessário.
+ */
+.session-topbar-clock {
+  font-size: clamp(22px, 6.5vw, 32px);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/*
+ * Botão Iniciar/Pausar da app bar. O alvo de toque é sempre 48px de altura;
+ * em <360px a face visível encolhe para 40px para não espremer o cronômetro.
+ */
+.session-timer-hit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.session-timer-hit-face {
+  height: 3.5rem;
+  padding-inline: 1.5rem;
+}
+
+@media (max-width: 359px) {
+  .session-timer-hit-face {
+    height: 2.5rem;
+    padding-inline: 0.75rem;
+  }
 }
 
 .session-quote {

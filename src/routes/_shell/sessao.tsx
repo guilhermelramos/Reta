@@ -43,6 +43,7 @@ import {
   sessionTimerView,
   timerHeadlineAria,
 } from "@/lib/study/session-timer";
+import { materialPlaceholderVisible, professorPlacement } from "@/lib/study/session-layout";
 import { newMistakeSrs } from "@/lib/study/srs";
 import { useStudy } from "@/lib/study/store";
 import {
@@ -762,6 +763,14 @@ function SessionPage() {
     : "";
   const progressPct = Math.round((timerView?.progress ?? 0) * 100);
   const blockTitle = pkg?.displayTitle || heading.title;
+  // O botão do Professor só flutua quando não há o cartão vazio de material na
+  // primeira dobra (com ele, o FAB cobria "Gerar material com IA" em 320px).
+  const materialPlaceholder = materialPlaceholderVisible({
+    hasPackage: Boolean(pkg),
+    rich: isRichPackage(pkg),
+    plannedMin: block.plannedMin,
+  });
+  const professorPosition = professorPlacement(materialPlaceholder);
   const timerLive = Boolean(session && session.status === "active" && timerView);
   const doneCount = subs.filter((item) => flow.checks[item.id]).length;
   const asking = Boolean(
@@ -847,34 +856,64 @@ function SessionPage() {
     </div>
   );
 
+  const timerAriaLabel = session?.running
+    ? "Pausar o cronômetro"
+    : timerLabel === "Retomar"
+      ? "Retomar o cronômetro"
+      : "Iniciar o cronômetro";
+
+  const timerButtonFace = session ? (
+    <>
+      {session.running ? (
+        <Pause className="size-5" aria-hidden />
+      ) : (
+        <Play className="size-5" aria-hidden />
+      )}
+      {timerLabel}
+    </>
+  ) : null;
+
+  const timerButtonTone = session?.running
+    ? "border-[1.5px] border-primary bg-primary-tonal text-primary"
+    : "border-[1.5px] border-transparent bg-primary text-primary-fg";
+
   const timerToggle = (extra: string) =>
     session ? (
       <button
         type="button"
         onClick={toggleTimer}
-        aria-label={
-          session.running
-            ? "Pausar o cronômetro"
-            : timerLabel === "Retomar"
-              ? "Retomar o cronômetro"
-              : "Iniciar o cronômetro"
-        }
+        aria-label={timerAriaLabel}
         className={cn(
           "inline-flex h-14 min-h-14 items-center justify-center gap-2 rounded-[28px] px-6 text-base font-semibold transition-colors",
           extra,
-          session.running
-            ? "border-[1.5px] border-primary bg-primary-tonal text-primary"
-            : "border-[1.5px] border-transparent bg-primary text-primary-fg",
+          timerButtonTone,
         )}
       >
-        {session.running ? (
-          <Pause className="size-5" aria-hidden />
-        ) : (
-          <Play className="size-5" aria-hidden />
-        )}
-        {timerLabel}
+        {timerButtonFace}
       </button>
     ) : null;
+
+  /*
+   * Versão da app bar: o elemento clicável continua com 48px de altura em
+   * qualquer largura; em <360px só a face visível encolhe para 40px (CSS).
+   */
+  const timerToggleCompact = session ? (
+    <button
+      type="button"
+      onClick={toggleTimer}
+      aria-label={timerAriaLabel}
+      className="session-timer-hit shrink-0"
+    >
+      <span
+        className={cn(
+          "session-timer-hit-face inline-flex items-center justify-center gap-2 rounded-[28px] text-base font-semibold transition-colors",
+          timerButtonTone,
+        )}
+      >
+        {timerButtonFace}
+      </span>
+    </button>
+  ) : null;
 
   const timerExtras =
     barOpen && session ? (
@@ -972,14 +1011,14 @@ function SessionPage() {
                     {KIND_LABEL[search.bloco]} · {sessionLabel}
                   </p>
                   <p
-                    className="font-mono text-[36px] font-semibold leading-9 tabular-nums tracking-[-0.5px] text-fg"
+                    className="session-topbar-clock font-mono font-semibold tabular-nums tracking-[-0.5px] text-fg"
                     role="timer"
                     aria-label={timerAria}
                   >
                     {timerView.headline}
                   </p>
                 </div>
-                {timerToggle("shrink-0")}
+                {timerToggleCompact}
               </div>
               {progressBar}
               {subline}
@@ -1014,16 +1053,29 @@ function SessionPage() {
             </ul>
           </header>
 
-          {!isRichPackage(pkg) && (block.plannedMin > 0 || !pkg) ? (
-            <GeneratePackage
-              date={search.dia}
-              kind={search.bloco}
-              topic={block.content}
-              minutes={block.plannedMin}
-              onBuildLocal={() => void buildLesson()}
-              buildLocalBusy={building}
-              buildLocalError={buildError}
-            />
+          {materialPlaceholder ? (
+            <div className="flex flex-col">
+              <GeneratePackage
+                date={search.dia}
+                kind={search.bloco}
+                topic={block.content}
+                minutes={block.plannedMin}
+                onBuildLocal={() => void buildLesson()}
+                buildLocalBusy={building}
+                buildLocalError={buildError}
+              />
+              {!chat ? (
+                <button
+                  type="button"
+                  className="session-professor-inline"
+                  aria-label="Perguntar ao professor"
+                  onClick={() => setChat(true)}
+                >
+                  <MessageCircle className="size-5" aria-hidden />
+                  Professor
+                </button>
+              ) : null}
+            </div>
           ) : null}
 
           {session && timeUp && session.status === "active" ? (
@@ -1284,7 +1336,7 @@ function SessionPage() {
             Perguntar sobre isso
           </button>
         ) : null}
-        {!chat ? (
+        {!chat && professorPosition === "fab" ? (
           <button
             type="button"
             className="session-fab"
