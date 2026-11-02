@@ -1,0 +1,16 @@
+light/360 após onboarding url=http://127.0.0.1:8099/
+light alvos<48px /: 1 Ir para o conteúdo 1x1
+light alvos<48px /ajustes: 2 Ir para o conteúdo 1x1 | Escolher arquivo de backup par 1x1
+light alvos<48px /importar: 2 Ir para o conteúdo 1x1 | INPUT 1x1
+light alvos<48px /erros: 2 Ir para o conteúdo 1x1 | INPUT 1x1
+light alvos<48px /plano: 1 Ir para o conteúdo 1x1
+light alvos<48px /progresso: 1 Ir para o conteúdo 1x1
+light/320 após onboarding url=http://127.0.0.1:8099/
+light/paisagem após onboarding url=http://127.0.0.1:8099/
+dark/360 após onboarding url=http://127.0.0.1:8099/
+dark alvos<48px /: 1 Ir para o conteúdo 1x1
+dark alvos<48px /ajustes: 2 Ir para o conteúdo 1x1 | Escolher arquivo de backup par 1x1
+dark alvos<48px /importar: 2 Ir para o conteúdo 1x1 | INPUT 1x1
+dark alvos<48px /erros: 2 Ir para o conteúdo 1x1 | INPUT 1x1
+dark alvos<48px /plano: 1 Ir para o conteúdo 1x1
+dark alvos<48px /progresso: 1 Ir para o conteúdo 1x1
