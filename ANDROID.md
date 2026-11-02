@@ -116,6 +116,103 @@ O gate "IA configurada" considera a credencial do provedor ativo. A escolha do
 provedor é uma preferência em `settings`; a autenticação do OpenRouter é
 **somente** a chave colada — não há OAuth/PKCE/App Link/callback.
 
+### OpenRouter e login xAI experimental
+
+**Onde fica.** Em **Ajustes → Professor IA**, o segmento **Provedor de IA** tem
+`xAI` (padrão) e `OpenRouter`. O passo **Professor IA** de `/boas-vindas` repete
+a mesma escolha. O cartão da chave xAI continua idêntico ao de antes; o bloco
+recolhido **Entrar com conta xAI (experimental)** aparece logo abaixo dele.
+
+**OpenRouter (somente chave colada).**
+
+- Cole a chave `sk-or-…` (botão **Colar**), salve e confira o status mascarado
+  (`sk-or-…9f3a`). **Salvar** fica desabilitado com campo vazio ou sem o prefixo.
+- **Testar conexão** chama `GET https://openrouter.ai/api/v1/models` com a
+  chave no `Authorization`; fica desabilitado sem chave.
+- **Modelo** tem os três cartões (`Rápido e grátis`, `Custo-benefício`,
+  `Lê fotos`) e **Explorar modelos** (busca, chips **Grátis**/**Lê imagens**,
+  ordenação por preço e **Digitar ID manualmente**). A escolha fica em
+  `settings.openRouterModel`/`openRouterFallbacks`, no IndexedDB.
+- **Remover chave** pede confirmação e apaga só o registro `reta.openrouter`.
+- **Criar chave** abre `https://openrouter.ai/settings/keys`.
+- No APK toda chamada ao OpenRouter passa pelo `CapacitorHttp`; o `fetch` da
+  WebView bloqueia `HTTP-Referer`. Na web é `fetch`, sem `HTTP-Referer` e com
+  `X-Title: Reta`.
+- 401/403, 402, 429 (com `Retry-After`), 408 e 5xx têm textos próprios; modelo
+  sem visão bloqueia o anexo de imagem usando `architecture.input_modalities`.
+
+**Login de conta xAI (experimental, device code RFC 8628).**
+
+- Os endpoints reais são `https://auth.x.ai/oauth2/device/code` e
+  `https://auth.x.ai/oauth2/token` (descoberta em
+  `https://auth.x.ai/.well-known/openid-configuration`), com corpo
+  `application/x-www-form-urlencoded`.
+- `client_id` e escopos ficam em
+  [`src/lib/ai/xai-auth/config.ts`](./src/lib/ai/xai-auth/config.ts) e são
+  **NÃO OFICIAIS** (copiados do Grok CLI): a xAI pode bloquear a qualquer
+  momento; requer SuperGrok ou X Premium+.
+- A tela mostra o código, abre `verification_uri_complete` e faz polling
+  tratando `authorization_pending`, `slow_down`, `expired_token` e
+  `access_denied`. O refresh usa `grant_type=refresh_token`.
+- Os tokens (access/refresh/expiração) ficam **só** no cofre seguro
+  (`reta.xai.oauth` no Keystore; `sessionStorage` na web) e nunca no IndexedDB,
+  em logs ou no backup `.json`.
+- O cliente xAI só usa o access token como Bearer quando **não há chave de
+  API**; a chave sempre tem prioridade. Se a xAI responder 401/403 com token, a
+  mensagem é **“Login de conta xAI recusado — use a chave de API”**. Nada no app
+  depende desse login.
+
+**Backup.** `AndroidManifest.xml` mantém `android:allowBackup="false"` e aponta
+`android:fullBackupContent="@xml/backup_rules"` e
+`android:dataExtractionRules="@xml/data_extraction_rules"`. As duas regras
+excluem `WSSecureStorageSharedPreferences.xml` (Keystore com `reta.xai`,
+`reta.openrouter` e `reta.xai.oauth`), `CapacitorStorage.xml`, `app_webview/` e
+os domínios `file`/`database`. O teste
+`src/lib/android/backup-rules.test.ts` guarda essa configuração.
+
+**Roteiro de teste no aparelho (APK debug).**
+
+1. Abra **Ajustes → Professor IA** e confirme que **xAI** vem selecionada e que
+   o cartão da chave, o **Avançado** e as chaves dos outros pesquisadores estão
+   iguais ao build anterior.
+2. Em **OpenRouter**: deixe o campo vazio e confirme **Salvar** e **Testar
+   conexão** desabilitados; cole uma chave inválida `sk-or-teste` e confirme o
+   401 com o texto “Chave do OpenRouter inválida ou revogada”. Cole a chave real,
+   salve, confira a máscara e toque em **Testar conexão** (deve mostrar
+   “Conexão ok — N modelos disponíveis”).
+3. Escolha os três presets e abra **Explorar modelos**: busque `gemini`, ligue
+   **Grátis** e **Lê imagens**, ordene por **Menor preço**, selecione um modelo e
+   confirme que ele aparece como “Modelo atual”. Digite um ID manual válido
+   (`openrouter/auto`) e um inválido (sem barra) para conferir o botão travado.
+4. Gere um pacote e abra o Professor com OpenRouter ativo. Depois force 402
+   (conta sem créditos) e 429 (várias chamadas) e confira as mensagens/ações.
+   Volte para **xAI** e repita um pacote com a chave xAI: o caminho antigo deve
+   continuar idêntico.
+5. **Remover chave**: confirme o diálogo, feche e reabra Ajustes; o status deve
+   voltar a “Não configurada”.
+6. **Conta xAI**: toque em **Entrar com conta xAI (experimental)**, copie o
+   código, abra a página no navegador do sistema, autorize e volte ao app. O
+   bloco deve mostrar **Conectada**. Feche o app (remover dos recentes), reabra e
+   confirme que continua conectado. Com a chave xAI removida, gere um pacote
+   (deve usar o token). Troque por uma chave inválida e confirme a prioridade da
+   chave; depois use **Sair da conta xAI**.
+7. Com o app em segundo plano, confirme que o polling para ao fechar o bloco e
+   que o botão **Cancelar** interrompe o login sem salvar token.
+8. **Backup**: exporte o `.json` e confirme que não há `keys`, `openrouter` nem
+   `xai.oauth` no arquivo. Restaure em outro aparelho e confirme que as chaves e
+   os tokens não vieram.
+9. Abra **Ajustes** em 320px, 390px e paisagem; confirme que o segmentado, os
+   cartões de preset e a folha de modelos não estouram a largura e que os alvos
+   têm 48dp.
+
+**Só pode ser validado no aparelho:** a chamada real do `CapacitorHttp` ao
+OpenRouter (incluindo `HTTP-Referer`), o teste de uma chave real e dos limites
+da conta, a abertura do `verification_uri_complete` no navegador do sistema, o
+retorno ao app depois da autorização, a gravação/leitura/refresh do token no
+Keystore, o bloqueio real da xAI ao client público do Grok CLI e a exclusão de
+fato no backup do Android. No ambiente de desenvolvimento os fluxos foram
+cobertos com transporte falso e o bundle SPA foi exercitado no Chromium.
+
 O `CapacitorHttp` está ligado em [`capacitor.config.ts`](./capacitor.config.ts).
 No APK a chave vem de [`src/lib/secure/keys.ts`](./src/lib/secure/keys.ts)
 (Keystore); `XAI_API_KEY` do ambiente só existe no servidor da web. Sem chave
