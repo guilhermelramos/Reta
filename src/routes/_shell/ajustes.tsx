@@ -52,6 +52,7 @@ import {
   appVersionLabel,
   batteryStatus,
   canSaveKey,
+  canTestConnection,
   exactAlarmStatus,
   formatStudyTimeTyping,
   keySaveLabel,
@@ -530,6 +531,9 @@ function SettingsPage() {
 
   const key = keyStatus(keys.xai);
   const configured = key.configured;
+  // Sem chave salva e com o campo vazio (trim), o teste falharia por falta de
+  // chave: o botão segue a mesma trava visual do "Salvar chave".
+  const testDisabled = testing || !canTestConnection(configured, keyDraft.xai);
   const native = reminder?.native ?? isNativeNotificationService();
   const notifications = reminder
     ? notificationsCard(reminder.permission, reminder.native)
@@ -860,7 +864,13 @@ function SettingsPage() {
                 Remover chave
               </Button>
             ) : null}
-            <Button variant="surface" disabled={testing} onClick={() => void test()}>
+            <Button
+              variant="surface"
+              disabled={testDisabled}
+              aria-disabled={testDisabled ? true : undefined}
+              className="disabled:border-transparent disabled:bg-fg/[0.12] disabled:text-fg/[0.38] disabled:opacity-100"
+              onClick={() => void test()}
+            >
               {testing ? (
                 <>
                   <ButtonSpinner />

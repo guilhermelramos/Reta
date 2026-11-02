@@ -271,6 +271,15 @@ export function batteryStatus(ignored: boolean | null, native: boolean): Setting
 
 export type TestState = "idle" | "loading" | "success" | "error";
 
+/**
+ * O "Testar conexão" só habilita quando há chave salva ou texto (trim) no
+ * campo. Sem os dois, o teste falharia por falta de chave: o botão fica
+ * desabilitado, como o "Salvar chave".
+ */
+export function canTestConnection(hasSavedKey: boolean, draft: string): boolean {
+  return hasSavedKey || draft.trim().length > 0;
+}
+
 export function testConnectionLabel(state: TestState): string {
   if (state === "loading") return "Testando…";
   if (state === "error") return "Tentar de novo";

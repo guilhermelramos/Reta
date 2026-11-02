@@ -6,6 +6,7 @@ import {
   appVersionLabel,
   batteryStatus,
   canSaveKey,
+  canTestConnection,
   exactAlarmStatus,
   formatStudyTimeTyping,
   keySaveLabel,
@@ -197,6 +198,16 @@ describe("status da otimização de bateria", () => {
 });
 
 describe("botão de testar conexão", () => {
+  it("só habilita com chave salva ou texto (trim) no campo", () => {
+    assert.equal(canTestConnection(true, ""), true);
+    assert.equal(canTestConnection(true, "   "), true);
+    assert.equal(canTestConnection(false, "xai-abc"), true);
+    assert.equal(canTestConnection(false, "  xai-abc  "), true);
+    for (const value of ["", "   ", "\n\t"]) {
+      assert.equal(canTestConnection(false, value), false);
+    }
+  });
+
   it("passa por idle, loading e erro com os rótulos existentes", () => {
     assert.equal(testConnectionLabel("idle"), "Testar conexão");
     assert.equal(testConnectionLabel("loading"), "Testando…");
