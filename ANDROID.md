@@ -556,6 +556,37 @@ de hoje num plano longo, o TalkBack lendo o estado da linha (ícone + texto), a
 folha aberta por cima da barra de navegação e o gesto voltar fechando a folha e
 o `alertdialog`.
 
+## Redesign da tela Progresso (Material 3)
+
+A tela `/progresso` virou um resumo em três camadas: métricas na primeira
+dobra, mapa de calor e listas de atenção, e o plano compacto no fim. Coluna de
+600dp centralizada, 16dp nas laterais e 12dp entre cartões. Nenhuma função
+saiu: sequência, heatmap, planejado × real, assuntos fracos, motivos de erro,
+termômetro e dias do plano continuam calculados com os mesmos dados.
+
+| Elemento | Comportamento |
+| --- | --- |
+| Topo | título serifado **Progresso** e a linha **Faltam N dias para a prova** (singular em 1 dia, **A prova é hoje**, **Sem data de prova no plano**) |
+| Métricas | três cartões compactos: sequência de dias, horas da semana (`1h30`) contra o planejado (`de 18h na semana`) e **% do plano concluído**; número de 26px tabular + rótulo de 12px, sem ícones |
+| Mapa de calor | 28 dias em 4+ semanas, células de no mínimo 12px com gap de 4px, cabeçalho S T Q Q S S D, rótulo `DD/MM` por semana e legenda **menos → mais**; cada célula tem `aria-label` **DD/MM: N min**, hoje ganha contorno e o dia livre, borda tracejada |
+| Planejado e real | uma barra por assunto do plano com **estudado de planejado** em texto (ex.: `1h10 de 9h25`) |
+| Assuntos mais fracos / Motivos dos erros | listas de até 5 itens, cada linha com barra de proporção e link para `/erros` (o caderno ainda não lê filtro por query), mais o texto **Ver todos** |
+| Dias do plano | termômetro compacto (blocos concluídos e esperado até hoje, sem repetir o % da métrica) e grade de datas com estado escrito (feito, parcial, falta, livre, vem); hoje em borda âmbar |
+| Estado vazio | `ErrorState` neutro com **Estude o primeiro bloco para ver seu progresso** e o único botão preenchido da tela, **Ir para Hoje**; os dias do plano continuam visíveis |
+
+A contagem até a prova, as métricas da primeira dobra, a escala e as semanas do
+heatmap (0, 1–14, 15–29, 30–59, 60+ min), o planejado × real por assunto, os
+motivos de erro e o estado dos dias são puros em
+[`src/lib/study/progress-dashboard.ts`](./src/lib/study/progress-dashboard.ts),
+com `progress-dashboard.test.ts` em `npm test`. O `ErrorState` ganhou o kind
+`empty` (sem o vermelho de erro e com `role="status"`). Os cartões ficam em
+`src/components/progress/`.
+
+Para validar no aparelho: o TalkBack lendo as 28 células do heatmap e os itens
+que levam ao caderno, o contorno de hoje em tela pequena, a rolagem até o fim
+sem a barra de navegação cobrir o último cartão e o estado vazio com o CTA
+**Ir para Hoje**.
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**

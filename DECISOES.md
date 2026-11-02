@@ -146,3 +146,6 @@ Resposta em `consultor/respostas.md` (## P3), gerada pelo Gemini a pedido do Gui
 
 ### Redesign Plano
 - **Aplicado:** topo sticky com a planilha ativa e o período, menu ⋮ de 48dp, aviso tonal de dias atrasados, lista agrupada por semana (linhas de 68dp com estado por ícone + texto e hoje em borda âmbar), detalhe em bottom sheet com estudar/editar/excluir e formulário de 48dp; `removeDay` apaga só o dia do plano. Lógica pura em `src/lib/study/plan-schedule.ts` e `plan-draft.ts` (testes em `plan-schedule.test.ts` e `plan-draft.test.ts`).
+
+### Redesign Progresso
+- **Aplicado:** topo com título serifado e a linha **Faltam N dias para a prova**; primeira dobra com sequência, horas da semana × planejado e % do plano; heatmap de 28 dias com escala por minutos (0, 1–14, 15–29, 30–59, 60+), `aria-label` **DD/MM: N min**, contorno de hoje e dia livre tracejado; planejado × real por assunto; assuntos mais fracos e motivos dos erros com até 5 itens, barra de proporção, link para `/erros` e **Ver todos**; termômetro e dias do plano compactos, sem repetir números das métricas; estado vazio com `ErrorState` neutro e único botão preenchido (**Ir para Hoje**). Lógica pura em `src/lib/study/progress-dashboard.ts`, testada em `progress-dashboard.test.ts` (incluída em `npm test`).
