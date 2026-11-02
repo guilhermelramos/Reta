@@ -120,3 +120,23 @@ Resposta em `consultor/respostas.md` (## P2), gerada pelo Gemini a pedido do Gui
   (`MELHORIAS.md`); em telas <390dp o rótulo “Caderno” e o ícone do relógio do
   chip encolhem para o título “Professor IA” caber inteiro.
 
+
+## P3 — revisão (c) Onboarding + Sessão + Hoje + Ajustes + Importar (2026-11-01, UTC-3)
+
+Resposta em `consultor/respostas.md` (## P3), gerada pelo Gemini a pedido do Guilherme (`consultor/gemini-p3/`). Os problemas vieram sem prioridade; todos são correções pequenas e localizadas (esforço P), então entram. Regra: alta ou esforço P = aplicar; o resto vai para `MELHORIAS.md`.
+
+| Item | Prioridade/esforço | Decisão | Onde |
+|---|---|---|---|
+| Prob. 1 — banner "Bloco de hoje ainda não iniciado" redundante | P | **Aplicar** (remover; badge "Atrasado" no cartão se passou do horário) | `ui/p3-hoje` |
+| Prob. 2 — "Só 15 min" repetido | P | **Aplicar** (só no herói, pendente e ≥30 min) | `ui/p3-hoje` |
+| Prob. 3 — "Preparar" filled compete com o herói; coluna descentralizada ≥600dp | P | **Aplicar** (tonal; `margin-inline:auto`) | `ui/p3-hoje` |
+| Melh. 4 — ícones no menu ⋮ | baixa, P | **Aplicar** | `ui/p3-hoje` |
+| Prob. 4 — paisagem da Sessão: H1 repetido, chevron do progresso, "Montar esta aula" → "Usar só a planilha (sem IA)" | P | **Aplicar** | `ui/p3-sessao` |
+| Prob. 5 — chips do sheet em 2 linhas; botão de livro sem rótulo | P | **Aplicar** (1 linha rolável; AssistChip "Caderno") | `ui/p3-sessao` |
+| Prob. 6 — "Planilha" × "Plano" no onboarding | P | **Aplicar** | `ui/p3-sessao` (mesma branch, 1 linha) |
+| Prob. 7 — Ajustes: alerta triplo, switches que ignoram a permissão real, "Salvar chave" vazio, minuto `00`, texto iOS/Windows no APK | P | **Aplicar**. TimePicker M3 nativo → MELHORIAS | `ui/p3-ajustes` |
+| Prob. 8 — remover Aparência, armazenamento em "Avançado" com `persist()` automático, confirmação em restaurar backup e remover/sobrescrever chave | P | **Aplicar** | `ui/p3-ajustes` |
+| Melh. 1 — reordenar seções de Ajustes | alta, P | **Aplicar** | `ui/p3-ajustes` |
+| Prob. 9 — Importar: prévia e botão abaixo da dobra; "Ajustar colunas" sem affordance | P | **Aplicar** (recolher seletor → "Trocar arquivo"; acordeão com chevron) | `ui/p3-importar` |
+| Melh. 2 — "Desfazer" na snackbar de importação; linhas com erro primeiro | alta, P | **Aplicar** | `ui/p3-importar` |
+| Melh. 3 — exemplo de linha da planilha e "Baixar modelo" largo | média, P | **Aplicar** | `ui/p3-importar` |
