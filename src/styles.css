@@ -47,6 +47,83 @@
   }
 }
 
+/* Onboarding: uma coluna no retrato; duas colunas em paisagem compacta. */
+.onboarding-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 600px;
+  min-height: 100vh;
+  margin-inline: auto;
+  padding: calc(1.25rem + env(safe-area-inset-top)) 1.25rem
+    calc(1.5rem + env(safe-area-inset-bottom));
+}
+
+.onboarding-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.onboarding-step {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-block: 1.5rem;
+}
+
+.onboarding-copy,
+.onboarding-controls {
+  display: flex;
+  flex-direction: column;
+}
+
+.onboarding-controls {
+  /* No retrato as ações ficam no rodapé, depois do texto. */
+  margin-top: auto;
+}
+
+/*
+ * Paisagem compacta (WindowSizeClass Compact Height): cabeçalho + texto à
+ * esquerda, controles à direita. `display: contents` faz os filhos do passo
+ * entrarem no grid da página sem duplicar marcação.
+ */
+@media (orientation: landscape) and (max-height: 480px) {
+  .onboarding-shell {
+    display: grid;
+    grid-template-columns: 5fr 6fr;
+    gap: 24px;
+    align-items: start;
+    max-width: 720px;
+    padding-top: calc(0.75rem + env(safe-area-inset-top));
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  }
+
+  .onboarding-header {
+    grid-column: 1;
+  }
+
+  .onboarding-body,
+  .onboarding-step {
+    display: contents;
+  }
+
+  .onboarding-copy {
+    grid-column: 1;
+  }
+
+  .onboarding-controls {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    margin-top: 0;
+  }
+
+  .onboarding-footer {
+    grid-column: 1 / -1;
+  }
+}
+
 @keyframes reta-bar {
   from { transform: scaleX(0.15); }
   to { transform: scaleX(1); }

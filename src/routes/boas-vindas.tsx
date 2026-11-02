@@ -1,10 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Bell, Eye, EyeOff } from "lucide-react";
+import { Bell, ChevronDown, ExternalLink, Eye, EyeOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ButtonSpinner } from "@/components/feedback/button-spinner";
 import { InlineError } from "@/components/feedback/inline-error";
 import { pingAiClient } from "@/lib/ai/xai-client";
+import { cn } from "@/lib/cn";
 import type { ErrorCopy, FeedbackAction, FeedbackKind } from "@/lib/feedback/error-copy";
 import { describeError, sheetErrorCopy, sheetProblemFromWarning } from "@/lib/feedback/error-copy";
 import { saveAndShare } from "@/lib/native/files";
@@ -27,8 +28,10 @@ import {
   isKeyCheckSuccess,
   isValidKeyDraft,
   keyCheckErrorCopy,
+  nextOnboardingStep,
   ONBOARDING_STEP_COUNT,
   previousOnboardingStep,
+  shouldShowPlanDayCount,
   type KeyCheckErrorCopy,
   type KeyCheckFailure,
   type OnboardingStep,
@@ -133,40 +136,53 @@ function WelcomePage() {
 
   return (
     <div className="min-h-screen bg-bg text-fg">
-      <div className="mx-auto flex min-h-screen w-full max-w-[600px] flex-col px-5 pb-[calc(1.5rem_+_env(safe-area-inset-bottom))] pt-[calc(1.25rem_+_env(safe-area-inset-top))]">
-        <header className="flex min-h-12 items-center justify-between gap-3">
+      <div className="onboarding-shell">
+        <header className="onboarding-header flex min-h-12 items-center justify-between gap-3">
           <span className="flex items-center gap-2">
             <span className="size-3 rounded-sm bg-primary" aria-hidden />
             <span className="font-display text-2xl leading-none">Reta</span>
           </span>
-          {step > 0 ? (
-            <Button variant="ghost" className="-mr-3 px-3 text-muted" onClick={skip}>
-              Pular
-            </Button>
-          ) : (
-            <span className="text-xs text-muted">Passo 1 de {ONBOARDING_STEP_COUNT}</span>
-          )}
+          {/* Pontos e "Pular" na mesma linha: a contagem fica acessível pelo
+              aria-label dos pontos em todos os passos. */}
+          <span className="flex shrink-0 items-center gap-1">
+            <StepDots step={step} />
+            {step > 0 ? (
+              <Button
+                variant="ghost"
+                className="min-h-12 min-w-12 px-3 text-muted"
+                aria-label="Pular introdução"
+                onClick={skip}
+              >
+                Pular
+              </Button>
+            ) : null}
+          </span>
         </header>
 
-        <StepDots step={step} />
-
-        <div key={step} className="flex-1 py-6">
-          {step === 0 ? <WelcomeStep /> : null}
-          {step === 1 ? <SheetStep onDone={() => setStep(2)} /> : null}
-          {step === 2 ? <ProfessorStep onDone={() => setStep(3)} onSkip={() => setStep(3)} /> : null}
+        <div key={step} className="onboarding-body flex-1">
+          {step === 0 ? <WelcomeStep onStart={() => setStep(1)} /> : null}
+          {step === 1 ? (
+            <SheetStep
+              onDone={() => setStep(nextOnboardingStep(step))}
+              onLater={() => setStep(nextOnboardingStep(step))}
+            />
+          ) : null}
+          {step === 2 ? (
+            <ProfessorStep
+              onDone={() => setStep(nextOnboardingStep(step))}
+              onSkip={() => setStep(nextOnboardingStep(step))}
+            />
+          ) : null}
           {step === 3 ? <RemindersStep onDone={() => void finish()} /> : null}
         </div>
 
         {finishError ? (
-          <p role="alert" className="mb-3 rounded-xl border border-clay/40 bg-clay/10 px-3 py-2.5 text-sm text-clay-text">
+          <p
+            role="alert"
+            className="onboarding-footer mb-3 rounded-xl border border-clay/40 bg-clay/10 px-3 py-2.5 text-sm text-clay-text"
+          >
             {finishError}
           </p>
-        ) : null}
-
-        {step === 0 ? (
-          <Button className="w-full" onClick={() => setStep(1)}>
-            Começar
-          </Button>
         ) : null}
       </div>
     </div>
@@ -181,7 +197,7 @@ function StepDots({ step }: { step: OnboardingStep }) {
       aria-valuemin={1}
       aria-valuemax={ONBOARDING_STEP_COUNT}
       aria-valuenow={step + 1}
-      className="mt-5 flex items-center gap-2"
+      className="flex items-center gap-2"
     >
       {Array.from({ length: ONBOARDING_STEP_COUNT }, (_, index) => (
         <span
@@ -198,18 +214,25 @@ function StepDots({ step }: { step: OnboardingStep }) {
   );
 }
 
-function WelcomeStep() {
+function WelcomeStep({ onStart }: { onStart: () => void }) {
   return (
-    <section>
-      <p className="text-sm font-semibold uppercase tracking-wide text-primary">Bem-vindo ao Reta</p>
-      <h1 className="mt-3 text-4xl leading-tight">Seu plano até a prova, um bloco por vez.</h1>
-      <p className="mt-5 text-base leading-relaxed text-muted">
-        O Reta transforma a sua planilha de estudos em blocos com timer, questões e revisão. Tudo fica neste
-        aparelho, e o plano funciona mesmo sem internet.
-      </p>
-      <p className="mt-3 text-sm leading-relaxed text-muted">
-        Em três telas você importa o plano, conecta o Grok (opcional) e escolhe se quer lembretes.
-      </p>
+    <section className="onboarding-step">
+      <div className="onboarding-copy">
+        <p className="text-sm font-semibold uppercase tracking-wide text-primary">Bem-vindo ao Reta</p>
+        <h1 className="mt-3 text-4xl leading-tight">Seu plano até a prova, um bloco por vez.</h1>
+        <p className="mt-5 text-base leading-relaxed text-muted">
+          O Reta transforma a sua planilha de estudos em blocos com timer, questões e revisão. Tudo fica
+          neste aparelho, e o plano funciona mesmo sem internet.
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-muted">
+          Em três telas você importa o plano, conecta o Grok (opcional) e escolhe se quer lembretes.
+        </p>
+      </div>
+      <div className="onboarding-controls">
+        <Button className="w-full" onClick={onStart}>
+          Começar
+        </Button>
+      </div>
     </section>
   );
 }
@@ -225,12 +248,18 @@ function fileCopy(title: string, message: string): ErrorCopy {
   };
 }
 
-function SheetStep({ onDone }: { onDone: () => void }) {
-  const { importDays, days } = useStudy();
+function SheetStep({ onDone, onLater }: { onDone: () => void; onLater: () => void }) {
+  const { importDays, days, seeded } = useStudy();
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<ErrorCopy | null>(null);
   const [note, setNote] = useState("");
+  const [importedThisSession, setImportedThisSession] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const showDayCount = shouldShowPlanDayCount({
+    seeded,
+    dayCount: days.length,
+    importedThisSession,
+  });
 
   async function onFile(file: File) {
     setError(null);
@@ -277,6 +306,7 @@ function SheetStep({ onDone }: { onDone: () => void }) {
         return;
       }
       await importDays(preview.days);
+      setImportedThisSession(true);
       setNote(`${preview.days.length} dias importados.`);
       onDone();
     } catch (err) {
@@ -324,54 +354,75 @@ function SheetStep({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <section className="flex flex-col">
-      <p className="text-sm font-semibold uppercase tracking-wide text-primary">Planilha</p>
-      <h1 className="mt-3 text-4xl leading-tight">Importe sua planilha ou use o modelo.</h1>
-      <p className="mt-4 text-base leading-relaxed text-muted">
-        Entram só data, bloco A, bloco B e revisão, com o tempo de cada um. Se preferir, pule e importe depois
-        em{" "}
-        <span className="font-semibold text-fg">Planilha</span>.
-      </p>
-
-      <div className="mt-6 flex flex-col gap-3">
-        <Button disabled={reading} onClick={() => fileInput.current?.click()}>
-          {reading ? (
-            <>
-              <ButtonSpinner />
-              Lendo a planilha…
-            </>
-          ) : (
-            "Importar .xlsx"
-          )}
-        </Button>
-        <Button variant="surface" onClick={() => void downloadTemplate()}>
-          Baixar modelo
-        </Button>
+    <section className="onboarding-step">
+      <div className="onboarding-copy">
+        <p className="text-sm font-semibold uppercase tracking-wide text-primary">Planilha</p>
+        <h1 className="mt-3 text-4xl leading-tight">Importe sua planilha ou use o modelo.</h1>
+        <p className="mt-4 text-base leading-relaxed text-muted">
+          Entram só data, bloco A, bloco B e revisão, com o tempo de cada um. Se preferir, avance e importe
+          depois em <span className="font-semibold text-fg">Planilha</span>.
+        </p>
       </div>
 
-      <input
-        ref={fileInput}
-        className="sr-only"
-        type="file"
-        disabled={reading}
-        accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
-          event.currentTarget.value = "";
-          if (file) void onFile(file);
-        }}
-      />
+      <div className="onboarding-controls">
+        <div className="flex flex-col gap-3">
+          <Button disabled={reading} onClick={() => fileInput.current?.click()}>
+            {reading ? (
+              <>
+                <ButtonSpinner />
+                Lendo a planilha…
+              </>
+            ) : (
+              "Importar .xlsx"
+            )}
+          </Button>
+          <Button variant="surface" onClick={() => void downloadTemplate()}>
+            Baixar modelo
+          </Button>
+        </div>
 
-      <p className="mt-4 text-xs leading-relaxed text-muted">
-        Formatos aceitos: .xlsx e .csv. Datas em dd/mm/aaaa ou aaaa-mm-dd. {days.length} dias no plano atual.
-      </p>
+        <input
+          ref={fileInput}
+          className="sr-only"
+          type="file"
+          disabled={reading}
+          accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (file) void onFile(file);
+          }}
+        />
 
-      {note ? (
-        <p role="status" className="mt-4 rounded-xl border border-primary/40 bg-surface px-3 py-2.5 text-sm">
-          {note}
+        <p className="mt-4 text-xs leading-relaxed text-muted">
+          Formatos aceitos: .xlsx e .csv. Datas em dd/mm/aaaa ou aaaa-mm-dd.
         </p>
-      ) : null}
-      {error ? <InlineError copy={error} onAction={handleAction} className="mt-4" /> : null}
+
+        {/* Só anuncia "N dias no plano atual" quando o plano não é o exemplo. */}
+        {showDayCount ? (
+          <p className="mt-1 text-xs leading-relaxed text-muted">{days.length} dias no plano atual.</p>
+        ) : null}
+
+        {note ? (
+          <p
+            role="status"
+            className="mt-4 rounded-xl border border-primary/40 bg-surface px-3 py-2.5 text-sm"
+          >
+            {note}
+          </p>
+        ) : null}
+        {error ? <InlineError copy={error} onAction={handleAction} className="mt-4" /> : null}
+
+        {/* Avança só para o Professor IA; não encerra a introdução. */}
+        <Button
+          variant="ghost"
+          className="mt-3 min-h-12 w-full px-4 text-sm font-medium text-muted"
+          disabled={reading}
+          onClick={onLater}
+        >
+          Agora não (usar plano de exemplo)
+        </Button>
+      </div>
     </section>
   );
 }
@@ -402,7 +453,9 @@ function ProfessorStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
   const [keyDraft, setKeyDraft] = useState("");
   const [reveal, setReveal] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [error, setError] = useState<ErrorCopy | null>(null);
+  const emptyKey = !isValidKeyDraft(keyDraft);
 
   function online(): boolean {
     return typeof navigator === "undefined" || navigator.onLine !== false;
@@ -462,89 +515,127 @@ function ProfessorStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
   }
 
   return (
-    <section className="flex flex-col">
-      <p className="text-sm font-semibold uppercase tracking-wide text-primary">Professor IA (opcional)</p>
-      <h1 className="mt-3 text-4xl leading-tight">Conecte o Grok para gerar questões e tirar dúvidas</h1>
-      <p className="mt-4 text-base leading-relaxed text-muted">
-        Sem a chave o app continua funcionando: você perde só a geração de aulas novas e o chat com o professor.
-      </p>
-
-      <details className="mt-5 rounded-xl border border-border bg-surface">
-        <summary className="flex min-h-12 cursor-pointer items-center px-4 text-sm font-semibold">
-          Como conseguir a chave
-        </summary>
-        <div className="border-t border-border px-4 py-3">
-          <ol className="flex flex-col gap-2 text-sm leading-relaxed text-muted">
-            <li className="flex gap-2">
-              <span className="font-semibold text-primary" aria-hidden>1.</span>
-              Crie sua conta no console da xAI.
-            </li>
-            <li className="flex gap-2">
-              <span className="font-semibold text-primary" aria-hidden>2.</span>
-              Crie uma API key (ela começa com <span className="font-semibold text-fg">xai-</span>).
-            </li>
-            <li className="flex gap-2">
-              <span className="font-semibold text-primary" aria-hidden>3.</span>
-              Cole a chave aqui embaixo.
-            </li>
-          </ol>
-          <Button variant="surface" className="mt-3 w-full" onClick={openConsole}>
-            Abrir console xAI
-          </Button>
-        </div>
-      </details>
-
-      <label htmlFor="xai-key" className="mt-5 text-sm font-semibold">
-        Chave da xAI
-      </label>
-      <div className="mt-1.5 flex gap-2">
-        <div className="relative min-w-0 flex-1">
-          <input
-            id="xai-key"
-            className="min-h-12 w-full rounded-xl border border-border bg-surface-2 px-3 pr-12 text-base text-fg placeholder:text-muted"
-            type={reveal ? "text" : "password"}
-            autoComplete="off"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            placeholder="xai-…"
-            value={keyDraft}
-            onChange={(event) => setKeyDraft(event.target.value)}
-          />
-          <button
-            type="button"
-            aria-label={reveal ? "Ocultar chave" : "Mostrar chave"}
-            className="absolute right-0 top-0 flex size-12 items-center justify-center rounded-xl text-muted hover:text-fg"
-            onClick={() => setReveal((value) => !value)}
-          >
-            {reveal ? <EyeOff className="size-5" aria-hidden /> : <Eye className="size-5" aria-hidden />}
-          </button>
-        </div>
-        <Button variant="surface" className="shrink-0" onClick={() => void paste()}>
-          Colar
-        </Button>
+    <section className="onboarding-step">
+      <div className="onboarding-copy">
+        <p className="text-sm font-semibold uppercase tracking-wide text-primary">
+          Professor IA (opcional)
+        </p>
+        <h1 className="mt-3 text-4xl leading-tight">
+          Conecte o Grok para gerar questões e tirar dúvidas
+        </h1>
+        <p className="mt-4 text-base leading-relaxed text-muted">
+          Sem a chave o app continua funcionando: você perde só a geração de aulas novas e o chat com o
+          professor.
+        </p>
       </div>
 
-      {error ? <InlineError copy={error} className="mt-3" /> : null}
+      <div className="onboarding-controls">
+        <details
+          className="rounded-xl border border-border bg-surface"
+          onToggle={(event) => setHelpOpen(event.currentTarget.open)}
+        >
+          <summary
+            aria-expanded={helpOpen}
+            className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-semibold [&::-webkit-details-marker]:hidden"
+            // O evento `toggle` do <details> não borbulha; o clique mantém o
+            // estado do ícone/aria sincronizado também no React.
+            onClick={() => setHelpOpen((open) => !open)}
+          >
+            Como conseguir a chave
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                "size-6 shrink-0 text-muted transition-transform",
+                helpOpen && "rotate-180",
+              )}
+            />
+          </summary>
+          <div className="border-t border-border px-4 py-3">
+            <ol className="flex flex-col gap-2 text-sm leading-relaxed text-muted">
+              <li className="flex gap-2">
+                <span className="font-semibold text-primary" aria-hidden>1.</span>
+                Crie sua conta no console da xAI.
+              </li>
+              <li className="flex gap-2">
+                <span className="font-semibold text-primary" aria-hidden>2.</span>
+                Crie uma API key (ela começa com <span className="font-semibold text-fg">xai-</span>).
+              </li>
+              <li className="flex gap-2">
+                <span className="font-semibold text-primary" aria-hidden>3.</span>
+                Cole a chave aqui embaixo.
+              </li>
+            </ol>
+            <Button variant="surface" className="mt-3 w-full" onClick={openConsole}>
+              Abrir console xAI
+              <ExternalLink className="size-[18px]" aria-hidden />
+            </Button>
+          </div>
+        </details>
 
-      <p className="mt-4 rounded-xl bg-surface px-3 py-2.5 text-xs leading-relaxed text-muted">
-        A chave fica guardada só neste aparelho, criptografada. O uso é cobrado na sua conta xAI.
-      </p>
+        <label htmlFor="xai-key" className="mt-5 text-sm font-semibold">
+          Chave da xAI
+        </label>
+        <div className="mt-1.5 flex gap-2">
+          <div className="relative min-w-0 flex-1">
+            <input
+              id="xai-key"
+              className="min-h-12 w-full rounded-xl border border-border bg-surface-2 px-3 pr-12 text-base text-fg placeholder:text-muted"
+              type={reveal ? "text" : "password"}
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="xai-…"
+              value={keyDraft}
+              onChange={(event) => setKeyDraft(event.target.value)}
+            />
+            <button
+              type="button"
+              aria-label={reveal ? "Ocultar chave" : "Mostrar chave"}
+              className="absolute right-0 top-0 flex size-12 items-center justify-center rounded-xl text-muted hover:text-fg"
+              onClick={() => setReveal((value) => !value)}
+            >
+              {reveal ? (
+                <EyeOff className="size-5" aria-hidden />
+              ) : (
+                <Eye className="size-5" aria-hidden />
+              )}
+            </button>
+          </div>
+          <Button variant="surface" className="shrink-0" onClick={() => void paste()}>
+            Colar
+          </Button>
+        </div>
 
-      <div className="mt-6 flex flex-col gap-2">
-        <Button disabled={checking} onClick={() => void verify()}>
-          {checking ? (
-            <>
-              <ButtonSpinner />
-              Verificando…
-            </>
-          ) : (
-            "Verificar chave"
-          )}
-        </Button>
-        <Button variant="ghost" disabled={checking} onClick={onSkip}>
-          Agora não
-        </Button>
+        {error ? <InlineError copy={error} className="mt-3" /> : null}
+
+        <p className="mt-4 rounded-xl bg-surface px-3 py-2.5 text-xs leading-relaxed text-muted">
+          A chave fica guardada só neste aparelho, criptografada. O uso é cobrado na sua conta xAI.
+        </p>
+
+        <div className="mt-6 flex flex-col gap-2">
+          {/* Vazio = desabilitado; "checando" mantém o visual primário. */}
+          <Button
+            className={cn(
+              emptyKey &&
+                "disabled:bg-fg/[0.12] disabled:text-fg/[0.38] disabled:opacity-100",
+            )}
+            disabled={checking || emptyKey}
+            onClick={() => void verify()}
+          >
+            {checking ? (
+              <>
+                <ButtonSpinner />
+                Verificando…
+              </>
+            ) : (
+              "Verificar chave"
+            )}
+          </Button>
+          <Button variant="ghost" className="min-h-12" disabled={checking} onClick={onSkip}>
+            Agora não
+          </Button>
+        </div>
       </div>
     </section>
   );
@@ -604,49 +695,67 @@ function RemindersStep({ onDone }: { onDone: () => void }) {
     }
   }
 
+  const native = isNativeNotificationService();
+
   return (
-    <section className="flex flex-col">
-      <p className="text-sm font-semibold uppercase tracking-wide text-primary">Lembretes</p>
-      <section className="mt-3 rounded-2xl border border-border bg-surface p-5">
-        <span className="flex size-12 items-center justify-center rounded-full bg-primary/20 text-primary">
-          <Bell className="size-6" aria-hidden />
-        </span>
-        <h1 className="mt-4 text-3xl leading-tight">
+    <section className="onboarding-step">
+      <div className="onboarding-copy">
+        <p className="text-sm font-semibold uppercase tracking-wide text-primary">Lembretes</p>
+        {/* Mesmo padrão dos passos 1–3: título fora do cartão. */}
+        <h1 className="mt-3 text-[clamp(22px,6vw,28px)] leading-[1.25]">
           Quer um aviso na hora de cada bloco e quando o timer acabar?
         </h1>
-        <p className="mt-3 text-sm leading-relaxed text-muted">
-          No Android os avisos são agendados no próprio aparelho e chegam com o app fechado. Você pode mudar
-          isso quando quiser em Ajustes.
-        </p>
-      </section>
+      </div>
 
-      {denied ? (
-        <p role="status" className="mt-3 text-xs leading-relaxed text-muted">
-          Você pode ativar depois em Ajustes.
-        </p>
-      ) : null}
-      {note ? <p role="status" className="mt-3 text-sm">{note}</p> : null}
+      <div className="onboarding-controls">
+        <section className="rounded-2xl border border-border bg-surface p-5">
+          <span className="flex size-12 items-center justify-center rounded-full bg-primary/20 text-primary">
+            <Bell className="size-6" aria-hidden />
+          </span>
+          <p className="mt-4 text-sm leading-relaxed text-muted">
+            Os avisos são agendados no próprio aparelho e chegam com o app fechado.
+          </p>
+        </section>
 
-      <div className="mt-6 flex flex-col gap-2">
+        {/* Só depois de uma negação: o cartão não repete a frase. */}
         {denied ? (
-          <Button onClick={onDone}>Continuar</Button>
-        ) : (
-          <>
-            <Button disabled={busy} onClick={() => void activate()}>
-              {busy ? (
-                <>
-                  <ButtonSpinner />
-                  Ativando…
-                </>
-              ) : (
-                "Ativar lembretes"
-              )}
+          <p role="status" className="mt-3 text-xs leading-relaxed text-muted">
+            Você pode ativar depois em Ajustes.
+          </p>
+        ) : null}
+        {note ? (
+          <p role="status" className="mt-3 text-sm">
+            {note}
+          </p>
+        ) : null}
+
+        <div className="mt-6 flex flex-col gap-2">
+          {denied ? (
+            <Button className={native ? "min-h-14" : undefined} onClick={onDone}>
+              Continuar
             </Button>
-            <Button variant="ghost" disabled={busy} onClick={onDone}>
-              Agora não
-            </Button>
-          </>
-        )}
+          ) : (
+            <>
+              <Button
+                className={native ? "min-h-14" : undefined}
+                disabled={busy}
+                onClick={() => void activate()}
+              >
+                {busy ? (
+                  <>
+                    <ButtonSpinner />
+                    Ativando…
+                  </>
+                ) : (
+                  "Ativar lembretes"
+                )}
+              </Button>
+              <Button variant="ghost" className="min-h-12" disabled={busy} onClick={onDone}>
+                Agora não
+              </Button>
+            </>
+          )}
+        </div>
       </div>
     </section>
   );
