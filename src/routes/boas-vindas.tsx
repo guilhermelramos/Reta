@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ButtonSpinner } from "@/components/feedback/button-spinner";
 import { InlineError } from "@/components/feedback/inline-error";
+import { OpenRouterSetup } from "@/components/settings/openrouter-setup";
+import { ProviderChoice } from "@/components/settings/provider-choice";
+import { XaiAccountLogin } from "@/components/settings/xai-account-login";
+import type { AiProvider } from "@/lib/ai/provider";
 import { pingAiClient } from "@/lib/ai/xai-client";
 import { cn } from "@/lib/cn";
 import type { ErrorCopy, FeedbackAction, FeedbackKind } from "@/lib/feedback/error-copy";
@@ -15,7 +19,7 @@ import {
   requestNativeNotifications,
   requestNotificationPermission,
 } from "@/lib/native/notifications";
-import { setKey } from "@/lib/secure/keys";
+import { setKey, type KeyValues } from "@/lib/secure/keys";
 import {
   applyMap,
   guessMap,
@@ -452,12 +456,36 @@ function keyErrorCopy(error: KeyCheckErrorCopy): ErrorCopy {
 }
 
 function ProfessorStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }) {
+  const study = useStudy();
+  const [provider, setProvider] = useState<AiProvider>(study.settings.aiProvider);
   const [keyDraft, setKeyDraft] = useState("");
   const [reveal, setReveal] = useState(false);
   const [checking, setChecking] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [error, setError] = useState<ErrorCopy | null>(null);
   const emptyKey = !isValidKeyDraft(keyDraft);
+
+  async function chooseProvider(next: AiProvider) {
+    if (next === provider) return;
+    setProvider(next);
+    try {
+      await study.saveSettings({ ...study.settings, aiProvider: next }, study.keys);
+    } catch {
+      // A escolha local continua valendo nesta tela; Ajustes permite tentar de novo.
+    }
+  }
+
+  /** Grava a chave no cofre e, junto, a preferência de provedor/modelo. */
+  async function saveProviderSettings(
+    next: AiProvider,
+    partial: Partial<typeof study.settings>,
+    keysPatch: Partial<KeyValues> = {},
+  ) {
+    await study.saveSettings(
+      { ...study.settings, ...partial, aiProvider: next },
+      { ...study.keys, ...keysPatch },
+    );
+  }
 
   function online(): boolean {
     return typeof navigator === "undefined" || navigator.onLine !== false;
@@ -523,15 +551,54 @@ function ProfessorStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
           Professor IA (opcional)
         </p>
         <h1 className="mt-3 text-4xl leading-tight">
-          Conecte o Grok para gerar questões e tirar dúvidas
+          Conecte a IA para gerar questões e tirar dúvidas
         </h1>
         <p className="mt-4 text-base leading-relaxed text-muted">
-          Sem a chave o app continua funcionando: você perde só a geração de aulas novas e o chat com o
-          professor.
+          A xAI é o padrão e o fluxo da chave é o mesmo de antes. Sem chave o app continua
+          funcionando: você perde só a geração de aulas novas e o chat com o professor.
         </p>
       </div>
 
       <div className="onboarding-controls">
+        <div className="mb-5 flex flex-col gap-2">
+          <p className="text-sm font-semibold text-fg">Provedor de IA</p>
+          <ProviderChoice value={provider} onChange={(next) => void chooseProvider(next)} />
+          <p className="text-xs leading-relaxed text-muted">
+            xAI é o padrão. OpenRouter é opcional e usa a chave sk-or-… da sua conta.
+          </p>
+        </div>
+
+        {provider === "openrouter" ? (
+          <div className="rounded-xl border border-border bg-surface">
+            <OpenRouterSetup
+              compact
+              savedKey={study.keys.openrouter}
+              model={study.settings.openRouterModel}
+              fallbacks={study.settings.openRouterFallbacks}
+              onSaveKey={async (value) => {
+                await setKey("openrouter", value);
+                await saveProviderSettings("openrouter", {}, { openrouter: value });
+              }}
+              onRemoveKey={async () => {
+                await setKey("openrouter", "");
+                await saveProviderSettings("openrouter", {}, { openrouter: "" });
+              }}
+              onChooseModel={(model, fallbacks) =>
+                saveProviderSettings("openrouter", {
+                  openRouterModel: model,
+                  openRouterFallbacks: fallbacks,
+                })
+              }
+            />
+            <div className="border-t border-border px-4 py-3">
+              <p className="text-xs leading-relaxed text-muted">
+                Ao salvar, a chave fica só neste aparelho e o OpenRouter passa a ser o provedor
+                ativo.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
         <details
           className="rounded-xl border border-border bg-surface"
           onToggle={(event) => setHelpOpen(event.currentTarget.open)}
@@ -615,6 +682,10 @@ function ProfessorStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
           A chave fica guardada só neste aparelho, criptografada. O uso é cobrado na sua conta xAI.
         </p>
 
+        <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
+          <XaiAccountLogin />
+        </div>
+
         <div className="mt-6 flex flex-col gap-2">
           {/* Vazio = desabilitado; "checando" mantém o visual primário. */}
           <Button
@@ -634,6 +705,11 @@ function ProfessorStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
               "Verificar chave"
             )}
           </Button>
+        </div>
+          </>
+        )}
+
+        <div className="mt-6 flex flex-col gap-2">
           <Button variant="ghost" className="min-h-12" disabled={checking} onClick={onSkip}>
             Agora não
           </Button>

@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { ButtonSpinner } from "@/components/feedback/button-spinner";
 import { InlineError } from "@/components/feedback/inline-error";
 import { ConfirmDialog } from "@/components/settings/confirm-dialog";
+import { OpenRouterSetup } from "@/components/settings/openrouter-setup";
+import { ProviderChoice } from "@/components/settings/provider-choice";
 import { SettingsAccordion } from "@/components/settings/settings-accordion";
 import {
   SettingsBlock,
@@ -26,7 +28,9 @@ import {
 } from "@/components/settings/settings-row";
 import { SettingsSection } from "@/components/settings/settings-section";
 import { SettingsSwitchRow } from "@/components/settings/settings-switch";
+import { XaiAccountLogin } from "@/components/settings/xai-account-login";
 import { pingAiClient } from "@/lib/ai/xai-client";
+import type { AiProvider } from "@/lib/ai/provider";
 import { describeError, genericCopy, type ErrorCopy } from "@/lib/feedback/error-copy";
 import { openBatteryOptimizationSettings } from "@/lib/native/battery";
 import { saveAndShare } from "@/lib/native/files";
@@ -246,6 +250,36 @@ function SettingsPage() {
     const pending = lastSave.current;
     if (!pending) return;
     void enqueueSave(pending.settings, pending.keys, pending.message);
+  }
+
+  /** Grava uma preferência de IA e só resolve quando o IndexedDB confirmou. */
+  async function saveAiSettings(partial: Partial<Settings>): Promise<void> {
+    const next = { ...draftRef.current, ...partial };
+    draftRef.current = next;
+    setDraft(next);
+    const ok = await enqueueSave(next, keysRef.current, SETTINGS_SAVE_ERROR);
+    if (!ok) throw new Error(SETTINGS_SAVE_ERROR);
+  }
+
+  async function chooseProvider(provider: AiProvider) {
+    if (provider === draftRef.current.aiProvider) return;
+    await saveAiSettings({ aiProvider: provider }).catch(() => undefined);
+  }
+
+  async function saveOpenRouterKey(value: string): Promise<void> {
+    const nextKeys = { ...keysRef.current, openrouter: value };
+    keysRef.current = nextKeys;
+    setKeyDraft((current) => ({ ...current, openrouter: value }));
+    const ok = await enqueueSave({ ...draftRef.current }, nextKeys, KEYS_SAVE_ERROR);
+    if (!ok) throw new Error(KEYS_SAVE_ERROR);
+  }
+
+  async function removeOpenRouterKey(): Promise<void> {
+    const nextKeys = { ...keysRef.current, openrouter: "" };
+    keysRef.current = nextKeys;
+    setKeyDraft((current) => ({ ...current, openrouter: "" }));
+    const ok = await enqueueSave({ ...draftRef.current }, nextKeys, KEYS_SAVE_ERROR);
+    if (!ok) throw new Error(KEYS_SAVE_ERROR);
   }
 
   /**
@@ -827,126 +861,165 @@ function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection id="professor" title="Professor IA">
-        <SettingsRow
-          icon={KeyRound}
-          label="Chave xAI"
-          support={key.hint}
-          trailing={<StatusText status={key} />}
-        />
-
         <SettingsBlock className="flex flex-col gap-3">
-          <label htmlFor="xai-key" className="text-sm font-medium text-fg">
-            {configured ? "Colar ou trocar a chave" : "Colar a chave"}
-          </label>
-          <input
-            id="xai-key"
-            className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg placeholder:text-muted"
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="xai-…"
-            value={keyDraft.xai}
-            onChange={(e) => setKeyDraft({ ...keyDraft, xai: e.target.value })}
-          />
-          <p className="text-xs leading-relaxed text-muted">
-            No Android a chave fica no Keystore do aparelho. O uso é cobrado na sua conta xAI.
+          <p className="text-base font-semibold text-fg">Provedor de IA</p>
+          <ProviderChoice value={draft.aiProvider} onChange={(provider) => void chooseProvider(provider)} />
+          <p className="text-sm leading-relaxed text-muted">
+            A xAI é o padrão. O OpenRouter é opcional e usa a sua própria chave. A escolha vale
+            para pacotes, questões e chat do professor.
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              disabled={keyBusy || !canSaveKey(keyDraft.xai)}
-              className="disabled:bg-fg/[0.12] disabled:text-fg/[0.38] disabled:opacity-100"
-              onClick={requestSaveKeys}
-            >
-              {keyBusy ? "Guardando…" : keySaveLabel(configured)}
-            </Button>
-            {configured ? (
-              <Button variant="clay" disabled={keyBusy} onClick={() => setKeyConfirm("remove")}>
-                Remover chave
-              </Button>
-            ) : null}
-            <Button
-              variant="surface"
-              disabled={testDisabled}
-              aria-disabled={testDisabled ? true : undefined}
-              className="disabled:border-transparent disabled:bg-fg/[0.12] disabled:text-fg/[0.38] disabled:opacity-100"
-              onClick={() => void test()}
-            >
-              {testing ? (
-                <>
-                  <ButtonSpinner />
-                  {testConnectionLabel("loading")}
-                </>
-              ) : (
-                testConnectionLabel(testState)
-              )}
-            </Button>
-          </div>
-          {testError ? <InlineError copy={testError} onAction={testAction} /> : null}
         </SettingsBlock>
 
-        <SettingsAccordion
-          title="Avançado"
-          support="Quem monta o pacote e as chaves dos outros pesquisadores."
-        >
-          <div className="flex flex-col gap-2">
-            <label htmlFor="researcher" className="text-sm font-medium text-fg">
-              Quem monta o pacote
-            </label>
-            <select
-              id="researcher"
-              className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg"
-              value={draft.researcher}
-              onChange={(e) => patch({ researcher: e.target.value as ResearcherId })}
-            >
-              {PROVIDERS.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.label}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs leading-relaxed text-muted">
-              O Grok é o tutor: pergunta e corrige só com o pacote já pronto, sem buscar na web na
-              sessão. O pesquisador monta o pacote antes. Sem chave pessoal, o Grok usa a chave do
-              app.
-            </p>
-          </div>
+        {draft.aiProvider === "xai" ? (
+          <>
+            <SettingsRow
+              icon={KeyRound}
+              label="Chave xAI"
+              support={key.hint}
+              trailing={<StatusText status={key} />}
+            />
 
-          <SettingsSwitchRow
-            className="px-0"
-            label="Pesquisar na web ao montar o pacote"
-            support="Mais lento e gasta mais da sua cota."
-            checked={draft.webSearch}
-            onCheckedChange={(webSearch) => patch({ webSearch })}
-          />
-
-          {OTHER_PROVIDERS.map((provider) => (
-            <div key={provider.id} className="flex flex-col gap-1.5">
-              <label htmlFor={`key-${provider.id}`} className="text-sm font-medium text-fg">
-                Chave {provider.label}
+            <SettingsBlock className="flex flex-col gap-3">
+              <label htmlFor="xai-key" className="text-sm font-medium text-fg">
+                {configured ? "Colar ou trocar a chave" : "Colar a chave"}
               </label>
               <input
-                id={`key-${provider.id}`}
+                id="xai-key"
                 className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg placeholder:text-muted"
                 type="password"
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="Opcional"
-                value={keyDraft[provider.id]}
-                onChange={(e) =>
-                  setKeyDraft({ ...keyDraft, [provider.id]: e.target.value } as KeyValues)
-                }
+                placeholder="xai-…"
+                value={keyDraft.xai}
+                onChange={(e) => setKeyDraft({ ...keyDraft, xai: e.target.value })}
               />
-            </div>
-          ))}
-          <Button
-            variant="surface"
-            className="self-start"
-            disabled={keyBusy}
-            onClick={() => void saveKeys("others")}
-          >
-            {keyBusy ? "Guardando…" : "Salvar chaves"}
-          </Button>
-        </SettingsAccordion>
+              <p className="text-xs leading-relaxed text-muted">
+                No Android a chave fica no Keystore do aparelho. O uso é cobrado na sua conta xAI.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  disabled={keyBusy || !canSaveKey(keyDraft.xai)}
+                  className="disabled:bg-fg/[0.12] disabled:text-fg/[0.38] disabled:opacity-100"
+                  onClick={requestSaveKeys}
+                >
+                  {keyBusy ? "Guardando…" : keySaveLabel(configured)}
+                </Button>
+                {configured ? (
+                  <Button variant="clay" disabled={keyBusy} onClick={() => setKeyConfirm("remove")}>
+                    Remover chave
+                  </Button>
+                ) : null}
+                <Button
+                  variant="surface"
+                  disabled={testDisabled}
+                  aria-disabled={testDisabled ? true : undefined}
+                  className="disabled:border-transparent disabled:bg-fg/[0.12] disabled:text-fg/[0.38] disabled:opacity-100"
+                  onClick={() => void test()}
+                >
+                  {testing ? (
+                    <>
+                      <ButtonSpinner />
+                      {testConnectionLabel("loading")}
+                    </>
+                  ) : (
+                    testConnectionLabel(testState)
+                  )}
+                </Button>
+              </div>
+              {testError ? <InlineError copy={testError} onAction={testAction} /> : null}
+            </SettingsBlock>
+
+            <XaiAccountLogin />
+
+            <SettingsAccordion
+              title="Avançado"
+              support="Quem monta o pacote e as chaves dos outros pesquisadores."
+            >
+              <div className="flex flex-col gap-2">
+                <label htmlFor="researcher" className="text-sm font-medium text-fg">
+                  Quem monta o pacote
+                </label>
+                <select
+                  id="researcher"
+                  className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg"
+                  value={draft.researcher}
+                  onChange={(e) => patch({ researcher: e.target.value as ResearcherId })}
+                >
+                  {PROVIDERS.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs leading-relaxed text-muted">
+                  O Grok é o tutor: pergunta e corrige só com o pacote já pronto, sem buscar na web
+                  na sessão. O pesquisador monta o pacote antes. Sem chave pessoal, o Grok usa a
+                  chave do app.
+                </p>
+              </div>
+
+              <SettingsSwitchRow
+                className="px-0"
+                label="Pesquisar na web ao montar o pacote"
+                support="Mais lento e gasta mais da sua cota."
+                checked={draft.webSearch}
+                onCheckedChange={(webSearch) => patch({ webSearch })}
+              />
+
+              {OTHER_PROVIDERS.map((provider) => (
+                <div key={provider.id} className="flex flex-col gap-1.5">
+                  <label htmlFor={`key-${provider.id}`} className="text-sm font-medium text-fg">
+                    Chave {provider.label}
+                  </label>
+                  <input
+                    id={`key-${provider.id}`}
+                    className="h-12 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-fg placeholder:text-muted"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="Opcional"
+                    value={keyDraft[provider.id]}
+                    onChange={(e) =>
+                      setKeyDraft({ ...keyDraft, [provider.id]: e.target.value } as KeyValues)
+                    }
+                  />
+                </div>
+              ))}
+              <Button
+                variant="surface"
+                className="self-start"
+                disabled={keyBusy}
+                onClick={() => void saveKeys("others")}
+              >
+                {keyBusy ? "Guardando…" : "Salvar chaves"}
+              </Button>
+            </SettingsAccordion>
+          </>
+        ) : (
+          <>
+            <OpenRouterSetup
+              savedKey={keys.openrouter}
+              model={draft.openRouterModel}
+              fallbacks={draft.openRouterFallbacks}
+              onSaveKey={saveOpenRouterKey}
+              onRemoveKey={removeOpenRouterKey}
+              onChooseModel={(nextModel, nextFallbacks) =>
+                saveAiSettings({
+                  aiProvider: "openrouter",
+                  openRouterModel: nextModel,
+                  openRouterFallbacks: nextFallbacks,
+                })
+              }
+            />
+            <SettingsBlock>
+              <p className="text-xs leading-relaxed text-muted">
+                O OpenRouter entra só com a chave colada (sk-or-…). Não há login, callback nem
+                conta do Reta. A chave xAI continua guardada e volta a valer quando você escolher
+                xAI.
+              </p>
+            </SettingsBlock>
+          </>
+        )}
       </SettingsSection>
 
       <SettingsSection id="sobre" title="Sobre">
@@ -966,7 +1039,7 @@ function SettingsPage() {
       <ConfirmDialog
         open={keyConfirm === "remove"}
         title="Remover a chave xAI?"
-        description="Os recursos de IA deixam de funcionar até você colar outra chave. O resto dos seus dados continua neste aparelho."
+        description="Os recursos de IA deixam de funcionar até você colar outra chave ou entrar com a conta xAI experimental. O resto dos seus dados continua neste aparelho."
         confirmLabel="Remover chave"
         busy={keyBusy}
         onCancel={() => setKeyConfirm(null)}
