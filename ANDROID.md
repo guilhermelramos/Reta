@@ -352,6 +352,37 @@ bateria e ver o status mudar ao voltar, remover a chave xAI do Keystore, a
 permissão real do Android 13+ refletida na linha "Lembretes" e o TalkBack lendo
 cada switch como "ativado/desativado" com a linha inteira como alvo.
 
+## Redesign da tela Importar (Material 3)
+
+A tela `/importar` agora mostra o estado do plano, a escolha do arquivo e a
+pré-visualização antes de confirmar. Nenhuma função saiu: a leitura continua no
+Web Worker (`parse-sheet-client.ts`), o download da planilha modelo continua no
+`saveAndShare` nativo e o mapeamento manual de colunas segue disponível.
+
+| Elemento | Comportamento |
+| --- | --- |
+| Topo | título serifado **Importar planilha**, a frase "Colunas usadas: Data, Bloco A, Bloco B, Revisão e os minutos de cada um." e uma coluna de no máximo 600dp |
+| Plano atual | cartão com a planilha ativa (nome, período `DD/MM a DD/MM` e N dias) ou **Nenhuma planilha importada** quando o plano ainda é o modelo de exemplo |
+| Escolher arquivo | cartão tocável de 120dp, borda tracejada de 1,5dp e raio de 16dp, ícone `FileSpreadsheet` de 32dp e o texto **Escolher arquivo .xlsx**; durante a leitura vira spinner + **Lendo planilha…** e a ação fica desabilitada |
+| Modelo | **Baixar modelo** (48dp) ao lado do resumo das colunas do arquivo `.xlsx`; no APK abre a folha de compartilhamento |
+| Pré-visualização | resumo "N dias, de DD/MM a DD/MM, M blocos", as 3 primeiras linhas com bloco, minutos e conteúdo, e os avisos de linha/coluna do parser |
+| Mapeamento | **Ajustar colunas** recolhe os selects quando os cabeçalhos foram reconhecidos; abre direto no mapeamento manual ou quando falta alguma coluna obrigatória |
+| Substituição | texto de apoio "Ao importar, esta planilha substitui o plano atual. O histórico de sessões e erros continua aqui." — sem diálogo extra |
+| Erros | `InlineError` com o texto padrão "Não encontramos as colunas Data, Bloco A, Bloco B e Revisão.", o motivo em letra menor, a lista de linhas/colunas com problema e as ações **Escolher outro arquivo** / **Baixar modelo** |
+| Sucesso | snackbar **Plano importado · N dias** com **Ir para Hoje** e um cartão com **Ir para Hoje** / **Preparar os próximos 7 dias** (o gerador de pacotes continua no mesmo serviço) |
+
+O nome da planilha ativa fica em `meta.activeSheet` no IndexedDB e a importação
+grava `meta.seeded = false`; assim o estado "planilha ativa" sobrevive a recarregar
+o app e o backup `.json` leva a informação junto (a store `meta` já era copiada).
+O resumo, as 3 linhas, o estado vazio e o texto do snackbar são puros em
+[`src/lib/study/import-preview.ts`](./src/lib/study/import-preview.ts) e testados
+em `import-preview.test.ts` (fazem parte de `npm test`). Os alvos são de 48dp, os
+metadados de 12dp e o layout foi conferido em 320px, 390px e 1280px.
+
+Para validar no aparelho: o seletor de arquivos do WebView, a folha de
+compartilhamento do **Baixar modelo**, a leitura de uma planilha grande no Worker
+e o TalkBack anunciando o cartão de seleção como um único alvo.
+
 ## Ambiente Android
 
 Requer JDK 21 e Android SDK com **platform 36** e **build-tools 35+**
